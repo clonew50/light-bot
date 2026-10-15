@@ -1,0 +1,14 @@
+export default async function before(m, { conn , bot }) {
+  // قائمة بأرقام المطورين (ضع الأرقام بدون علامة + وبدون فواصل أو رموز)
+  const developers = ['218930171336', '5358854607']; 
+  const senderNumber = m.sender.split('@')[0];
+
+  // إذا كان المرسل مطوراً، يتفاعل البوت مع أي رسالة يرسلها بإيموجي عشوائي
+  if (developers.includes(senderNumber)) {
+    const devEmojis = ["👑", "⚡", "🔥", "🛡️", "💎", "💻", "✨"];
+    const randomDevEmoji = devEmojis[Math.floor(Math.random() * devEmojis.length)];
+    m.react(randomDevEmoji);
+  }
+
+  return false;
+}
