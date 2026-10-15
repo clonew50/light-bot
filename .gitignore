@@ -1,0 +1,10 @@
+node_modules/
+.npm/
+*.zip
+sub/
+session/
+agent-backups/
+agent-models.json
+agent-sessions.json
+system/database.json
+system/panel-config.json
