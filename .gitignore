@@ -1,6 +1,7 @@
 node_modules/
 .npm/
 *.zip
+*.log
 sub/
 session/
 agent-backups/
@@ -8,3 +9,5 @@ agent-models.json
 agent-sessions.json
 system/database.json
 system/panel-config.json
+system/one-config.json
+.git-sync-state.json
