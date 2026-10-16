@@ -53,16 +53,30 @@ function loadState() {
 }
 function saveState(s) { fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2)); }
 
+// fetch مع إعادة محاولة عند أي مشكلة شبكة عابرة
+async function fetchRetry(url, opts = {}, tries = 5) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetch(url, opts);
+      if (res.status >= 500) lastErr = new Error(`HTTP ${res.status}`);
+      else return res;
+    } catch (e) { lastErr = e; }
+    await new Promise((r) => setTimeout(r, 600 * (i + 1)));
+  }
+  throw lastErr;
+}
+
 // ---------- قراءة شجرة الريبو من GitHub (بدون مفتاح) ----------
 async function fetchRemote() {
   const headers = { 'User-Agent': UA, Accept: 'application/vnd.github+json' };
-  const br = await fetch(`${API}/branches/${BRANCH}`, { headers });
+  const br = await fetchRetry(`${API}/branches/${BRANCH}`, { headers });
   if (!br.ok) throw new Error(`GitHub ${br.status}${br.status === 403 ? ' (rate limit؟)' : ''}`);
   const bj = await br.json();
   const commitSha = bj.commit.sha;
   const treeSha = bj.commit.commit.tree.sha;
 
-  const tr = await fetch(`${API}/git/trees/${treeSha}?recursive=1`, { headers });
+  const tr = await fetchRetry(`${API}/git/trees/${treeSha}?recursive=1`, { headers });
   if (!tr.ok) throw new Error(`GitHub tree ${tr.status}`);
   const tj = await tr.json();
   const remote = {};
@@ -111,7 +125,7 @@ export async function pullOnce({ log = console.log } = {}) {
     let i = 0;
     for (const p of download) {
       const enc = p.split('/').map(encodeURIComponent).join('/');
-      const res = await fetch(`${RAW}/${commitSha}/${enc}`, { headers });
+      const res = await fetchRetry(`${RAW}/${commitSha}/${enc}`, { headers });
       if (!res.ok) throw new Error(`تنزيل ${p} فشل (${res.status})`);
       const buf = Buffer.from(await res.arrayBuffer());
       const full = path.join(ROOT, p);
