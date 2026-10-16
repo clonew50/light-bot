@@ -29,7 +29,7 @@ let handler = async (m, { conn, text }) => {
   // الافتراضي: مزامنة ورفع التعديلات
   await m.reply('⏳ جاري رفع التعديلات على GitHub...');
   try {
-    const r = await syncOnce({ quiet: true });
+    const r = await syncOnce({ quiet: true, log: () => {} });
     if (r.error === 'no-secret') return m.reply('❌ مفيش مفتاح One متظبّط (ONE_SECRET أو system/one-config.json).');
     if (r.error === 'busy') return m.reply('⏳ في مزامنة شغّالة بالفعل، استنى ثانية.');
     if (r.error) return m.reply(`❌ فشل الرفع: ${r.error}`);
