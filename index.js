@@ -4,6 +4,7 @@ import { group, access } from "./system/control.js";
 import UltraDB from "./system/UltraDB.js";
 import sub from './sub.js';
 import { readPanelConfig, startWebPanel } from './system/webPanel.js';
+import { pullOnce } from './system/autoUpdate.mjs';
 
 /* =========== Client ========== */
 const client = new Client({
@@ -130,6 +131,26 @@ function restartBot(reason = 'scheduled') {
 
 // نعرّضها عامًّا عشان تقدر تستخدمها في أي مكان لو حبيت
 global.restartBot = restartBot;
+
+/* =========== Auto Update from GitHub (سحب فقط) ========== */
+// البوت بينزّل تحديثات الريبو لوحده عند التشغيل. عشان تقفله: AUTO_UPDATE=0
+if (process.env.AUTO_UPDATE !== '0') {
+  setTimeout(async () => {
+    try {
+      console.log('⬇️ [UPDATE] فحص تحديثات الريبو...');
+      const r = await pullOnce({ log: (s) => console.log('[UPDATE]', s) });
+      if (r.error) { console.log('⚠️ [UPDATE]', r.error); return; }
+      if (r.changes && r.needsRestart) {
+        console.log('🔁 [UPDATE] فيه كود اتغيّر — ريستارت لتطبيق التحديث');
+        setTimeout(() => restartBot('تحديث تلقائي من الريبو'), 1000);
+      }
+    } catch (e) {
+      console.error('⚠️ [UPDATE] فشل التحديث التلقائي:', e.message);
+    }
+  }, 8000);
+} else {
+  console.log('ℹ️ [UPDATE] التحديث التلقائي مقفول (AUTO_UPDATE=0)');
+}
 
 // المؤقّت: ريستارت دوري كل RESTART_INTERVAL_MIN دقيقة
 if (RESTART_INTERVAL_MIN > 0) {
