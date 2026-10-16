@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(__dirname, '..');
 const STATE_FILE = path.join(ROOT, '.git-sync-state.json');
+const PULL_STATE_FILE = path.join(ROOT, '.git-pull-state.json');
 const CONFIG_FILE = path.join(ROOT, 'system', 'one-config.json');
 
 const DEFAULT_CONN = 'live::github::default::3a29bd8414ec4e5b988ca6b916502eef';
@@ -38,6 +39,7 @@ const A = {
   getRef: 'conn_mod_def::GJ3ZKe5vDKs::xb13z7ZBRnOWekJ-N_TG3w',
   getCommit: 'conn_mod_def::GJ3ZKX3Ay5c::Nm2AiGXOSZy3spF89Asrxw',
   getTree: 'conn_mod_def::GJ3ZKuuKOKA::SuUaMhp3QcmjoB8dtOfy1A',
+  getBlob: 'conn_mod_def::GJ3ZKQY4im4::EeCEzsc8QVCrc9Zd-z9FeA',
   blob: 'conn_mod_def::GJ3ZJkM0oow::6pCvkMJYSue8xhH4Bvy6eQ',
   tree: 'conn_mod_def::GJ3ZKCHKkUA::xHBDE-LtSkWfVdTQxLIp3g',
   commit: 'conn_mod_def::GJ3ZJrwmLbo::Rp9vt2o3RBqDxBLQ1sRRng',
@@ -103,7 +105,7 @@ async function api(actionId, p, method, body) {
 
 // ---------- file scan ----------
 const EXCLUDE_DIRS = ['node_modules', '.npm', '.git', 'sub', 'session', 'agent-backups'];
-const EXCLUDE_FILES = new Set(['agent-models.json', 'agent-sessions.json', '.npmrc', '.', '..', '...', '.git-sync-state.json']);
+const EXCLUDE_FILES = new Set(['agent-models.json', 'agent-sessions.json', '.npmrc', '.', '..', '...', '.git-sync-state.json', '.git-pull-state.json']);
 const EXCLUDE_REL = new Set(['system/database.json', 'system/panel-config.json', 'system/one-config.json']);
 
 export function excluded(rel) {
@@ -224,13 +226,107 @@ export async function syncOnce({ quiet = true, autoInit = true, log = console.lo
   }
 }
 
+// ---------- pull (repo → local) ----------
+export function loadPullState() {
+  try { return JSON.parse(fs.readFileSync(PULL_STATE_FILE, 'utf8')); } catch { return null; }
+}
+function savePullState(s) { fs.writeFileSync(PULL_STATE_FILE, JSON.stringify(s, null, 2)); }
+
+async function fetchRemote() {
+  const cfg = resolveConfig();
+  const ref = await api(A.getRef, `/repos/${cfg.owner}/${cfg.repo}/git/ref/heads%2F${cfg.branch}`, 'GET');
+  const commitSha = ref.object.sha;
+  const commit = await api(A.getCommit, `/repos/${cfg.owner}/${cfg.repo}/git/commits/${commitSha}`, 'GET');
+  const treeSha = commit.tree.sha;
+  const t = await api(A.getTree, `/repos/${cfg.owner}/${cfg.repo}/git/trees/${treeSha}?recursive=1`, 'GET');
+  const remote = {};
+  for (const e of t.tree || []) if (e.type === 'blob') remote[e.path] = e.sha;
+  return { commitSha, treeSha, remote };
+}
+
+function diffRemote(remote) {
+  const download = [];
+  for (const [p, sha] of Object.entries(remote)) {
+    if (excluded(p)) continue;
+    let ls = null;
+    try { ls = gitBlobSha(fs.readFileSync(path.join(ROOT, p))); } catch { /* missing */ }
+    if (ls !== sha) download.push(p);
+  }
+  const prev = loadPullState()?.files || {};
+  const del = Object.keys(prev).filter((p) => !(p in remote) && !excluded(p) && fs.existsSync(path.join(ROOT, p)));
+  return { download, del };
+}
+
+/** يفحص الريبو من غير ما يغيّر أي حاجة */
+export async function checkUpdate() {
+  const cfg = resolveConfig();
+  if (!cfg.secret) return { error: 'no-secret' };
+  try {
+    const { commitSha, remote } = await fetchRemote();
+    const { download, del } = diffRemote(remote);
+    return { commit: commitSha, download, deleted: del, upToDate: !download.length && !del.length };
+  } catch (e) {
+    if (e.code === 'NO_SECRET') return { error: 'no-secret' };
+    return { error: e.message };
+  }
+}
+
+/** ينزّل تحديثات الريبو ويطبّقها على الملفات المحلية */
+export async function pullOnce({ log = console.log } = {}) {
+  const cfg = resolveConfig();
+  if (!cfg.secret) return { error: 'no-secret' };
+  try {
+    const { commitSha, treeSha, remote } = await fetchRemote();
+    const { download, del } = diffRemote(remote);
+
+    if (!download.length && !del.length) {
+      savePullState({ commit: commitSha, tree: treeSha, files: remote, at: new Date().toISOString() });
+      log('✅ انت على آخر نسخة من الريبو.');
+      return { changes: 0, commit: commitSha, needsRestart: false };
+    }
+
+    log(`⬇️ تحديثات من الريبو: ${download.length} ملف، حذف: ${del.length}`);
+    let i = 0;
+    for (const p of download) {
+      const b = await api(A.getBlob, `/repos/${cfg.owner}/${cfg.repo}/git/blobs/${remote[p]}`, 'GET');
+      const buf = Buffer.from(String(b.content || '').replace(/\n/g, ''), b.encoding === 'base64' ? 'base64' : 'utf8');
+      const full = path.join(ROOT, p);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, buf);
+      process.stdout.write(`\r  ⬇️  ${++i}/${download.length}`);
+    }
+    for (const p of del) fs.rmSync(path.join(ROOT, p), { force: true });
+    if (download.length) console.log('');
+
+    savePullState({ commit: commitSha, tree: treeSha, files: remote, at: new Date().toISOString() });
+    const needsRestart = download.some((p) => /\.(mjs|js|cjs)$/.test(p)) || del.some((p) => /\.(mjs|js|cjs)$/.test(p));
+    log(`✅ تم التحديث (${download.length + del.length} ملف) من كوميت ${commitSha.slice(0, 8)}`);
+    return { changes: download.length + del.length, downloaded: download, deleted: del, commit: commitSha, needsRestart };
+  } catch (e) {
+    if (e.code === 'NO_SECRET') return { error: 'no-secret' };
+    return { error: e.message };
+  }
+}
+
 // ---------- CLI ----------
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
   const args = process.argv.slice(2);
   const DEBOUNCE = Number(process.env.SYNC_DEBOUNCE || 5) * 1000;
   const INTERVAL = Number(process.env.SYNC_INTERVAL || 120) * 1000;
-  if (args.includes('--init')) {
+  if (args.includes('--pull') || args.includes('--update')) {
+    const r = await pullOnce();
+    if (r.error) { console.error('❌', r.error); process.exit(1); }
+  } else if (args.includes('--check')) {
+    const r = await checkUpdate();
+    if (r.error) { console.error('❌', r.error); process.exit(1); }
+    if (r.upToDate) console.log('✅ انت على آخر نسخة من الريبو.');
+    else {
+      console.log(`⬇️ للتنزيل: ${r.download.length} | للحذف: ${r.deleted.length}`);
+      r.download.slice(0, 20).forEach((p) => console.log('  ↓', p));
+      r.deleted.slice(0, 20).forEach((p) => console.log('  ✗', p));
+    }
+  } else if (args.includes('--init')) {
     const r = await initState();
     if (r.error) { console.error('❌', r.error); process.exit(1); }
   } else if (args.includes('--status')) {
