@@ -15,7 +15,7 @@ const NEWSLETTER = {
 };
 
 const MAX_IMAGES = 10;
-const MAX_COUNT = 20;
+const MAX_COUNT = 50;
 const MAX_BYTES = 15 * 1024 * 1024;
 const MENU_TIMEOUT = 180000;
 
