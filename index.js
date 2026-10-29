@@ -154,7 +154,7 @@ if (process.env.AUTO_UPDATE !== '0') {
 
 // المؤقّت: ريستارت دوري كل RESTART_INTERVAL_MIN دقيقة
 if (RESTART_INTERVAL_MIN > 0) {
-  setTimeout(() => bot.restart(`كل ${RESTART_INTERVAL_MIN} دقيقة`), RESTART_MS);
+  setTimeout(() => restartBot(`كل ${RESTART_INTERVAL_MIN} دقيقة`), RESTART_MS);
 } else {
   console.log('ℹ️ [RESTART] الريستارت الدوري مقفول (RESTART_INTERVAL_MIN=0)');
 }
