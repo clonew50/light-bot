@@ -168,5 +168,4 @@ setInterval(() => {
         global.restartBot('memory full')
     }
 }, 300_000) 
-
 */
