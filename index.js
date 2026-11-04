@@ -1,5 +1,4 @@
 import { Client } from 'meowsab';
-import { spawn } from 'node:child_process';
 import { group, access } from "./system/control.js";
 import UltraDB from "./system/UltraDB.js";
 import sub from './sub.js';
@@ -89,44 +88,33 @@ const RESTART_INTERVAL_MIN =
     : Number(process.env.RESTART_INTERVAL_MIN) || 0;
 const RESTART_MS = RESTART_INTERVAL_MIN * 60 * 1000;
 
-// لو البوت شغال على مدير عمليات أو لوحة استضافة بتعمل ريستارت لوحدها،
-// بنكتفي بإنهاء العملية وهي هترجّعها تاني.
-function isManaged() {
-  const e = process.env;
-  return Boolean(
-    e.pm_id !== undefined || e.pm2_id !== undefined || e.PM2_HOME || e.NODE_APP_INSTANCE !== undefined || // pm2
-    e.FOREVER_ROOT || e.FOREVER_UID ||                                                                     // forever
-    e.P_SERVER_UUID || e.P_SERVER_LOCATION ||                                                              // Pterodactyl
-    e.INVOCATION_ID || e.JOURNAL_STREAM ||                                                                 // systemd
-    e.SERVER_MEMORY || e.SERVER_PORT                                                                       // لوحات الاستضافة
-  );
-}
-
+// الريستارت بقى من غير ما نقفل العملية خالص: بنستخدم client.restart()
+// نفس الدالة اللي بلجِن رستارت بيستخدمها (bot.restart()) — بتقفل السوكيت القديم
+// وتربط واتساب تاني وهي شغالة. كده البوت يفضله عايش في أي لوحة استضافة،
+// واللوج / لوحة التحكم / المنفذ مش بيتقفلوا خالص.
+// لو عايز السلوك القديم (نخرج من العملية ومدير العمليات هو اللي يرجّعنا):
+//   RESTART_MODE=exit npm start
 function restartBot(reason = 'scheduled') {
-  const mode = process.env.RESTART_MODE || (isManaged() ? 'exit' : 'self');
+  const mode = process.env.RESTART_MODE === 'exit' ? 'exit' : 'inprocess';
   console.log(`\n🔄 [RESTART] إعادة تشغيل البوت (${reason}) — الوضع: ${mode}`);
 
-  // مدير العمليات: نخرجه بس وهو هيرجّعه
+  // احتياطي بس لو حطيته بنفسك: نخرج من العملية ومدير العمليات هيرجّعها
   if (mode === 'exit') {
     process.exit(0);
     return;
   }
 
-  // مفيش مدير: بنشغّل نسخة جديدة مستقلة بنفس الأمر ثم نخرج
-  try {
-    const child = spawn(process.execPath, process.argv.slice(1), {
-      cwd: process.cwd(),
-      env: process.env,
-      detached: true,
-      stdio: 'inherit'
-    });
-    child.unref();
-    console.log(`✅ [RESTART] تم تشغيل نسخة جديدة (PID: ${child.pid})`);
-    setTimeout(() => process.exit(0), 800);
-  } catch (err) {
-    console.error('❌ [RESTART] فشل تشغيل نسخة جديدة:', err);
-    process.exit(1);
-  }
+  // الوضع الافتراضي: ريستارت داخل العملية من غير إغلاق السيرفر
+  (async () => {
+    try {
+      await client.restart();
+      console.log('✅ [RESTART] البوت رجع اشتغل داخل نفس العملية — السيرفر متقفلش');
+    } catch (err) {
+      console.error('❌ [RESTART] فشل الريستارت داخل العملية:', err?.message || err);
+      console.error('🔁 [RESTART] نخرج من العملية احتياطاً...');
+      process.exit(0);
+    }
+  })();
 }
 
 // نعرّضها عامًّا عشان تقدر تستخدمها في أي مكان لو حبيت
