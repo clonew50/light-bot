@@ -5,6 +5,11 @@ import { downloadMediaMessage } from '@whiskeysockets/baileys';
 
 const MEDIA_TYPES = ['imageMessage', 'videoMessage', 'audioMessage'];
 
+const BOT = {
+  name: 'LIGHT BOT',
+  line: '━' .repeat(20),
+};
+
 /* إزالة غلاف view-once للوصول للرسالة الحقيقية */
 function unwrap(message) {
   if (!message || typeof message !== 'object') return {};
@@ -14,12 +19,11 @@ function unwrap(message) {
   return message;
 }
 
-/* البحث عن نوع الوسائط في الرسالة المقتبسة (يدعم أشكال متعددة) */
+/* البحث عن نوع الوسائط في الرسالة المقتبسة */
 function findMedia(quoted) {
   if (!quoted) return null;
 
   const candidates = [quoted];
-
   if (quoted.message && typeof quoted.message === 'object') candidates.push(quoted.message);
   if (quoted.msg && typeof quoted.msg === 'object') candidates.push(quoted.msg);
   if (quoted.msg?.message) candidates.push(quoted.msg.message);
@@ -36,30 +40,71 @@ function findMedia(quoted) {
   return null;
 }
 
+/* حجم مقروء */
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
+}
+
+/* مدة مقروءة */
+function formatDuration(sec) {
+  const s = Number(sec || 0);
+  if (!s) return null;
+  const m = Math.floor(s / 60);
+  const r = Math.floor(s % 60);
+  return m > 0 ? `${m}د ${r}ث` : `${r}ث`;
+}
+
+const ICON = {
+  image: '🖼️',
+  video: '🎬',
+  audio: '🎧',
+  voice: '🎙️',
+};
+
+const LABEL = {
+  image: 'صورة',
+  video: 'فيديو',
+  audio: 'صوت',
+};
+
 const handler = async (m, { conn, usedPrefix, command }) => {
   try {
+    /* ── لا يوجد ردّ ── */
     if (!m.quoted) {
-      return m.reply(`📌 الرجاء الرد على رسالة (صورة / فيديو / صوت) بكتابة ${usedPrefix}${command}`);
+      return m.reply(
+        `╭─「 ⚠️ تنبيه 」─╮\n` +
+        `│ الرجاء الرد على رسالة\n` +
+        `│ (صورة / فيديو / صوت)\n` +
+        `│ بكتابة  ${usedPrefix}${command}\n` +
+        `╰──────────────╯\n` +
+        `${BOT.line}\n` +
+        `> 🤖 ${BOT.name}`
+      );
     }
 
     const found = findMedia(m.quoted);
     if (!found) {
-      return m.reply('❌ هذه الرسالة ليست صورة أو فيديو أو صوت');
+      return m.reply(
+        `╭─「 ❌ نوع غير مدعوم 」─╮\n` +
+        `│ الرسالة المقتبسة ليست\n` +
+        `│ صورة أو فيديو أو صوت\n` +
+        `╰────────────────╯\n` +
+        `${BOT.line}\n` +
+        `> 🤖 ${BOT.name}`
+      );
     }
 
     const { type: mediaType, content: mediaContent, inner } = found;
 
-    /* 1) جرّب download() من الإطار أولاً */
+    /* ── تحميل ── */
     let buffer = null;
     if (typeof m.quoted.download === 'function') {
-      try {
-        buffer = await m.quoted.download();
-      } catch {
-        buffer = null;
-      }
+      try { buffer = await m.quoted.download(); } catch { buffer = null; }
     }
 
-    /* 2) السقوط إلى downloadMediaMessage */
     if (!buffer) {
       const contextInfo = m.message?.extendedTextMessage?.contextInfo || {};
       const quotedKey = m.quoted.key || {
@@ -68,7 +113,6 @@ const handler = async (m, { conn, usedPrefix, command }) => {
         id: contextInfo.stanzaId,
         participant: contextInfo.participant,
       };
-
       buffer = await downloadMediaMessage(
         { key: quotedKey, message: inner },
         'buffer',
@@ -78,42 +122,92 @@ const handler = async (m, { conn, usedPrefix, command }) => {
     }
 
     if (!buffer) {
-      return m.reply('❌ فشل تحميل الوسائط');
+      return m.reply(
+        `╭─「 💔 فشل التحميل 」─╮\n` +
+        `│ تعذّر جلب الوسائط\n` +
+        `│ حاول مرة أخرى لاحقاً\n` +
+        `╰──────────────╯\n` +
+        `${BOT.line}\n` +
+        `> 🤖 ${BOT.name}`
+      );
     }
 
-    if (mediaType === 'imageMessage') {
+    /* ── بيانات الملف ── */
+    const isImage = mediaType === 'imageMessage';
+    const isVideo = mediaType === 'videoMessage';
+    const isAudio = mediaType === 'audioMessage';
+
+    const isVoiceNote = isAudio && !!mediaContent.ptt;
+    const kind = isImage ? 'image' : isVideo ? 'video' : (isVoiceNote ? 'voice' : 'audio');
+
+    const sizeStr = formatBytes(buffer.length);
+    const durationStr = formatDuration(
+      isVideo ? mediaContent.seconds : isAudio ? mediaContent.seconds : null
+    );
+    const mimetype = mediaContent.mimetype || '—';
+    const caption = (mediaContent.caption || '').trim();
+
+    /* ── نرسل الملف مع كابشن مزخرف ── */
+    const captionBlock =
+      `╭─「 ${ICON[kind]} ${LABEL[kind]} 」─╮\n` +
+      `│ 📦 الحجم : ${sizeStr}\n` +
+      (durationStr ? `│ ⏱️ المدة  : ${durationStr}\n` : '') +
+      `│ 📎 النوع : ${mimetype}\n` +
+      (caption ? `│ ✏️ الوصف : ${caption.slice(0, 200)}${caption.length > 200 ? '…' : ''}\n` : '') +
+      `╰────────────────╯\n` +
+      `${BOT.line}\n` +
+      `> 🩸 تم الفتح بواسطة ${BOT.name}`;
+
+    if (isImage) {
       return await conn.sendMessage(
         m.chat,
-        { image: buffer, caption: mediaContent.caption || '' },
+        { image: buffer, caption: captionBlock },
         { quoted: m }
       );
     }
 
-    if (mediaType === 'videoMessage') {
+    if (isVideo) {
       return await conn.sendMessage(
         m.chat,
-        { video: buffer, caption: mediaContent.caption || '' },
+        { video: buffer, caption: captionBlock },
         { quoted: m }
       );
     }
 
-    if (mediaType === 'audioMessage') {
-      const isVoiceNote = !!mediaContent.ptt;
-      return await conn.sendMessage(
+    if (isAudio) {
+      await conn.sendMessage(
         m.chat,
         {
           audio: buffer,
-          mimetype: isVoiceNote
-            ? 'audio/ogg; codecs=opus'
-            : (mediaContent.mimetype || 'audio/mp4'),
+          mimetype: isVoiceNote ? 'audio/ogg; codecs=opus' : (mediaContent.mimetype || 'audio/mp4'),
           ptt: isVoiceNote,
         },
         { quoted: m }
       );
+
+      return m.reply(
+        `╭─「 ${ICON[kind]} ${LABEL[kind]} 」─╮\n` +
+        `│ 📦 الحجم : ${sizeStr}\n` +
+        (durationStr ? `│ ⏱️ المدة  : ${durationStr}\n` : '') +
+        `│ 📎 النوع : ${mimetype}\n` +
+        `╰────────────────╯\n` +
+        `${BOT.line}\n` +
+        `> 🩸 تم الفتح بواسطة ${BOT.name}`
+      );
     }
   } catch (error) {
     console.error('[VIEWONCE ERROR]', error);
-    await m.reply(`❌ عذراً، حدث خطأ أثناء معالجة الوسائط: ${error.message || error}`);
+    await m.reply(
+      `╭─「 💥 خطأ 」─╮\n` +
+      `│ عذراً، حدث خطأ أثناء\n` +
+      `│ معالجة الوسائط\n` +
+      `│\n` +
+      `│ 📝 التفاصيل:\n` +
+      `│ ${String(error.message || error).slice(0, 180)}\n` +
+      `╰─────────────╯\n` +
+      `${BOT.line}\n` +
+      `> 🤖 ${BOT.name}`
+    );
   }
 };
 
