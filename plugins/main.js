@@ -6,7 +6,7 @@ import { downloadMediaMessage } from '@whiskeysockets/baileys';
 export default {
     name:'view one عرض',
         command: ['ع', 'عرض'],
-            category: 'media',
+            category: 'tools',
 
                 handler: async (sock, mek, ctx) => {
                         const { from } = ctx;
