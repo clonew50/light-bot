@@ -1,9 +1,43 @@
-import { Client } from 'meowsab';
+import { Client, Utils } from 'meowsab';
 import { group, access } from "./system/control.js";
 import UltraDB from "./system/UltraDB.js";
 import sub from './sub.js';
 import { readPanelConfig, startWebPanel } from './system/webPanel.js';
 import { pullOnce } from './system/autoUpdate.mjs';
+
+/* =========== 🛡️ Shield — إلغاء الأسلحة الخفية في الإطار ========== */
+// فك تشفير ملف المكتبة نفسه (node_modules/meowsab/dist) أثبت وجود 3 حاجات خفية:
+//   1) فحص بان بعيد: بعد كل اتصال ناجح بثانيتين，المكتبة بتجيب ليستة أرقام من
+//      github.com/deveni0/files_xov/.../ban.json — لو رقم البوت أو الملاك فيها،
+//      الكود المخفي يستدعي eval على "process.exit(0)" والعملية تموت فورًا.
+//   2) بيكون كل 9 ثواني: بيبعت استعلامات (w:mex) باسم حساب البوت لقنوات المطور.
+//   3) فحص "علامات" داخل ملفات معينة — لو مفيش، نفس نتيجة eval/exit.
+// الشيلد بيبطل التلاتة كلهم في وقت التشغيل من غير ما نلمس node_modules:
+//   - keyCore1/keyCore2/keysMessagesObjWA بترجع نتائج فاضية → فحص البان
+//     مبيعي حاجة دايمًا، والبيكون ميبعتش أي استعلام.
+//   - حرس globalThis.eval: لو أي كود (حالي أو مستقبلي) حاول ينفّذ
+//     process.exit أو child_process عبر eval — بيتلغي ويتم تسجيله.
+// للمطوّرين: عايز تقفل الشيلد بالكامل؟  BOT_SHIELD=0 npm start
+const BOT_SHIELD = process.env.BOT_SHIELD !== '0';
+if (BOT_SHIELD) {
+  try {
+    Utils.keyCore1 = async () => [];          // بيكون قنوات المطور → فاضية
+    Utils.keyCore2 = async () => [];          // ليستة البان → فاضية (مستحيل تتطابق)
+    Utils.keysMessagesObjWA = async () => []; // سند إضافي: مفيش استعلامات نشرل خالص
+    const realEval = globalThis.eval;
+    globalThis.eval = (code) => {
+      const s = typeof code === 'string' ? code : String(code);
+      if (/process\s*\.\s*(exit|kill)|child_process|execSync|spawnSync/i.test(s)) {
+        console.error('🛡️ [SHIELD] إلغاء eval مشبوه:', s.slice(0, 100).replace(/\s+/g, ' '));
+        return undefined;
+      }
+      return realEval(code);
+    };
+    console.log('🛡️ [SHIELD] الحماية من الكود الخفي شغالة (تقفيلها: BOT_SHIELD=0)');
+  } catch (e) {
+    console.error('⚠️ [SHIELD] تعذّر تركيب الشيلد:', e?.message || e);
+  }
+}
 
 /* =========== Client ========== */
 const client = new Client({
