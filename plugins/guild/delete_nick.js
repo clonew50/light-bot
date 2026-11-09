@@ -1,5 +1,5 @@
 const handler = async (m, { conn, text }) => {
-    const data = global.db.group?.[m.chat]?.nicknames;
+    const data = global.db.groups?.[m.chat]?.nicknames;
     if (!data) return m.reply('❌ لا يوجد ألقاب');
     
     const mentioned = await m.lid2jid(m.mentionedJid?.[0]);

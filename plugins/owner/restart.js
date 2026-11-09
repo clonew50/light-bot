@@ -9,7 +9,10 @@ const test = async (m, { conn, bot }) => {
   });
   
   setTimeout(() => {
-    bot.restart();
+    // بنستخدم global.restartBot (نفس دالة البوت المركزية) للحفاظ على
+    // سلوك ريستارت داخل العملية — و bot.restart() كخطة احتياطية
+    if (typeof global.restartBot === 'function') global.restartBot('أمر رستارت من المالك');
+    else bot.restart();
   }, 1000); 
 };
 

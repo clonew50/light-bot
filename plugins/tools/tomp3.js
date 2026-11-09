@@ -1,9 +1,9 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import fs from "fs";
 import path from "path";
 import { promisify } from "util";
 
-const execAsync = promisify(exec);
+const execAsync = promisify(execFile);
 
 const toAudio = async (m, { conn }) => {
   try {
@@ -19,7 +19,7 @@ const toAudio = async (m, { conn }) => {
 
     fs.writeFileSync(video, await m.quoted.download());
 
-    await execAsync(`ffmpeg -i "${video}" -vn -acodec libmp3lame "${audio}" -y`);
+    await execAsync("ffmpeg", ["-i", video, "-vn", "-acodec", "libmp3lame", audio, "-y"]);
 
     await conn.sendMessage(m.chat, { audio: fs.readFileSync(audio), mimetype: "audio/mpeg" }, { quoted: m });
 

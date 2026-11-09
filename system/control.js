@@ -43,7 +43,9 @@ const group = async (ctx, event, eventType) => {
         txt = messages[eventType];
         if (!txt) return null;
         
-        if (global.db.groups[event.chat].noWelcome === true) return 9999;
+        // كان بيكتب إدخال في الداتابيز من أي حدث جروب — نقرأ آمن بس
+        const groupInfo = global.db.groups[event.chat];
+        if (groupInfo && groupInfo.noWelcome === true) return 9999;
 
         const img = ["remove", "add"].includes(eventType) 
             ? (event.userUrl || "https://files.catbox.moe/hm9iq4.jpg") 
@@ -63,29 +65,40 @@ const group = async (ctx, event, eventType) => {
 };
 
 const access = async (msg, checkType, time) => {
-    const conn = await msg.client();
-    
-    const messages = {
-        cooldown: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*📜📖 انتظر ${time || 'بعض كام ثانيه'} ثانية وكمل الأمر 📜📖*\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
-        owner: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*هذا الامر للمطور فقط*\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
-        group: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*هذا الامر يمكن استخدامه في المجموعات فقط*\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
-        admin: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*هذا الامر مخصص للمشرفين فقط*\n❐═━━━═╊⊰🩸⊱╉═━━━═❐`,
-        private: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*هذا الامر يعمل فقط في الخاص\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
-        botAdmin: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*لاستخدام هذا الامر يجب ان يكون البوت مشرفا*\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
-        noSub: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*هذا الامر مخصص للأستحدام في البوت الاساسي فقط\n*ادخل مجموعة البوت لأستخدام الامر:https://chat.whatsapp.com/D3TD0OUJcApJJ1NMTtDXzj*\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
-        disabled: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*البوت حاليا في الصيانة يرجى الانتظار حتى تتم صيانة البوت*\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
-        error: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*هذا الامر به اخطاء تواصل مع المطور ليتم اصلاح الامر*\n❐═━━━═╊⊰🩸⊱╉═━━━═❐`
-    };
-    
-    if (conn && messages[checkType]) {
-        // إرسال صورة عادية لرسائل الصلاحيات بدون كروت
-        await conn.sendMessage(msg.chat, {
-            image: { url: "https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/0b22c6a0-3522-4e3d-b1b8-120642cb25b2.jpg" },
-            caption: messages[checkType]
-        });
-        return false;  
+    // fail-closed: أي خطأ هنا بيرجع false = الأمر مش هينفذ
+    // (الكود القديم كان من غير try/catch — أي خطأ في msg.client() كان بيطلع unhandled)
+    try {
+        const conn = await msg.client();
+        
+        const messages = {
+            cooldown: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*📜📖 انتظر ${time || 'بعض كام ثانيه'} ثانية وكمل الأمر 📜📖*\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
+            owner: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*هذا الامر للمطور فقط*\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
+            group: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*هذا الامر يمكن استخدامه في المجموعات فقط*\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
+            admin: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*هذا الامر مخصص للمشرفين فقط*\n❐═━━━═╊⊰🩸⊱╉═━━━═❐`,
+            private: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*هذا الامر يعمل فقط في الخاص\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
+            botAdmin: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*لاستخدام هذا الامر يجب ان يكون البوت مشرفا*\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
+            noSub: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*هذا الامر مخصص للأستحدام في البوت الاساسي فقط\n*ادخل مجموعة البوت لأستخدام الامر:https://chat.whatsapp.com/D3TD0OUJcApJJ1NMTtDXzj*\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
+            disabled: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*البوت حاليا في الصيانة يرجى الانتظار حتى تتم صيانة البوت*\n*❐═━━━═╊⊰🩸⊱╉═━━━═❐*`,
+            error: `*❐═━━━═╊⊰🩸⊱╉═━━━═❐*\n*هذا الامر به اخطاء تواصل مع المطور ليتم اصلاح الامر*\n❐═━━━═╊⊰🩸⊱╉═━━━═❐`
+        };
+        
+        if (conn && messages[checkType]) {
+            // إرسال صورة عادية لرسائل الصلاحيات بدون كروت
+            try {
+                await conn.sendMessage(msg.chat, {
+                    image: { url: "https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/0b22c6a0-3522-4e3d-b1b8-120642cb25b2.jpg" },
+                    caption: messages[checkType]
+                });
+            } catch (e) {
+                console.error('⚠️ [ACCESS] فشل إرسال رسالة الصلاحية:', e?.message || e);
+            }
+            return false;  
+        }
+        return null;  
+    } catch (e) {
+        console.error('⚠️ [ACCESS] خطأ في فحص الصلاحية — منع تنفيذ الأمر:', e?.message || e);
+        return false; // منع التنفيذ بدل أي سلوك غامض
     }
-    return null;  
 };
 
 export { access, group };

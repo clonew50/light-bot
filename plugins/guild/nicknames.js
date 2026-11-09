@@ -1,5 +1,5 @@
 const handler = async (m, { conn }) => {
-    const data = global.db.group?.[m.chat]?.nicknames;
+    const data = global.db.groups?.[m.chat]?.nicknames;
     if (!data || Object.keys(data).length === 0) return m.reply('📭 لا يوجد ألقاب مسجلة');
     
     let list = '📋 — *الألقاب المسجلة:*\n\n';

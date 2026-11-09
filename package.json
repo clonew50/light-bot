@@ -5,7 +5,6 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "prestart": "npm config set strict-ssl false",
     "start": "node index.js"
   },
   "keywords": [

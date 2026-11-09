@@ -1,7 +1,7 @@
 const handler = async (m, { text }) => {
     if (!text) return m.reply('✏️ اكتب اللقب: .متوفر لقب');
     
-    const data = global.db.group?.[m.chat]?.nicknames;
+    const data = global.db.groups?.[m.chat]?.nicknames;
     if (!data) return m.reply('🫯 اللقب متوفر');
     
     const exists = Object.values(data).includes(text.trim());

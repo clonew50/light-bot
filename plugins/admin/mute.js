@@ -13,9 +13,7 @@ const handler = async (m, { conn, command, bot }) => {
             : m.quoted.sender;
     }
     
-    if (!target) return m.reply('╭───⟢❲ 𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻 ❳╰───⟢\n
-*🔇 ┇ كتم/فك_كتم @user*
-أو رد على رسالة المستخدم لكتمه.');
+    if (!target) return m.reply('╭───⟢❲ 𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻 ❳╰───⟢\n\n*🔇 ┇ كتم/فك_كتم @user*\nأو رد على رسالة المستخدم لكتمه.');
     if (typeof target !== 'string') return m.reply('*❌ حدث خطأ في تحديد المستخدم*');
     if (isOwner(target, bot)) return m.reply('*❌ لا يمكن كتم المطور*');
     
@@ -76,5 +74,6 @@ handler.command = ['كتم', 'فك_كتم'];
 handler.usage = ['كتم @user', 'فك_كتم @user'];
 handler.category = 'admin';
 handler.admin = true;
+handler.group = true;
 
 export default handler;

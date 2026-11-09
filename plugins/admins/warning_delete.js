@@ -1,4 +1,5 @@
 const handler = async (m, { conn }) => {
+  if (!m.isGroup) return m.reply('❌ الأمر ده داخل الجروبات بس');
   let targetLid = m.mentionedJid?.[0] || m.quoted?.sender;
   let targetJid = m.lid2jid(targetLid);
 
@@ -10,12 +11,12 @@ const handler = async (m, { conn }) => {
 
   if (!user) return m.reply("*❌ المستخدم غير موجود في المجموعة*");
 
-  db.groups[m.chat] ??= {};
-  db.groups[m.chat].warnings ??= {};
+  global.db.groups[m.chat] ??= {};
+  global.db.groups[m.chat].warnings ??= {};
 
   const id = user.phoneNumber;
   const jid = targetLid;
-  const currentWarn = db.groups[m.chat].warnings[id] || 0;
+  const currentWarn = global.db.groups[m.chat].warnings[id] || 0;
 
   if (currentWarn === 0) {
     return await conn.sendMessage(m.chat, {
@@ -27,9 +28,9 @@ const handler = async (m, { conn }) => {
   const newWarn = currentWarn - 1;
   
   if (newWarn === 0) {
-    delete db.groups[m.chat].warnings[id];
+    delete global.db.groups[m.chat].warnings[id];
   } else {
-    db.groups[m.chat].warnings[id] = newWarn;
+    global.db.groups[m.chat].warnings[id] = newWarn;
   }
 
   await conn.sendMessage(m.chat, {
@@ -45,6 +46,7 @@ handler.command = ["حذف_انذار", "حذف_الانذار"];
 handler.usage = ['حذف_انذار @مستخدم', 'حذف_الانذار @مستخدم'];
 handler.category = "admin";
 handler.admin = true;
+handler.group = true;
 handler.botAdmin = false;
 
 export default handler;

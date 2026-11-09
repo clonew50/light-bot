@@ -1,6 +1,7 @@
 import axios from "axios";
 import FormData from "form-data";
 import { Scrapy, Utils } from "meowsab";
+import { uploadToQuax } from "../../system/utils.js";
 
 const run = async (m, { conn, bot, command }) => {
     const q = m.quoted ? m.quoted : m;
@@ -8,10 +9,17 @@ const run = async (m, { conn, bot, command }) => {
 
     if (!mime) return m.reply('*رد على المقطع الصوتي لتغيير نبرة صوته 📣*');
     await m.react("⏳")
+
+    let seconds;
+    let link;
+    try {
     const media = await q.download();
-    const link = await uploadTmpfiles(media);
-    const { data: { seconds } } = await Utils.duration(link);
-    
+    link = await uploadToQuax(media);
+    ({ data: { seconds } } = await Utils.duration(link));
+    } catch (e) {
+      return m.reply("❌ تعذر تجهيز الصوت، جرب تاني بعد شوية");
+    }
+
     if (seconds > 20) return m.reply("مينفعش فوق 20 ثانيه");
     
     let num;
@@ -110,8 +118,13 @@ const run = async (m, { conn, bot, command }) => {
             return m.reply("❌ أمر غير معروف");
     }
     
+    let audioBuffer;
+    try {
     const result = await Scrapy.VoiceChange({ url: link, num: num.toString() });
-    let audioBuffer = Buffer.from(result.data.audio, 'base64');
+    audioBuffer = Buffer.from(result.data.audio, 'base64');
+    } catch (e) {
+      return m.reply("❌ تعذر تغيير نبرة الصوت، جرب تاني بعد شوية");
+    }
     await m.react("✅")
     await conn.sendMessage(m.chat, {
         audio: audioBuffer,
@@ -126,15 +139,3 @@ run.category = "voices";
 
 export default run;
 
-async function uploadTmpfiles(buffer) {
-    const form = new FormData();
-    form.append('file', buffer, { filename: "vu.mp3", contentType: "audio/mpeg" });
-
-    const res = await axios.post("https://c.termai.cc/api/upload?key=AIzaBj7z2z3xBjsk", form, {
-        headers: form.getHeaders(),
-        timeout: 30000
-    });
-
-    if (!res.data?.status || !res.data?.path) throw new Error("aaa: " + JSON.stringify(res.data));
-    return res.data.path;
-}

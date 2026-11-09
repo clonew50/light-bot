@@ -2,7 +2,7 @@ import { Client, Utils } from 'meowsab';
 import { group, access } from "./system/control.js";
 import UltraDB from "./system/UltraDB.js";
 import sub from './sub.js';
-import { readPanelConfig, startWebPanel } from './system/webPanel.js';
+import { readPanelConfig, startWebPanel, panelRuntime } from './system/webPanel.js';
 import { pullOnce } from './system/autoUpdate.mjs';
 
 /* =========== 🛡️ Shield — إلغاء الأسلحة الخفية في الإطار ========== */
@@ -41,7 +41,7 @@ if (BOT_SHIELD) {
 
 /* =========== Client ========== */
 const client = new Client({
-  phoneNumber: '201505362172', // Bot number
+  phoneNumber: process.env.BOT_PHONE || '201505362172', // Bot number (يمكن تغييره من BOT_PHONE)
   prefix: [".", "/", "!"],
   fromMe: false, 
   owners: [
@@ -97,11 +97,23 @@ if (panelCfg.phone) config.phoneNumber = panelCfg.phone;
 /* =========== Start ========== */
 client.start();
 
-setTimeout(async () => {
-if (client.commandSystem) { 
-sub(client)
+/* =========== Start SubBots ========== */
+// تشغيل البوتات الفرعية بعد ما نظام الأوامر يجهز — مع إعادة محاولة لو مش جاهز
+// (الكود القديم كان بيفحص مرة واحدة بعد ثانيتين بس، ولو مش جاهز كان بيضيع خالص)
+(async () => {
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    if (!client.commandSystem) continue;
+    try {
+      await sub(client);
+      return;
+    } catch (e) {
+      console.error('❌ [SUB] فشل تشغيل البوتات الفرعية:', e?.message || e);
+      return;
+    }
   }
-}, 2000);
+  console.error('❌ [SUB] نظام الأوامر مش جهز بعد 90 ثانية — البوتات الفرعية مش هتشتغل');
+})().catch(() => {});
 
 /* =========== Web Panel ========== */
 try {
@@ -154,6 +166,34 @@ function restartBot(reason = 'scheduled') {
 // نعرّضها عامًّا عشان تقدر تستخدمها في أي مكان لو حبيت
 global.restartBot = restartBot;
 
+/* =========== Watchdog — حرس الاتصال ========== */
+// كل دقيقة: لو السوكيت مش متصل + عدّى 5 دقايق من التشغيل + مفيش عملية ربط
+// شغالة دلوقتي (QR/كود) + المستخدم ماهوش قافل البوت عمدًا من اللوحة
+// → ريستارت داخل العملية، مع كولداون: مرة واحدة كل 5 دقايق كحد أقصى.
+// اقفله: WATCHDOG=0 npm start
+if (process.env.WATCHDOG !== '0') {
+  const BOOT_AT = Date.now();
+  const NEEDS_BOOT_MS = 5 * 60 * 1000;   // بعد التشغيل قبل ما يشتغل الحرس
+  const COOLDOWN_MS = 5 * 60 * 1000;     // المسافة الدنيا بين ريستارتين من الحرس
+  let lastWatchdogRestart = 0;
+  setInterval(() => {
+    try {
+      if (Date.now() - BOOT_AT < NEEDS_BOOT_MS) return;
+      if (typeof global.restartBot !== 'function') return;
+      const rt = panelRuntime();
+      if (rt.stopped) return;   // المستخدم وقف البوت عمدًا من اللوحة — مش هنعمل حاجة
+      if (rt.pairing) return;   // في وسط عملية ربط/اسكان — هنسيبها تكمل
+      if (client.isConnected?.()) return;
+      if (Date.now() - lastWatchdogRestart < COOLDOWN_MS) return;
+      lastWatchdogRestart = Date.now();
+      console.log('⏱️ [WATCHDOG] الاتصال مقطوع من فترة طويلة — ريستارت تلقائي');
+      global.restartBot('watchdog');
+    } catch (e) {
+      console.error('⚠️ [WATCHDOG] خطأ في فحص الحرس:', e?.message || e);
+    }
+  }, 60 * 1000);
+}
+
 /* =========== Auto Update from GitHub (سحب فقط) ========== */
 // البوت بينزّل تحديثات الريبو لوحده عند التشغيل. عشان تقفله: AUTO_UPDATE=0
 if (process.env.AUTO_UPDATE !== '0') {
@@ -183,8 +223,20 @@ if (RESTART_INTERVAL_MIN > 0) {
 
 
 /* =========== Catch Errors ========== */
+// بديل الكود القديم اللي كان بيبلع أي Exception بلا تسجيل، وكمان كان ممكن
+// يعمل كراش جوه المعالج نفسه لو e.message فاضي (لما الحاجة تترمي مش Error).
+// دلوقتي: بنسجل الخطأ كاملًا، ونكمل عادي للأخطاء العابرة المعروفة بس،
+// ونخرج للأخطاء المجهولة عشان مدير العمليات يرجّعنا بحالة نظيفة.
+const BENIGN_ERRORS =
+  /rate-overlimit|ECONNRESET|EPIPE|ETIMEDOUT|ENETUNREACH|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|Connection Closed|timed out|stream errored|conflict|restart required/i;
 process.on('uncaughtException', (e) => {
-    if (e.message.includes('rate-overlimit')) {}
+  const msg = e && e.message ? e.message : String(e);
+  console.error('💥 [UNCAUGHT] استثناء غير متوقع:', msg);
+  if (e && e.stack) console.error(e.stack);
+  if (BENIGN_ERRORS.test(msg)) return; // خطأ عابر من سوكت واتساب/الشبكة — نكمل الشغل
+  console.error('💀 [UNCAUGHT] خطأ مجهول — ريستارت داخل العملية (اللوحة تبقى شغالة)');
+  if (typeof global.restartBot === 'function') { global.restartBot('uncaught-exception'); return; }
+  process.exit(1);
 });
 
 process.on('unhandledRejection', (err) => {

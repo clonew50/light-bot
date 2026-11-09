@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 class UltraDB {
     #path;
     #saveTimer = null;
+    #exitHooked = false;
     
     constructor() {
         this.#path = path.join(__dirname, 'database.json');
@@ -17,6 +18,22 @@ class UltraDB {
         }
         
         this.data = this.#load();
+
+        // فلاش أخير عند خروج العملية: أي حفظ معلّق (ديبانس 50ms) يتم قبل ما نخرج
+        if (!this.#exitHooked) {
+            this.#exitHooked = true;
+            process.on('exit', () => {
+                if (!this.#saveTimer) return;
+                try {
+                    clearTimeout(this.#saveTimer);
+                    this.#saveTimer = null;
+                    const tmp = `${this.#path}.tmp-final`;
+                    writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+                    renameSync(tmp, this.#path);
+                } catch {}
+            });
+        }
+
         return this.#createProxy();
     }
     
@@ -32,7 +49,9 @@ class UltraDB {
                     return parsed;
                 }
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error('⚠️ [DB] ملف الداتابيز تالف — نبدأ من جديد:', e.message);
+        }
         return { groups: {}, users: {}, dev: false };
     }
     
@@ -40,8 +59,13 @@ class UltraDB {
         if (this.#saveTimer) clearTimeout(this.#saveTimer);
         this.#saveTimer = setTimeout(() => {
             try {
-                writeFileSync(this.#path, JSON.stringify(this.data, null, 2));
-            } catch (e) {}
+                // كتابة ذرية: tmp ثم rename — ما بيبوظش الملف لو العملية ماتت وسط الكتابة
+                const tmp = `${this.#path}.tmp-${process.pid}-${Date.now()}`;
+                writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+                renameSync(tmp, this.#path);
+            } catch (e) {
+                console.error('⚠️ [DB] فشل حفظ الداتابيز:', e.message);
+            }
             this.#saveTimer = null;
         }, 50);
     }
@@ -59,26 +83,28 @@ class UltraDB {
                     return new Proxy(target.groups, {
                         get(groupTarget, groupId) {
                             if (!self.#isValidId(groupId)) return undefined;
-                            if (!groupTarget[groupId]) {
-                                groupTarget[groupId] = {};
-                                self.#save();
-                            }
-                            return new Proxy(groupTarget[groupId], {
-                                set(obj, key, val) {
+                            // القراءة لوحدها ما تعملش إدخال جديد في الداتابيز (كان بيتلوث
+                            // الملف بأدخالات فاضية من أي قراءة عادية، ومعاها حفظ لغير داعي)
+                            const existing = groupTarget[groupId];
+                            const obj = existing || {};
+                            return new Proxy(obj, {
+                                set(o, key, val) {
+                                    // أول كتابة فعلية هي اللي بتثبّت الإدخال في الداتابيز
+                                    if (groupTarget[groupId] !== o) groupTarget[groupId] = o;
                                     if (val === false || val === 0 || val === undefined || val === null) {
-                                        delete obj[key];
+                                        delete o[key];
                                     } else {
-                                        obj[key] = val;
+                                        o[key] = val;
                                     }
-                                    if (Object.keys(obj).length === 0) {
+                                    if (Object.keys(o).length === 0 && groupTarget[groupId] === o) {
                                         delete groupTarget[groupId];
                                     }
                                     self.#save();
                                     return true;
                                 },
-                                deleteProperty(obj, key) {
-                                    delete obj[key];
-                                    if (Object.keys(obj).length === 0) {
+                                deleteProperty(o, key) {
+                                    delete o[key];
+                                    if (Object.keys(o).length === 0 && groupTarget[groupId] === o) {
                                         delete groupTarget[groupId];
                                     }
                                     self.#save();
@@ -108,26 +134,26 @@ class UltraDB {
                     return new Proxy(target.users, {
                         get(userTarget, userId) {
                             if (!self.#isValidId(userId)) return undefined;
-                            if (!userTarget[userId]) {
-                                userTarget[userId] = {};
-                                self.#save();
-                            }
-                            return new Proxy(userTarget[userId], {
-                                set(obj, key, val) {
+                            // نفس فكرة الجروبات: القراءة ما بتعملش إدخال — الكتابة بس
+                            const existing = userTarget[userId];
+                            const obj = existing || {};
+                            return new Proxy(obj, {
+                                set(o, key, val) {
+                                    if (userTarget[userId] !== o) userTarget[userId] = o;
                                     if (val === false || val === 0 || val === undefined || val === null) {
-                                        delete obj[key];
+                                        delete o[key];
                                     } else {
-                                        obj[key] = val;
+                                        o[key] = val;
                                     }
-                                    if (Object.keys(obj).length === 0) {
+                                    if (Object.keys(o).length === 0 && userTarget[userId] === o) {
                                         delete userTarget[userId];
                                     }
                                     self.#save();
                                     return true;
                                 },
-                                deleteProperty(obj, key) {
-                                    delete obj[key];
-                                    if (Object.keys(obj).length === 0) {
+                                deleteProperty(o, key) {
+                                    delete o[key];
+                                    if (Object.keys(o).length === 0 && userTarget[userId] === o) {
                                         delete userTarget[userId];
                                     }
                                     self.#save();

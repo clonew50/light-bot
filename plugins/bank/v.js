@@ -58,7 +58,7 @@ const handler = async (m, { conn, command, text }) => {
                     renderLargerThumbnail: true
                 }
             }
-        }, { quoted: reply_status });
+        }, { quoted: global.reply_status });
     }
     
     else if (command === "حذف_تسجيلي") {
@@ -103,7 +103,7 @@ const handler = async (m, { conn, command, text }) => {
                     renderLargerThumbnail: true
                 }
             }
-        }, { quoted: reply_status });
+        }, { quoted: global.reply_status });
     }
 };
 

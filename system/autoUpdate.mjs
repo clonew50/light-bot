@@ -36,12 +36,36 @@ const EXCLUDE_FILES = new Set(['agent-models.json', 'agent-sessions.json', '.npm
 const EXCLUDE_REL = new Set(['system/database.json', 'system/panel-config.json', 'system/one-config.json']);
 
 export function excluded(rel) {
+  if (typeof rel !== 'string' || !rel.length) return true;
+  if (rel.includes('\\')) return true;                       // مخاريط الفول للسلاش = مسار مشبوه
   const parts = rel.split('/');
+  if (parts.some((p) => p === '..' || p === '.')) return true; // path traversal
   if (parts.some((p) => EXCLUDE_DIRS.includes(p))) return true;
   if (EXCLUDE_FILES.has(parts[parts.length - 1])) return true;
   if (EXCLUDE_REL.has(rel)) return true;
   if (rel.endsWith('.zip') || rel.endsWith('.log')) return true;
   return false;
+}
+
+// مفيش أي مسار ينزل من الريبو مسموح يطلع برة مجلد المشروع (حماية path traversal)
+function safeJoin(rel) {
+  if (typeof rel !== 'string' || !rel.length) return null;
+  const full = path.resolve(ROOT, rel);
+  const relCheck = path.relative(ROOT, full);
+  if (!relCheck || relCheck.startsWith('..') || path.isAbsolute(relCheck)) return null;
+  return full;
+}
+
+// كتابة ذرية: بنتكب في ملف مؤقت بعدين rename — البوت المشغل عمري ما يشوف ملف نص مكتوب
+function atomicWrite(full, buf) {
+  const tmp = `${full}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    fs.writeFileSync(tmp, buf);
+    fs.renameSync(tmp, full);
+  } catch (e) {
+    try { fs.rmSync(tmp, { force: true }); } catch {}
+    throw e;
+  }
 }
 
 export function gitBlobSha(buf) {
@@ -51,7 +75,7 @@ export function gitBlobSha(buf) {
 function loadState() {
   try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch { return null; }
 }
-function saveState(s) { fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2)); }
+function saveState(s) { atomicWrite(STATE_FILE, Buffer.from(JSON.stringify(s, null, 2))); }
 
 // fetch مع إعادة محاولة عند أي مشكلة شبكة عابرة
 async function fetchRetry(url, opts = {}, tries = 5) {
@@ -108,8 +132,12 @@ export async function checkUpdate() {
   }
 }
 
+let pullLocked = false;
+
 /** تنزيل وتطبيق تحديثات الريبو على الملفات المحلية */
 export async function pullOnce({ log = console.log } = {}) {
+  if (pullLocked) return { error: 'تحديث بالفعل جارٍ تنفيذه — انتظر لحد ما يخلص' };
+  pullLocked = true;
   try {
     const { commitSha, treeSha, remote } = await fetchRemote();
     const { download, del } = diff(remote);
@@ -122,33 +150,57 @@ export async function pullOnce({ log = console.log } = {}) {
 
     log(`⬇️ فيه تحديث: ${download.length} ملف نزول، ${del.length} حذف`);
     const headers = { 'User-Agent': UA };
+
+    // المرحلة 1: تنزيل كل الملفات في الذاكرة الأول والتشييك على بصمة (sha) كل واحد
+    // لو أي فحص فشل بنلغي التحديث كله — مفيش نص تحديث موزع على الكود الشغال
+    const staged = new Map();
     let i = 0;
     for (const p of download) {
       const enc = p.split('/').map(encodeURIComponent).join('/');
       const res = await fetchRetry(`${RAW}/${commitSha}/${enc}`, { headers });
       if (!res.ok) throw new Error(`تنزيل ${p} فشل (${res.status})`);
       const buf = Buffer.from(await res.arrayBuffer());
-      const full = path.join(ROOT, p);
-      fs.mkdirSync(path.dirname(full), { recursive: true });
-      fs.writeFileSync(full, buf);
+      const expectedSha = remote[p];
+      if (expectedSha && gitBlobSha(buf) !== expectedSha) {
+        throw new Error(`فحص سلامة ${p} فشل (محتوى مش مطابق لشجرة الكوميت) — تم إلغاء التحديث بالكامل`);
+      }
+      staged.set(p, buf);
       process.stdout.write(`\r  ⬇️  ${++i}/${download.length}`);
     }
-    for (const p of del) fs.rmSync(path.join(ROOT, p), { force: true });
-    if (download.length) console.log('');
+    if (staged.size) console.log('');
+
+    // المرحلة 2: التطبيق — مسارات آمنة بس + كتابة ذرية (tmp ثم rename)
+    const appliedDown = [], delApplied = [];
+    for (const [p, buf] of staged) {
+      const full = safeJoin(p);
+      if (!full) { log(`⚠️ تجاهل مسار مشبوه خارج مجلد المشروع: ${p}`); continue; }
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      atomicWrite(full, buf);
+      appliedDown.push(p);
+    }
+    for (const p of del) {
+      const full = safeJoin(p);
+      if (!full) { log(`⚠️ تجاهل مسار حذف مشبوه: ${p}`); continue; }
+      try { fs.rmSync(full, { force: true }); delApplied.push(p); } catch {}
+    }
+    const applied = appliedDown.length + delApplied.length;
 
     saveState({ commit: commitSha, tree: treeSha, files: remote, at: new Date().toISOString() });
-    const needsRestart = [...download, ...del].some((p) => /\.(mjs|js|cjs)$/.test(p));
-    log(`✅ تم التحديث (${download.length + del.length} ملف) من كوميت ${commitSha.slice(0, 8)}`);
+    const needsRestart = [...appliedDown, ...delApplied].some((p) => /\.(mjs|js|cjs)$/.test(p));
+    log(`✅ تم التحديث (${applied} ملف) من كوميت ${commitSha.slice(0, 8)}`);
     return {
-      changes: download.length + del.length,
-      downloaded: download,
-      deleted: del,
+      changes: applied,
+      downloaded: appliedDown,
+      deleted: delApplied,
       commit: commitSha,
+      skipped: download.length + del.length - applied,
       needsRestart,
-      needsInstall: download.includes('package.json'),
+      needsInstall: appliedDown.includes('package.json'),
     };
   } catch (e) {
     return { error: e.message };
+  } finally {
+    pullLocked = false;
   }
 }
 

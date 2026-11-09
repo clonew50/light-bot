@@ -3,8 +3,13 @@ import { Scrapy } from "meowsab";
 let handler = async (m, { conn, text }) => {
   if (!text) return m.reply("مثال: .سبوتيفاي https://open.spotify.com/track/3XiolLAtcY6wi28QyZ9vDO?si=ScKGlkeMQ0GMAkhzuggeYQ");
   m.react("⏳")
-  
-  const { data } = await Scrapy.spotify(text);
+
+  let data;
+  try {
+    ({ data } = await Scrapy.spotify(text));
+  } catch (e) {
+    return m.reply("❌ تعذر جلب الأغنية، جرب تاني بعد شوية");
+  }
   
   if (!data) return m.reply("❌ : حصل مشكله في التحميل أتأكد من الرابط");
   

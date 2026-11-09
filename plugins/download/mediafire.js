@@ -6,23 +6,28 @@ const handler = async (m, { conn, text, command }) => {
   m.react('📥');
 
   try {
-    const apiUrl = `https://emam-api.web.id/home/sections/Download/api/api/mediafire?url=${encodeURIComponent(text)}`;
-    const res = await axios.get(apiUrl);
-    const data = res.data;
+    const keyMatch = String(text).match(/mediafire\.com\/file\/([a-zA-Z0-9]+)/i);
+    if (!keyMatch) throw '❌ رابط ميديا فاير غير صحيح';
 
-    if (!data.status) throw '❌ فشل في جلب المعلومات';
+    const quickKey = keyMatch[1];
+    const apiUrl = `https://www.mediafire.com/api/1.0/file/get_info.php?quick_key=${quickKey}&response_format=json`;
+    const res = await axios.get(apiUrl, { timeout: 20000 });
+    const info = res.data?.response?.file_info;
+    if (!info) throw '❌ فشل في جلب المعلومات';
 
-    const fileInfo = data.data;
+    const downloadUrl = info.links?.direct_download || info.links?.normal_download;
+    if (!downloadUrl) throw '❌ لم يتم العثور على رابط التحميل';
 
     await conn.sendMessage(m.chat, {
-      document: { url: fileInfo.downloadUrl },
-      mimetype: fileInfo.mimetype,
-      fileName: fileInfo.filename,
-      caption: `${fileInfo.filename} ~ (${fileInfo.type})`
+      document: { url: downloadUrl },
+      mimetype: info.mimetype || 'application/octet-stream',
+      fileName: info.filename || 'file',
+      caption: `${info.filename || 'file'} ~ (${info.filetype || 'file'})`
     }, { quoted: m });
 
   } catch (e) {
-    console.log(e.message);
+    console.log(e?.message || e);
+    m.reply('❌ فشل جلب ملف ميديا فاير');
   }
 };
 handler.usage = ["ميديافاير"]

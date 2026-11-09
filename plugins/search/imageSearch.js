@@ -84,7 +84,7 @@ function setSafeOff(m, off) {
     const db = global.db;
     if (!db) return;
     try {
-        const box = m.isGroup ? db.groups : db.users;
+        const box = m.isGroup ? global.db.groups : global.db.users;
         box[idOf(m)].nosafe = off ? true : false;
     } catch (e) {}
 }
@@ -92,7 +92,7 @@ function setSafeOff(m, off) {
 function getImgCount(m) {
     const db = global.db;
     if (!db) return MAX_IMAGES;
-    const box = m.isGroup ? db.groups : db.users;
+    const box = m.isGroup ? global.db.groups : global.db.users;
     const rec = box ? box[idOf(m)] : null;
     const n = rec ? Number(rec.imgcount) : NaN;
     return n >= 1 && n <= MAX_COUNT ? n : MAX_IMAGES;
@@ -102,7 +102,7 @@ function setImgCount(m, n) {
     const db = global.db;
     if (!db) return;
     try {
-        const box = m.isGroup ? db.groups : db.users;
+        const box = m.isGroup ? global.db.groups : global.db.users;
         box[idOf(m)].imgcount = n;
     } catch (e) {}
 }
@@ -111,7 +111,7 @@ function resetImgCount(m) {
     const db = global.db;
     if (!db) return;
     try {
-        const box = m.isGroup ? db.groups : db.users;
+        const box = m.isGroup ? global.db.groups : global.db.users;
         delete box[idOf(m)].imgcount;
     } catch (e) {}
 }
@@ -190,15 +190,6 @@ async function searchSeznam(q) {
     return [...String(data).matchAll(/https:\/\/d\d+-a\.sdn\.cz\/[^"'\\ ]+?\.(?:jpg|jpeg|png|webp)/g)].map((x) => x[0]);
 }
 
-async function searchUnsplash(q) {
-    const { data } = await axios.get(`${EMAM}/home/sections/Search/api/Unsplash/search`, {
-        params: { text: q },
-        headers: { 'User-Agent': UA },
-        timeout: 25000
-    });
-    return (data?.images || []).map((u) => (u ? (u.includes('?') ? `${u}&w=1080&q=70&fm=jpg` : u) : null));
-}
-
 async function searchOpenverse(q) {
     const { data } = await axios.get('https://api.openverse.org/v1/images/', {
         params: { q, page_size: 20 },
@@ -235,21 +226,6 @@ async function searchPixnio(q) {
         timeout: 25000
     });
     return [...String(data).matchAll(/https:\/\/pixnio\.com\/free-images\/[^"'\\ ]+?\.(?:jpg|jpeg|png|webp)/g)].map((x) => x[0]);
-}
-
-async function searchPicsart(q) {
-    const { data } = await axios.get(`${EMAM}/home/sections/Search/api/api/picsart/stickers`, {
-        params: { q },
-        headers: { 'User-Agent': UA },
-        timeout: 25000
-    });
-    const out = [];
-    for (const card of data?.response || []) {
-        for (const item of card?.data || []) {
-            if (item?.url) out.push(item.url);
-        }
-    }
-    return out;
 }
 
 async function searchWallhaven(q, safeOff) {
@@ -330,46 +306,23 @@ async function searchYandere(q) {
     return [];
 }
 
-async function searchPinterest(q) {
-    const { data } = await axios.get(`${EMAM}/home/sections/Search/api/api/pinterest/image`, {
-        params: { q },
-        headers: { 'User-Agent': UA },
-        timeout: 25000
-    });
-    const arr = Array.isArray(data) ? data : data?.data || [];
-    return arr.map((x) => x?.url);
-}
-
-async function searchGif(q) {
-    const { data } = await axios.get('https://engez.a7a.online/api/v1/tools/gif-search', {
-        params: { q },
-        headers: { 'User-Agent': UA },
-        timeout: 25000
-    });
-    return (data?.results || []).map((x) => x.url);
-}
-
 const RUNNERS = {
     bing: searchBing,
     yandex: searchYandex,
     naver: searchNaver,
     so360: search360,
     seznam: searchSeznam,
-    unsplash: searchUnsplash,
-    openverse: searchOpenverse,
+        openverse: searchOpenverse,
     wikimedia: searchWikimedia,
     flickr: searchFlickr,
     pixnio: searchPixnio,
-    picsart: searchPicsart,
-    wallhaven: searchWallhaven,
+        wallhaven: searchWallhaven,
     alphacoders: searchAlphacoders,
     wallpapercave: searchWallpapercave,
     artstation: searchArtstation,
     safebooru: searchSafebooru,
     yandere: searchYandere,
-    pinterest: searchPinterest,
-    gif: searchGif
-};
+        };
 
 async function searchSource(key, q, safeOff) {
     const runner = RUNNERS[key];

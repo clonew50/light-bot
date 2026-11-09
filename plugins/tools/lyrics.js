@@ -2,8 +2,13 @@ import { Scrapy } from "meowsab";
 
 let handler = async (m, { conn, text }) => {
   if (!text) return m.reply("مثال: .كلمات Shiloh again");
-  
-  const response = await Scrapy.lyrics(text);
+
+  let response;
+  try {
+    response = await Scrapy.lyrics(text);
+  } catch (e) {
+    return m.reply("❌ تعذر جلب الكلمات");
+  }
   
   if (!response.ok) return m.reply("❌ لم يتم العثور على كلمات الأغنية");
   

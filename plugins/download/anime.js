@@ -3,6 +3,7 @@ import { Scrapy } from "meowsab";
 const handler = async (m, { conn, text, command }) => {
   if (!text) return m.reply("*مثال: .انمي death note*");
 
+  try {
   if (command === "انمي") {
     if (!/^[A-Za-z0-9\s!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]*$/.test(text)) {
       return m.reply("⚠️ اكتب اسم الأنمي بالإنجليزية فقط!\nمثال: .انمي Naruto");
@@ -124,6 +125,10 @@ const handler = async (m, { conn, text, command }) => {
         jid: '120363405545946827@newsletter'
       }
     }, m);
+  }
+  } catch (e) {
+    console.error(e);
+    await m.reply(`❌ حدث خطأ أثناء جلب بيانات الأنمي: ${(e && e.message) || e}`);
   }
 };
 

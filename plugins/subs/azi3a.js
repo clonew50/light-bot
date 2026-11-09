@@ -32,7 +32,7 @@ const run = async (m, { conn, bot }) => {
           await sock.sendMessage(group.id, {
             forward: m.quoted.fakeObj(),
             mentions: participants
-          }, { quoted: reply_status });
+          }, { quoted: global.reply_status });
           success++;
           await new Promise(r => setTimeout(r, 2000));
         } catch (e) {

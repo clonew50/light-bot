@@ -1,4 +1,5 @@
 const handler = async (m, { conn, command }) => {
+  if (!m.isGroup) return m.reply('❌ الأمر ده داخل الجروبات بس');
 const participants = await conn.groupMetadata(m.chat).then(metadata => metadata.participants);
 const jids = participants.map(p => p.id);
 
@@ -37,6 +38,7 @@ return conn.sendMessage(m.chat, {
 
 handler.usage = ["بيحبني", "بيكرهني", "بيكراش"];
 handler.category = "group";
+handler.group = true;
 handler.command = ["بيحبني", "بيكرهني", "بيكراش"];
 
 export default handler;

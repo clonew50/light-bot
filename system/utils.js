@@ -35,15 +35,21 @@ async function gifToMp4(url) {
   const writer = fs.createWriteStream(gifPath);
   const res = await axios({ url, responseType: 'stream' });
   res.data.pipe(writer);
-  await new Promise(r => writer.on('finish', r));
+  // مشاكل قديمة: ملفات كانت بتفضل عالقة في tmp لو ffmpeg فشل، وأخطاء الستريم
+  // كانت ممكن تعمل uncaught أو pending promise للأبد
+  await new Promise((resolve, reject) => {
+    writer.on('finish', resolve);
+    writer.on('error', reject);
+    res.data.on('error', (e) => { writer.destroy(); reject(e); });
+  });
   
-  await execAsync(`ffmpeg -i "${gifPath}" -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -pix_fmt yuv420p "${mp4Path}"`);
-  
-  const buffer = fs.readFileSync(mp4Path);
-  fs.unlinkSync(gifPath);
-  fs.unlinkSync(mp4Path);
-  
-  return buffer;
+  try {
+    await execAsync(`ffmpeg -i "${gifPath}" -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -pix_fmt yuv420p "${mp4Path}"`);
+    return fs.readFileSync(mp4Path);
+  } finally {
+    // نضمن تنظيف الملفات المؤقتة في نجاح أو فشل
+    for (const f of [gifPath, mp4Path]) { try { fs.unlinkSync(f); } catch {} }
+  }
 }
 
 /* =========== CatBox =========== */
@@ -62,7 +68,10 @@ async function uploadToCatbox(buffer) {
 /* =========== AI =========== */
 
 async function AiChat(options = {}) {
-  const url = `https://text.pollinations.ai/${options.text}?model=${options.model || "openai"}`;
+  // الطريق القديم كان بيعمل URL يتكون من النص خام اللي فيه مسافات/أحرف خاصة
+  // فبيكسر الطلب أو بيعمل مسارات ملخبطة
+  const text = encodeURIComponent(String(options.text || ''));
+  const url = `https://text.pollinations.ai/${text}?model=${encodeURIComponent(options.model || "openai")}`;
   return (await fetch(url)).text();
 }
 

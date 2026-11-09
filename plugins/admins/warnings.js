@@ -1,5 +1,5 @@
 const handler = async (m, { conn }) => {
-  const g = db.groups?.[m.chat] || {};
+  const g = global.db.groups?.[m.chat] || {};
   const w = g.warnings || {};
   const id = m.sender;
   const count = w[id] || 0;

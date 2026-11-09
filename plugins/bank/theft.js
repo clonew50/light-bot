@@ -41,7 +41,7 @@ const handler = async (m, { conn }) => {
 ┃ *حـاول بـعـد سـاعـة* ⏳
 ╰─┈─┈─⟞📖⟝─┈─┈─╯`,
             contextInfo: { mentionedJid: [m.sender] }
-        }, { quoted: reply_status });
+        }, { quoted: global.reply_status });
         return;
     }
     
@@ -65,7 +65,7 @@ const handler = async (m, { conn }) => {
 ┃ *اسـتـمـر ولا تـتـوقـف* 🔥
 ╰─┈─┈─⟞🩸⟝─┈─┈─╯`,
             contextInfo: { mentionedJid: [m.sender, target] }
-        }, { quoted: reply_status });
+        }, { quoted: global.reply_status });
         return;
     }
     
@@ -87,7 +87,7 @@ const handler = async (m, { conn }) => {
 ┃ *اسـتـمـر ولا تـتـوقـف* 🔥
 ╰─┈─┈─⟞📖⟝─┈─┈─╯`,
         contextInfo: { mentionedJid: [m.sender, target] }
-    }, { quoted: reply_status });
+    }, { quoted: global.reply_status });
 };
 
 handler.usage = ["سرقة"];

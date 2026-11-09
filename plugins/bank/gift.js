@@ -76,7 +76,7 @@ const handler = async (m, { conn, command }) => {
                 serverMessageId: 0
             }
         }
-    }, { quoted: reply_status });
+    }, { quoted: global.reply_status });
 };
 
 handler.usage = ["يومي", "اسبوعي", "شهري"];

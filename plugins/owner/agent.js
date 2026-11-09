@@ -2022,7 +2022,7 @@ handler.before = async function (m, ctx) {
 handler.command = ['صانع', 'صنع-بلوقن', 'plugin-agent']
 handler.usage = ['صانع <وصف المطلوب>']
 handler.category = 'owner'
-handler.owner = false
+handler.owner = true
 handler.usePrefix = true
 
 export default handler

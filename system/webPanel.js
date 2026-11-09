@@ -6,7 +6,8 @@
  *   - تتحكم في البوت: إعادة تشغيل / إيقاف / تشغيل / تصفير الجلسة
  *   - تشوف الحالة والأخطاء وترسل رسالة
  *
- * الدخول بكلمة سر (الافتراضي: winner) — تقدر تغيّرها من WEB_PASSWORD أو من اللوحة.
+ * الدخول بكلمة سر: أول تشغيل بتتولّد كلمة سر عشوائية (16 حرف) وتتحفظ في
+ * panel-config.json وبتتطبع مرة واحدة في اللوج — أو حطها في WEB_PASSWORD.
  */
 
 import http from 'node:http';
@@ -19,23 +20,55 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_FILE = path.join(__dirname, 'panel-config.json');
 
 /* ============ إعدادات محفوظة ============ */
-const DEFAULT_CONFIG = {
-  password: process.env.WEB_PASSWORD || 'winner',
+const DEFAULT_PASSWORD = 'winner'; // كلمة السر القديمة — مش مسموح بيها ككلمة سر فعلية بعد دلوقتي
+const fDEFAULT_CONFIG = {
+  password: '',      // لو فاضية، بنولّد واحدة قوية تلقائيًا ونحفظها في الملف
   loginMode: 'code', // code = كود ربط | qr = رمز QR
   phone: '',         // رقم البوت (اختياري، يملأ config.phoneNumber)
   secret: ''         // مفتاح توقيع الكوكيز (يتم توليده)
 };
 
+// كلمة سر قوية 16 حرف: رجّعت (حروف/أرقام بلا محارف ملخبطة)
+function generatePassword(len = 16) {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(len);
+  let out = '';
+  for (let i = 0; i < len; i++) out += chars[bytes[i] % chars.length];
+  return out;
+}
+
+// flag بمستوى الموديول: كلمة السر اللي نزلتها بنفس الجلسة (عشان تطبع مرة واحدة)
+let passwordJustGenerated = false;
+
 export function readPanelConfig() {
-  let cfg = { ...DEFAULT_CONFIG };
+  let cfg = { ...fDEFAULT_CONFIG };
   try {
     if (fs.existsSync(CONFIG_FILE)) {
       cfg = { ...cfg, ...JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) };
     }
   } catch (e) {
     console.error('⚠️ [WEB] تعذّر قراءة panel-config.json:', e.message);
+    // ما نكتبش فوق الملف التالف مباشرة — نحفظه للأرشيف ونتابع بقيم جديدة
+    try {
+      const bad = `${CONFIG_FILE}.corrupt-${Date.now()}.json`;
+      fs.renameSync(CONFIG_FILE, bad);
+      console.warn(`🗃️ [WEB] الملف التالف اتنقل إلى ${path.basename(bad)}`);
+    } catch {}
   }
-  if (process.env.WEB_PASSWORD) cfg.password = process.env.WEB_PASSWORD;
+  // الأولوية لـ WEB_PASSWORD — وكلمة السر الافتراضية 'winner' مش مسموح بيها:
+  // بنتولّد واحدة عشوائية ونحفظها فورًا (بتطبع مرة واحدة في اللوج من startWebPanel)
+  if (process.env.WEB_PASSWORD) {
+    cfg.password = process.env.WEB_PASSWORD;
+  } else if (!cfg.password || cfg.password === DEFAULT_PASSWORD) {
+    cfg.password = generatePassword(16);
+    passwordJustGenerated = true;
+    // علامة غير منطبقة في JSON.stringify — مش بتنحفظ في الملف
+    Object.defineProperty(cfg, '__generated', { value: true, configurable: true });
+    savePanelConfig(cfg);
+  } else if (cfg.__generated) {
+    // نشيل العلامة من كائن مقروء من القرص (احتياطي) عشان ما تتنحفظش
+    delete cfg.__generated;
+  }
   if (!cfg.secret) {
     cfg.secret = crypto.randomBytes(32).toString('hex');
     savePanelConfig(cfg);
@@ -44,9 +77,12 @@ export function readPanelConfig() {
 }
 
 export function savePanelConfig(cfg) {
+  const tmp = `${CONFIG_FILE}.tmp-${process.pid}-${Date.now()}`;
   try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
+    fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+    fs.renameSync(tmp, CONFIG_FILE);
   } catch (e) {
+    try { fs.rmSync(tmp, { force: true }); } catch {}
     console.error('⚠️ [WEB] تعذّر حفظ panel-config.json:', e.message);
   }
 }
@@ -59,8 +95,16 @@ const state = {
   qrCacheFor: null,
   pairingCode: null,
   events: [],
-  lastConnected: null
+  lastConnected: null,
+  stopped: false // true لما المستخدم يوقف البوت عمدًا من اللوحة (بيستخدمه الـ watchdog)
 };
+
+/* حالة اللوحة للأجزاء الخارجية (مثلاً watchdog في index.js):
+   pairing  = مستخدم/كود ربط موجود دلوقتي (عملية ربط شغالة — ماتلمسوش)
+   stopped  = البوت متقفل عمدًا من اللوحة (ماتعملش restart له) */
+export function panelRuntime() {
+  return { pairing: !!(state.qr || state.pairingCode), stopped: !!state.stopped };
+}
 
 function pushEvent(msg) {
   const line = `[${new Date().toLocaleTimeString('ar-EG')}] ${msg}`;
@@ -131,6 +175,15 @@ function sessionPathOf(client) {
   return path.resolve(process.cwd(), client?.config?.sessionPath || './session');
 }
 
+// مسار الجلسة مسموح يحذف فقط لو مجلد فرعي داخل المشروع ومفيش فيه ملفات كود حساسة
+function isSafeSessionPath(sp) {
+  const root = path.resolve(process.cwd());
+  const resolved = path.resolve(sp || '');
+  if (resolved === root || !resolved.startsWith(root + path.sep)) return false;
+  const rel = path.relative(root, resolved);
+  return !/^(node_modules|\.git|system|plugins)(\/|$)/.test(rel);
+}
+
 function sessionRegistered(client) {
   try {
     const p = path.join(sessionPathOf(client), 'creds.json');
@@ -192,19 +245,48 @@ function parseCookies(req) {
 }
 
 const attempts = new Map(); // ip -> {count, until}
+const MAX_ATTEMPTS = 8;
+
+// تنظيف دوري بسيط عشان خريطة المحاولات ما تزيدش في الذاكرة للأبد
+function pruneAttempts() {
+  const now = Date.now();
+  for (const [k, v] of attempts) if (v.until <= now) attempts.delete(k);
+}
 function loginBlocked(ip) {
   const a = attempts.get(ip);
-  if (a && a.until > Date.now() && a.count >= 8) return Math.ceil((a.until - Date.now()) / 1000);
+  if (a && a.until > Date.now() && a.count >= MAX_ATTEMPTS) return Math.ceil((a.until - Date.now()) / 1000);
   return 0;
 }
 function registerFail(ip) {
+  if (attempts.size > 500) pruneAttempts();
   const a = attempts.get(ip) || { count: 0, until: 0 };
   a.count += 1;
   a.until = Date.now() + 5 * 60000;
-  if (a.count >= 8) a.count = 8;
+  if (a.count >= MAX_ATTEMPTS) a.count = MAX_ATTEMPTS;
   attempts.set(ip, a);
 }
 function resetFail(ip) { attempts.delete(ip); }
+
+/* ==== حد إرسال الرسائل من اللوحة (حماية من استخدام /api/action/send كسبام) ==== */
+const SEND_WINDOW_MS = 60_000;
+const SEND_MAX_PER_WINDOW = 5;
+const sendCounts = new Map(); // ip -> {n, t}
+function pruneSendCounts() {
+  const now = Date.now();
+  for (const [k, v] of sendCounts) if (now - v.t > SEND_WINDOW_MS) sendCounts.delete(k);
+}
+function sendBlocked(ip) {
+  if (sendCounts.size > 500) pruneSendCounts();
+  const a = sendCounts.get(ip);
+  if (!a) return false;
+  if (Date.now() - a.t > SEND_WINDOW_MS) { sendCounts.delete(ip); return false; }
+  return a.n >= SEND_MAX_PER_WINDOW;
+}
+function bumpSendCount(ip) {
+  const a = sendCounts.get(ip);
+  if (!a || Date.now() - a.t > SEND_WINDOW_MS) { sendCounts.set(ip, { n: 1, t: Date.now() }); return; }
+  a.n += 1;
+}
 
 /* ============ قراءة الجسم ============ */
 function readBody(req, limit = 1024 * 1024) {
@@ -264,7 +346,7 @@ border-radius:10px;font-size:13px;text-align:center}
   <input type="password" name="password" placeholder="كلمة السر" autofocus required>
   <button type="submit">دخول</button>
   ${err ? `<div class="err">${err}</div>` : ''}
-  <div class="note">الافتراضي: winner (يمكن تغييرها بـ WEB_PASSWORD)</div>
+  <div class="note">كلمة السر محفوظة في panel-config.json (أول تشغيل بتتطبع مرة واحدة في اللوج)</div>
 </form>
 </body></html>`;
 
@@ -504,6 +586,7 @@ async function handle(req, res, client) {
 
         case 'restart':
           pushEvent('طلب إعادة تشغيل من اللوحة');
+          state.stopped = false;
           sendJson(res, 200, { ok: true, message: 'جاري إعادة التشغيل...' });
           setTimeout(() => {
             if (typeof global.restartBot === 'function') global.restartBot('لوحة التحكم');
@@ -514,30 +597,43 @@ async function handle(req, res, client) {
         case 'stop':
           pushEvent('طلب إيقاف من اللوحة');
           await client.stop?.();
+          state.stopped = true; // الـ watchdog ميعملش restart للبوت الموقوف عمدًا
           return sendJson(res, 200, { ok: true, message: 'تم إيقاف البوت' });
 
         case 'start':
           pushEvent('طلب تشغيل من اللوحة');
+          state.stopped = false;
           client.start?.().catch(() => {});
           return sendJson(res, 200, { ok: true, message: 'جاري تشغيل البوت...' });
 
         case 'reset-session': {
           pushEvent('طلب تصفير الجلسة من اللوحة');
           const sp = sessionPathOf(client);
+          if (!isSafeSessionPath(sp)) {
+            return sendJson(res, 400, { ok: false, message: 'مسار الجلسة غير آمن — تم إلغاء التصغير' });
+          }
           sendJson(res, 200, { ok: true, message: 'تم تصفير الجلسة، جاري إعادة التشغيل...' });
           setTimeout(async () => {
             try { await client.stop?.(); } catch {}
             try { fs.rmSync(sp, { recursive: true, force: true }); } catch (e) { pushEvent('تعذّر حذف الجلسة: ' + e.message); }
+            state.stopped = false;
             if (typeof global.restartBot === 'function') global.restartBot('تصفير الجلسة');
           }, 600);
           return;
         }
 
         case 'send': {
+          // تحقق صارم: الرقم أرقام بس بطول منطقي، والنص محدود، ومفيش فيض سبام
+          if (!client.sock || !client.isConnected?.()) {
+            return sendJson(res, 400, { ok: false, message: 'البوت غير متصل' });
+          }
           const to = String(json?.to || '').replace(/[^0-9]/g, '');
           const text = String(json?.text || '');
-          if (!to || !text) return sendJson(res, 400, { ok: false, message: 'رقم أو نص ناقص' });
-          if (!client.sock) return sendJson(res, 400, { ok: false, message: 'البوت غير متصل' });
+          if (!/^\d{7,15}$/.test(to)) return sendJson(res, 400, { ok: false, message: 'رقم واتساب غير صالح' });
+          if (!text || !text.trim()) return sendJson(res, 400, { ok: false, message: 'رقم أو نص ناقص' });
+          if (text.length > 4096) return sendJson(res, 400, { ok: false, message: 'النص أطول من الحد المسموح (4096)' });
+          if (sendBlocked(ip)) return sendJson(res, 429, { ok: false, message: 'رسائل كتير — انتظر دقيقة' });
+          bumpSendCount(ip);
           await client.sock.sendMessage(`${to}@s.whatsapp.net`, { text });
           return sendJson(res, 200, { ok: true, message: 'تم إرسال الرسالة' });
         }
@@ -593,7 +689,16 @@ export function startWebPanel(client, options = {}) {
 
   server.listen(port, host, () => {
     console.log(`\n🌐 [WEB] لوحة التحكم شغالة على: http://${host}:${port}`);
-    console.log(`   كلمة السر: ${panelCfg.password === 'winner' ? 'winner (افتراضية)' : '********'}`);
+    if (passwordJustGenerated) {
+      // بنطبع كلمة السر المولّدة مرة واحدة هنا — وهي محفوظة كذلك في panel-config.json
+      console.log(`   🔑 كلمة السر اتولّدت تلقائيًا واتحفظت في panel-config.json:`);
+      console.log(`      ${panelCfg.password}`);
+      console.log(`   (غيّرها من WEB_PASSWORD أو من الملف نفسه)`);
+    } else if (process.env.WEB_PASSWORD) {
+      console.log(`   كلمة السر: من متغير البيئة WEB_PASSWORD`);
+    } else {
+      console.log(`   كلمة السر: محفوظة في panel-config.json`);
+    }
     console.log(`   طريقة الربط الحالية: ${panelCfg.loginMode}\n`);
     pushEvent('تم تشغيل لوحة التحكم على المنفذ ' + port);
   });

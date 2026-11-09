@@ -1,4 +1,5 @@
 const handler = async (m, { conn }) => {
+  if (!m.isGroup) return m.reply('❌ الأمر ده داخل الجروبات بس');
   let targetLid = m.mentionedJid?.[0] || m.quoted?.sender;
   let targetJid = m.lid2jid(targetLid);
 
@@ -10,14 +11,14 @@ const handler = async (m, { conn }) => {
 
   if (!user) return m.reply("*❌ المستخدم غير موجود في المجموعة*");
 
-  db.groups[m.chat] ??= {};
-  db.groups[m.chat].warnings ??= {};
+  global.db.groups[m.chat] ??= {};
+  global.db.groups[m.chat].warnings ??= {};
 
   const id = user.phoneNumber;
   const jid = targetLid;
 
-  const warnCount = db.groups[m.chat].warnings[id] =
-    (db.groups[m.chat].warnings[id] || 0) + 1;
+  const warnCount = global.db.groups[m.chat].warnings[id] =
+    (global.db.groups[m.chat].warnings[id] || 0) + 1;
 
   await conn.sendMessage(m.chat, {
     text: `⚠️ تم إعطاء إنذار
@@ -53,6 +54,7 @@ handler.command = ["انذار", "تحذير", "warn"];
 handler.usage = ['انذار'];
 handler.category = "admin";
 handler.admin = true;
+handler.group = true;
 handler.botAdmin = false 
 
 export default handler;

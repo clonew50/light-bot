@@ -1,6 +1,6 @@
 const handler = async (m, { conn, bot }) => {
   let targetLid = m.mentionedJid?.[0] || m.quoted?.sender;
-  let targetJid = m.lid2jid(m.mentionedJid?.[0] || m.quoted?.sender)
+  let targetJid = await m.lid2jid(m.mentionedJid?.[0] || m.quoted?.sender);
    if (!targetJid || !targetLid) {
     return m.reply('⚠️ *يرجى منشن الشخص أو الرد على رسالته* ⚠️');
   }

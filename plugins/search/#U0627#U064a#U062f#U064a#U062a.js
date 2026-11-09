@@ -1008,7 +1008,8 @@ let handler = async (
     }
 ) => {
 
-    const pfx = prefix || usedPrefix || '.';
+    // الواجهة (engez.a7a.online) ميتة — أمر معطّل مؤقتًا
+    return m.reply('❌ أمر الإيديت معطّل مؤقتًا (الخدمة externa غير متاحة).');
 
     const input =
         args.join(' ')
@@ -1107,6 +1108,9 @@ handler.before = async (
         conn
     }
 ) => {
+
+    // معطّل مؤقتًا (الخدمة externa غير متاحة)
+    return false;
 
     cleanEditMenus();
 

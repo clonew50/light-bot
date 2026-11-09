@@ -35,10 +35,10 @@ async function test(m, { conn, bot, text }) {
       name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
       jid: '120363405545946827@newsletter'
     },
-    }, reply_status);
+    }, global.reply_status);
     
   } catch (error) {
-    console.error(error.messsage);
+    console.error(error.message);
     m.react("❌")
   }
 }

@@ -1,4 +1,5 @@
 const handler = async (m, { conn, args }) => {
+  if (!m.isGroup) return m.reply('❌ الأمر ده داخل الجروبات بس');
 const res = await (await import("meowsab")).Scrapy.Matching();
 const { data } = JSON.parse(res);
 
@@ -40,6 +41,7 @@ return await conn.sendButtonNormal(m.chat, {
 };
 handler.usage =  ["تطقيم"];
 handler.category = "group";
+handler.group = true;
 handler.command = ["ماتشينج", "تطقيم"];
 
 export default handler;

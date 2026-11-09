@@ -1,4 +1,5 @@
 const handler = async (m, { conn }) => {
+  if (!m.isGroup) return m.reply('❌ الأمر ده داخل الجروبات بس');
   const req = await conn.groupRequestParticipantsList(m.chat);
   if (!req?.length) return m.reply("*📩لا يوجد طلبات انضمام*");
 
@@ -16,6 +17,7 @@ handler.command = ["الطلبات", "طلبات_الانضمام"];
 handler.usage = ['الطلبات'];
 handler.category = "admin";
 handler.admin = true;
+handler.group = true;
 handler.botAdmin = true
 
 export default handler;

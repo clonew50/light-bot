@@ -15,7 +15,12 @@ const handler = async (m, { conn, text, bot }) => {
 ${text}
 `;
 
-  const { data: res } = await Scrapy.ZeroAI(text, prompt);
+  let res;
+  try {
+    ({ data: res } = await Scrapy.ZeroAI(text, prompt));
+  } catch (e) {
+    return m.reply(`❌ حدث خطأ: ${(e && e.message) || e}`);
+  }
 
   await conn.sendMessage(m.chat, {
     text: res.answer,

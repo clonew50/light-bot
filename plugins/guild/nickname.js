@@ -9,17 +9,17 @@ const handler = async (m, { conn, text }) => {
     
     if (!nickname) return m.reply('✏️ اكتب اللقب بعد المنشن: .لقب @user لقبك');
     
-    if (!global.db.group) global.db.group = {};
-    if (!global.db.group[m.chat]) global.db.group[m.chat] = {};
-    if (!global.db.group[m.chat].nicknames) global.db.group[m.chat].nicknames = {};
+    if (!global.db.groups) global.db.groups = {};
+    if (!global.db.groups[m.chat]) global.db.groups[m.chat] = {};
+    if (!global.db.groups[m.chat].nicknames) global.db.groups[m.chat].nicknames = {};
     
-    const existingNick = Object.entries(global.db.group[m.chat].nicknames).find(([jid, nick]) => 
+    const existingNick = Object.entries(global.db.groups[m.chat].nicknames).find(([jid, nick]) => 
         nick === nickname && jid !== mentioned
     );
     
     if (existingNick) return m.reply(`🪾 اللقب "${nickname}" محجوز`);
     
-    global.db.group[m.chat].nicknames[mentioned] = nickname;
+    global.db.groups[m.chat].nicknames[mentioned] = nickname;
     await conn.sendMessage(m.chat, { text: `✅ تم تسجيل "${nickname}" لـ @${mentioned.split('@')[0]}`, mentions: [mentioned] });
 };
 
