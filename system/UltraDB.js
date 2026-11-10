@@ -71,7 +71,17 @@ class UltraDB {
     }
     
     #isValidId(id) {
-        return id && !id.includes('@newsletter') && !id.includes('@lid') && id.includes('@');
+        // واتساب بقى يبعت معرّفات @lid بدل رقم الموبايل في كذا حالة (خصوصاً
+        // للمالكين ولما الحساب يكون مفعّل بالخصوصية الجديدة) — فالمعرّفValid
+        // لازم يقبل @lid و@s.whatsapp.net و@g.us، ويرفض بس الحاجات اللي
+        // مبقاش معرّفات أصلاً: undefined / null / [object Object] / بدون @.
+        if (typeof id !== 'string') return false;
+        const s = id.trim();
+        if (!s || s.length > 64) return false;
+        if (s === 'undefined' || s === 'null' || s === 'NaN' || s === '[object Object]') return false;
+        if (s.includes('@newsletter')) return false; // معرّفات القنوات — مش مستخدمين
+        if (!s.includes('@')) return false;
+        return true;
     }
     
     #createProxy() {
@@ -113,8 +123,11 @@ class UltraDB {
                             });
                         },
                         set(groupTarget, groupId, val) {
-                            if (!self.#isValidId(groupId)) return false;
-                            if (val && typeof val === 'object' && Object.keys(val).length > 0) {
+                            if (!self.#isValidId(groupId)) {
+                                throw new Error(`❌ [DB] معرّف مجموعة غير صالح: "${String(groupId)}"`);
+                            }
+                            if (val && typeof val === 'object') {
+                                // كائن فاضي كمان = إنشاء سجل (السابق كان بيمسح السجل!)
                                 groupTarget[groupId] = val;
                             } else {
                                 delete groupTarget[groupId];
@@ -162,8 +175,11 @@ class UltraDB {
                             });
                         },
                         set(userTarget, userId, val) {
-                            if (!self.#isValidId(userId)) return false;
-                            if (val && typeof val === 'object' && Object.keys(val).length > 0) {
+                            if (!self.#isValidId(userId)) {
+                                throw new Error(`❌ [DB] معرّف مستخدم غير صالح: "${String(userId)}"`);
+                            }
+                            if (val && typeof val === 'object') {
+                                // كائن فاضي كمان = إنشاء سجل (السابق كان بيمسح السجل!)
                                 userTarget[userId] = val;
                             } else {
                                 delete userTarget[userId];
