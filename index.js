@@ -3,6 +3,7 @@ import { group, access } from "./system/control.js";
 import UltraDB from "./system/UltraDB.js";
 import sub from './sub.js';
 import { readPanelConfig, startWebPanel, panelRuntime } from './system/webPanel.js';
+import { attachHealer } from './system/healer.js';
 import { pullOnce } from './system/autoUpdate.mjs';
 
 /* =========== 🛡️ Shield — إلغاء الأسلحة الخفية في الإطار ========== */
@@ -98,43 +99,21 @@ if (panelCfg.phone) config.phoneNumber = panelCfg.phone;
 client.start();
 
 /* =========== Healer — علاج Bad session تلقائيًا ========== */
-// المشكلة المعروفة في إطار meowsab: لما الاتصال يتقفل بسبب badSession
-// (الجلسة بقت فاسدة عند سيرفر واتساب — دي اللي بتحصل بعد فترة من التشغيل)
-// الإطار بيكتفي بكتابة " Bad session" في اللوج ويسيب البوت ميت
-// (isRunning=false) من غير أي محاولة رجوع — وبفضل ميت لحد ما تريح ريستارت يدوي.
-// هنا بنتكدس على connection.update بنفسنا ونصلّحه في ثواني: بنعمل نفس
-// الريستارت اللي بيحصل لما تعمله من اللوحة يدويًا، بس أوتوماتيك.
-// ملاحظة: 401 (loggedOut) و 440 (connectionReplaced) معناها جلسة تانية
-// سحبت الحساب — دول مش بيتصلحوا بريستارت فمينفعش نلمسهم.
+// البروفوكول موجود في system/healer.js — شرحه الكامل there.
+// ملخص: لما الاتصال يتقفل بسبب badSession (الجلسة فاسدة عند سيرفر واتساب —
+// بتحصل بعد فترة من التشغيل) الإطار بيسيب البوت ميت من غير ما يرجع، فبنعمل
+// نفس ريستارت اللوحة أوتوماتيك. 401/440 (حساب مقفول/جلسة تانية) مش بنلمسهم.
 // اقفله: HEALER=0 npm start
 if (process.env.HEALER !== '0') {
-  const healer = { attached: null, quiet: 0 };
-  const BAD_CLOSE = /bad.?session|session.?error|bad.?mac/i;
-  setInterval(() => {
-    const sock = client?.sock;
-    if (!sock || !sock.ev || sock === healer.attached) return;
-    healer.attached = sock;
-    try {
-      sock.ev.on('connection.update', (u) => {
-        const { connection, lastDisconnect } = u || {};
-        if (connection === 'open') { global.__lastConnOpen = Date.now(); return; }
-        if (connection !== 'close') return;
-        const err = lastDisconnect?.error;
-        const code = err?.output?.statusCode;
-        const msg = String(err?.message || err || '');
-        // 500 = DisconnectReason.badSession في Baileys
-        const healable = code === 500 || BAD_CLOSE.test(msg);
-        if (!healable || Date.now() < healer.quiet) return;
+  attachHealer(client, {
+    restart: (reason) => global.restartBot?.(reason),
+    shouldSkip: () => {
+      try {
         const rt = panelRuntime();
-        if (rt.stopped || rt.pairing) return;   // إيقاف يدوي أو عملية ربط — مش عيب في الجلسة
-        healer.quiet = Date.now() + 30 * 1000; // مش أكتر من محاولة كل 30 ثانية
-        console.log('🩹 [HEALER] الاتصال قفل بسبب badSession — ريستارت تلقائي لإصلاح الجلسة');
-        setTimeout(() => global.restartBot?.('bad-session auto-heal'), 2000);
-      });
-    } catch (e) {
-      console.error('⚠️ [HEALER] تعذّر ربط مستمع الاتصال:', e?.message || e);
+        return !!(rt.stopped || rt.pairing);
+      } catch { return false; }
     }
-  }, 800);
+  });
 }
 
 /* =========== Start SubBots ========== */
