@@ -97,6 +97,46 @@ if (panelCfg.phone) config.phoneNumber = panelCfg.phone;
 /* =========== Start ========== */
 client.start();
 
+/* =========== Healer — علاج Bad session تلقائيًا ========== */
+// المشكلة المعروفة في إطار meowsab: لما الاتصال يتقفل بسبب badSession
+// (الجلسة بقت فاسدة عند سيرفر واتساب — دي اللي بتحصل بعد فترة من التشغيل)
+// الإطار بيكتفي بكتابة " Bad session" في اللوج ويسيب البوت ميت
+// (isRunning=false) من غير أي محاولة رجوع — وبفضل ميت لحد ما تريح ريستارت يدوي.
+// هنا بنتكدس على connection.update بنفسنا ونصلّحه في ثواني: بنعمل نفس
+// الريستارت اللي بيحصل لما تعمله من اللوحة يدويًا، بس أوتوماتيك.
+// ملاحظة: 401 (loggedOut) و 440 (connectionReplaced) معناها جلسة تانية
+// سحبت الحساب — دول مش بيتصلحوا بريستارت فمينفعش نلمسهم.
+// اقفله: HEALER=0 npm start
+if (process.env.HEALER !== '0') {
+  const healer = { attached: null, quiet: 0 };
+  const BAD_CLOSE = /bad.?session|session.?error|bad.?mac/i;
+  setInterval(() => {
+    const sock = client?.sock;
+    if (!sock || !sock.ev || sock === healer.attached) return;
+    healer.attached = sock;
+    try {
+      sock.ev.on('connection.update', (u) => {
+        const { connection, lastDisconnect } = u || {};
+        if (connection === 'open') { global.__lastConnOpen = Date.now(); return; }
+        if (connection !== 'close') return;
+        const err = lastDisconnect?.error;
+        const code = err?.output?.statusCode;
+        const msg = String(err?.message || err || '');
+        // 500 = DisconnectReason.badSession في Baileys
+        const healable = code === 500 || BAD_CLOSE.test(msg);
+        if (!healable || Date.now() < healer.quiet) return;
+        const rt = panelRuntime();
+        if (rt.stopped || rt.pairing) return;   // إيقاف يدوي أو عملية ربط — مش عيب في الجلسة
+        healer.quiet = Date.now() + 30 * 1000; // مش أكتر من محاولة كل 30 ثانية
+        console.log('🩹 [HEALER] الاتصال قفل بسبب badSession — ريستارت تلقائي لإصلاح الجلسة');
+        setTimeout(() => global.restartBot?.('bad-session auto-heal'), 2000);
+      });
+    } catch (e) {
+      console.error('⚠️ [HEALER] تعذّر ربط مستمع الاتصال:', e?.message || e);
+    }
+  }, 800);
+}
+
 /* =========== Start SubBots ========== */
 // تشغيل البوتات الفرعية بعد ما نظام الأوامر يجهز — مع إعادة محاولة لو مش جاهز
 // (الكود القديم كان بيفحص مرة واحدة بعد ثانيتين بس، ولو مش جاهز كان بيضيع خالص)
@@ -176,6 +216,10 @@ if (process.env.WATCHDOG !== '0') {
   const NEEDS_BOOT_MS = 5 * 60 * 1000;   // بعد التشغيل قبل ما يشتغل الحرس
   const COOLDOWN_MS = 5 * 60 * 1000;     // المسافة الدنيا بين ريستارتين من الحرس
   let lastWatchdogRestart = 0;
+  let esc = 0;                           // محاولات ريستارت ما فيش منها الاتصال رجع
+  // نتابع آخر مرة شفنا اتصال ناجح (لو HEALER مقفول عشان ما نتصعّدش غلط)
+  let lastOpenSeen = client.isConnected?.() ? Date.now() : 0;
+  setInterval(() => { if (client.isConnected?.()) lastOpenSeen = Date.now(); }, 10 * 1000);
   setInterval(() => {
     try {
       if (Date.now() - BOOT_AT < NEEDS_BOOT_MS) return;
@@ -185,13 +229,38 @@ if (process.env.WATCHDOG !== '0') {
       if (rt.pairing) return;   // في وسط عملية ربط/اسكان — هنسيبها تكمل
       if (client.isConnected?.()) return;
       if (Date.now() - lastWatchdogRestart < COOLDOWN_MS) return;
+      // لو الريستارت اللي قبل كده مهرّجش الاتصال (مفيش open من ساعتها) — نصعّد.
+      // بعد محاولتين فاشلت: نخرج من العملية خالص عشان مدير العمليات في لوحة
+      // الاستضافة يرجّعنا بحالة نضيفة (جلسة فاسدة مش دايمًا بتتصلح داخل العملية).
+      if (lastWatchdogRestart && lastOpenSeen < lastWatchdogRestart) esc++; else esc = 0;
       lastWatchdogRestart = Date.now();
+      if (esc >= 2) {
+        console.error('💀 [WATCHDOG] الريستارت الداخلي مهرّجش الاتصال بعد محاولات — خروج كامل عشان لوحة الاستضافة ترجّعنا نضيفين');
+        process.exit(0);
+      }
       console.log('⏱️ [WATCHDOG] الاتصال مقطوع من فترة طويلة — ريستارت تلقائي');
       global.restartBot('watchdog');
     } catch (e) {
       console.error('⚠️ [WATCHDOG] خطأ في فحص الحرس:', e?.message || e);
     }
   }, 60 * 1000);
+}
+
+/* =========== Memory Guard — حرس الذاكرة ========== */
+// لو الذاكرة علت فوق الحد نعمل ريستارت داخل العملية قبل ما لوحة الاستضافة
+// تقتل العملية بـ OOM (وده موت مفاجئ للبوت واللوحة مع بعض).
+// الحد بالـ MB:  MEMORY_RESTART_MB=950 (افتراضي)  |  0 = مقفول
+const MEMORY_RESTART_MB = Number(process.env.MEMORY_RESTART_MB ?? '950') || 0;
+if (MEMORY_RESTART_MB > 0) {
+  setInterval(() => {
+    try {
+      const rss = process.memoryUsage().rss / 1024 / 1024;
+      if (rss > MEMORY_RESTART_MB) {
+        console.log(`🧠 [MEMORY] الذاكرة وصلت ${rss.toFixed(0)}MB (الحد ${MEMORY_RESTART_MB}MB) — ريستارت وقائي`);
+        global.restartBot?.('memory high');
+      }
+    } catch {}
+  }, 5 * 60 * 1000);
 }
 
 /* =========== Auto Update from GitHub (سحب فقط) ========== */
@@ -239,8 +308,13 @@ process.on('uncaughtException', (e) => {
   process.exit(1);
 });
 
+// بنسجل أول 30 + كل 100 عشان اللوج ميفيضش لو في بيبوج رفضات متكرر
+let rejLogged = 0;
 process.on('unhandledRejection', (err) => {
-    console.error('Unhandled Rejection:', err)
+  rejLogged++;
+  if (rejLogged <= 30 || rejLogged % 100 === 1) {
+    console.error('⚠️ [UNHANDLED REJECTION]', err?.message || String(err));
+  }
 });
 
 
