@@ -1,8 +1,11 @@
 // ─── plugins/download/مانهوا.js ───
 // 𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻 - Manhwa Plugin 📚
 // Data source: MangaDex public API ( https://api.mangadex.org )
+// ملاحظة (todo 24): MangaDex صار يرد بصفحة تحقق (Browser verification) بدل JSON
+//                    في بعض الحالات → نكتشف الصفحة ونرد برسالة "المصدر محمي حالياً"
+//                    بدل ما يرمي خطأ parse من المعالج.
+//                    كل الطلبات لها مهلة + حد أقصى للحجم + try/catch + رسائل عربية واضحة.
 
-import axios from 'axios';
 import JSZip from 'jszip';
 import { Buffer } from 'buffer';
 
@@ -14,7 +17,126 @@ const UA = 'LIGHT-BOT-MangaDex/1.0 (WhatsApp Bot)';
 
 const CONTENT_RATINGS = ['safe', 'suggestive', 'erotica'];
 
+// ─── حدود الأمان ───
+const TIMEOUT_MS = 20000;                    // مهلة الاتصال الافتراضية
+const MAX_BODY_BYTES = 2 * 1024 * 1024;      // أقصى حجم لاستجابة JSON (2 ميغابايت)
+const MAX_IMAGE_BYTES = 12 * 1024 * 1024;    // أقصى حجم لصورة صفحة واحدة (12 ميغابايت)
+const MAX_PAGES = 200;                       // أقصى عدد صفحات في الفصل الواحد
+const MAX_ZIP_BYTES = 80 * 1024 * 1024;      // أقصى حجم للملف ZIP (80 ميغابايت)
+
+class UpstreamError extends Error {
+    constructor(kind, message) {
+        super(message || kind);
+        this.kind = kind; // timeout | network | protected | http | parse | toolarge
+    }
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const timeoutMs = () => {
+    const raw = Number(process.env.DOWNLOAD_TIMEOUT_MS);
+    return Number.isFinite(raw) && raw >= 100 ? Math.min(raw, 120000) : TIMEOUT_MS;
+};
+
+const isHtml = (text) => /^\s*</.test(String(text || ''));
+
+const isChallenge = (text) =>
+    /just a moment|cf-browser-verification|challenge-platform|checking your browser|browser verification|attention required|captcha|enable javascript and cookies|proof of work/i.test(
+        String(text || '')
+    );
+
+async function readCapped(res, cap) {
+    const declared = Number(
+        (res?.headers && typeof res.headers.get === 'function' ? res.headers.get('content-length') : null) || 0
+    ) || 0;
+    if (declared > cap) throw new UpstreamError('toolarge', 'الاستجابة أكبر من الحد المسموح');
+
+    const body = res?.body;
+    if (body && typeof body.getReader === 'function') {
+        const reader = body.getReader();
+        const chunks = [];
+        let total = 0;
+        try {
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = Buffer.from(value);
+                total += chunk.length;
+                if (total > cap) throw new UpstreamError('toolarge', 'الاستجابة أكبر من الحد المسموح');
+                chunks.push(chunk);
+            }
+        } finally {
+            try { await reader.cancel(); } catch {}
+        }
+        return Buffer.concat(chunks);
+    }
+
+    const raw = typeof res?.text === 'function' ? await res.text() : '';
+    const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw ?? ''), 'utf8');
+    if (buf.length > cap) throw new UpstreamError('toolarge', 'الاستجابة أكبر من الحد المسموح');
+    return buf;
+}
+
+// طلب HTTP مع مهلة صارمة: لو المصدر ما ردش، ينتهي الطلب بعد المهلة بدل ما نعلق للأبد
+async function fetchBody(url, options = {}) {
+    const timeout = options.timeout ?? timeoutMs();
+    const cap = options.maxBytes ?? MAX_BODY_BYTES;
+    const controller = new AbortController();
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            controller.abort();
+            reject(new UpstreamError('timeout', 'انتهت مهلة الاتصال بالمصدر'));
+        }, timeout);
+    });
+
+    const request = fetch(url, { ...options, signal: controller.signal, redirect: 'follow' });
+    request.catch(() => {}); // أي رفض متأخر بعد انتهاء المهلة ما يقدرش يصير unhandled rejection
+
+    try {
+        const res = await Promise.race([request, timeoutPromise]);
+        const buffer = await Promise.race([readCapped(res, cap), timeoutPromise]);
+        return { res, buffer, text: buffer.toString('utf8') };
+    } catch (e) {
+        if (e instanceof UpstreamError) throw e;
+        if (e?.name === 'AbortError') throw new UpstreamError('timeout', 'انتهت مهلة الاتصال بالمصدر');
+        if (e instanceof TypeError && /fetch failed/i.test(e?.message || '')) {
+            throw new UpstreamError('network', 'تعذر الاتصال بالمصدر');
+        }
+        throw new UpstreamError('network', e?.message || 'خطأ أثناء الاتصال');
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// يحوّل نص الاستجابة إلى JSON ويكتشف صفحات التحقق (HTML) بدل رمي خطأ parse
+function parseJson(body) {
+    const trimmed = String(body || '').trim();
+    if (!trimmed) throw new UpstreamError('parse', 'استجابة فارغة');
+    if (isHtml(trimmed) || isChallenge(trimmed)) {
+        throw new UpstreamError('protected', 'المصدر رجع صفحة تحقق بدل JSON');
+    }
+    try {
+        return JSON.parse(trimmed);
+    } catch {
+        throw new UpstreamError('parse', 'استجابة غير صالحة من المصدر');
+    }
+}
+
+// رسالة عربية موحّدة لكل أنواع الفشل
+function errorText(e, fallback) {
+    const kind = e?.kind;
+    if (kind === 'protected') {
+        return `${HEADER}\n❌ *المصدر محمي حالياً*\n🛡️ أمر المانهوا غير متاح مؤقتاً لأن المصدر يحمي نفسه، حاول لاحقاً.\n${HEADER}`;
+    }
+    if (kind === 'timeout' || kind === 'network' || kind === 'http') {
+        return `${HEADER}\n❌ *تعذر الاتصال بالمصدر*\n⏳ أمر المانهوا غير متاح مؤقتاً، حاول مرة أخرى.\n${HEADER}`;
+    }
+    if (kind === 'toolarge') {
+        return `${HEADER}\n❌ *الملف كبير جداً*\n⚠️ الحجم يتجاوز الحد المسموح، تم إيقاف التحميل.\n${HEADER}`;
+    }
+    return `${HEADER}\n${fallback}\n${HEADER}`;
+}
 
 const cleanContext = (jid) => ({
     mentionedJid: [jid],
@@ -28,18 +150,44 @@ const cleanContext = (jid) => ({
 });
 
 async function mdGet(path, params = {}) {
+    const url = new URL(`${API}${path}`);
+    for (const [key, value] of Object.entries(params || {})) {
+        if (value === undefined || value === null) continue;
+        if (Array.isArray(value)) {
+            for (const item of value) url.searchParams.append(key, String(item));
+        } else {
+            url.searchParams.append(key, String(value));
+        }
+    }
+
     let lastError;
     for (let attempt = 0; attempt < 4; attempt++) {
         try {
-            const { data } = await axios.get(`${API}${path}`, {
-                params,
-                timeout: 30000,
+            const { res, text: body } = await fetchBody(url.toString(), {
                 headers: { 'User-Agent': UA, 'Accept': 'application/json' }
             });
-            return data;
+
+            const status = Number(res?.status || 0);
+            const ok = res?.ok === undefined ? status === 0 || status < 400 : !!res.ok;
+
+            if (!ok) {
+                if (isChallenge(body)) throw new UpstreamError('protected', 'صفحة تحقق');
+                const err = new UpstreamError('http', `HTTP ${status}`);
+                err.status = status;
+                if (status === 429 || status >= 500) {
+                    lastError = err;
+                    await sleep(1000 * (attempt + 1));
+                    continue;
+                }
+                throw err;
+            }
+
+            return parseJson(body);
         } catch (e) {
             lastError = e;
-            const status = e?.response?.status;
+            // صفحات التحقق ما تنفعش معها إعادة محاولة
+            if (e?.kind === 'protected') throw e;
+            const status = e?.status;
             if (status === 429 || status >= 500) {
                 await sleep(1000 * (attempt + 1));
                 continue;
@@ -53,14 +201,26 @@ async function mdGet(path, params = {}) {
 async function fetchBuffer(url) {
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
-            const res = await axios.get(url, {
-                responseType: 'arraybuffer',
-                timeout: 60000,
-                headers: { 'User-Agent': UA }
+            const { res, buffer } = await fetchBody(url, {
+                headers: { 'User-Agent': UA },
+                maxBytes: MAX_IMAGE_BYTES,
+                timeout: Math.min(timeoutMs(), 60000)
             });
-            return Buffer.from(res.data);
+
+            const status = Number(res?.status || 0);
+            const ok = res?.ok === undefined ? status === 0 || status < 400 : !!res.ok;
+            if (!ok) {
+                if (status === 429 || status >= 500) {
+                    await sleep(1000 * (attempt + 1));
+                    continue;
+                }
+                return null;
+            }
+
+            return buffer;
         } catch (e) {
-            const status = e?.response?.status;
+            if (e?.kind === 'toolarge') return null;
+            const status = e?.status;
             if (status === 429 || status >= 500) {
                 await sleep(1000 * (attempt + 1));
                 continue;
@@ -210,8 +370,8 @@ const handler = async (m, { conn, text, command, usedPrefix }) => {
                 contextInfo: cleanContext(m.sender)
             }, m);
         } catch (e) {
-            console.log('Manhwa search error:', e?.message || e);
-            await m.reply(`${HEADER}\n❌ *حدث خطأ أثناء البحث*\n${HEADER}`);
+            console.log('Manhwa search error:', e?.kind || '', e?.message || e);
+            await m.reply(errorText(e, '❌ *حدث خطأ أثناء البحث*'));
         }
         return;
     }
@@ -287,8 +447,8 @@ const handler = async (m, { conn, text, command, usedPrefix }) => {
                 contextInfo: cleanContext(m.sender)
             }, m);
         } catch (e) {
-            console.log('Manhwa info error:', e?.message || e);
-            await m.reply(`${HEADER}\n❌ *تعذر جلب تفاصيل المانهوا*\n${HEADER}`);
+            console.log('Manhwa info error:', e?.kind || '', e?.message || e);
+            await m.reply(errorText(e, '❌ *تعذر جلب تفاصيل المانهوا*'));
         }
         return;
     }
@@ -319,15 +479,20 @@ const handler = async (m, { conn, text, command, usedPrefix }) => {
                 if (!probe) useSaver = false;
             }
 
-            const files = useSaver ? saverFiles : dataFiles;
+            const files = (useSaver ? saverFiles : dataFiles).slice(0, MAX_PAGES);
             const folder = useSaver ? 'data-saver' : 'data';
 
             const zip = new JSZip();
             let pagesAdded = 0;
+            let totalBytes = 0;
 
             for (let i = 0; i < files.length; i++) {
                 const buf = await fetchBuffer(`${baseUrl}/${folder}/${hash}/${files[i]}`);
                 if (buf) {
+                    totalBytes += buf.length;
+                    if (totalBytes > MAX_ZIP_BYTES) {
+                        return m.reply(errorText({ kind: 'toolarge' }, '❌ *الملف كبير جداً*'));
+                    }
                     const ext = (files[i].split('.').pop() || 'jpg').split('?')[0];
                     zip.file(`page_${String(i + 1).padStart(3, '0')}.${ext}`, buf);
                     pagesAdded++;
@@ -350,8 +515,8 @@ const handler = async (m, { conn, text, command, usedPrefix }) => {
                 contextInfo: cleanContext(m.sender)
             }, { quoted: m });
         } catch (e) {
-            console.log('Manhwa download error:', e?.message || e);
-            await m.reply(`${HEADER}\n❌ *تعذر تجهيز الفصل*\n${HEADER}`);
+            console.log('Manhwa download error:', e?.kind || '', e?.message || e);
+            await m.reply(errorText(e, '❌ *تعذر تجهيز الفصل*'));
         }
         return;
     }
