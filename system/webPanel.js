@@ -711,3 +711,7 @@ export function startWebPanel(client, options = {}) {
 }
 
 export default startWebPanel;
+
+// pushEvent مُصدَّر من برة كمان: subsystems تانية (زي حماية الجلسة) تبعت
+// تحذيراتها للوحة كـ event حقيقي، مش مجرد سطر لوج.
+export { pushEvent };

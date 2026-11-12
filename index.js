@@ -2,11 +2,12 @@ import { Client, Utils } from 'meowsab';
 import { group, access } from "./system/control.js";
 import UltraDB from "./system/UltraDB.js";
 import sub from './sub.js';
-import { readPanelConfig, startWebPanel, panelRuntime } from './system/webPanel.js';
+import { readPanelConfig, startWebPanel, panelRuntime, pushEvent } from './system/webPanel.js';
 import { attachHealer } from './system/healer.js';
 import { pullOnce } from './system/autoUpdate.mjs';
 import { buildConfig, buildInfo } from './system/config.js';
 import { createRestartController, installGlobalRestart } from './system/restart-ladder.js';
+import { attachSessionBackup, installShutdownHandlers, restoreSessionFromBackup, warnSubBotSessionsNotCovered } from './system/sessionBackup.js';
 
 /* =========== 🛡️ Shield — إلغاء الأسلحة الخفية في الإطار ========== */
 // فك تشفير ملف المكتبة نفسه (node_modules/meowsab/dist) أثبت وجود 3 حاجات خفية:
@@ -65,6 +66,20 @@ const panelCfg = readPanelConfig();
 config.printQR = panelCfg.loginMode === 'qr'; // qr => true | code => false
 if (panelCfg.phone) config.phoneNumber = panelCfg.phone;
 
+/* =========== Session Backup — حماية جلسة واتساب من التلف ========== */
+// لو session/creds.json اتلخبط أو اتقطع → نرجّعه من النسخة الاحتياطية قبل
+// ما نعمل أي اتصال. لو مفيش نسخة → البوت يقلع من غير ربط (unpaired)
+// من غير ما نمسح أي حاجة ومن غير كراش.
+try {
+  restoreSessionFromBackup(client.config?.sessionPath || './session');
+} catch (e) {
+  console.error('⚠️ [SESSION] فشل فحص النسخة الاحتياطية للجلسة:', e?.message || e);
+}
+// نسخة احتياطية تلقائية كل ما الإطار يحدّث بيانات الاعتماد
+attachSessionBackup(client);
+// تحذير واضح: جلسات البوتات الفرعية (sub/) مش داخل في النسخة الاحتياطية
+warnSubBotSessionsNotCovered({ push: pushEvent });
+
 /* =========== Start ========== */
 client.start();
 
@@ -105,8 +120,9 @@ if (process.env.HEALER !== '0') {
 })().catch(() => {});
 
 /* =========== Web Panel ========== */
+let panelServer = null;
 try {
-  startWebPanel(client);
+  panelServer = startWebPanel(client);
 } catch (e) {
   console.error('⚠️ [WEB] تعذّر تشغيل لوحة التحكم:', e.message);
 }
@@ -267,6 +283,13 @@ process.on('unhandledRejection', (err) => {
     console.error('⚠️ [UNHANDLED REJECTION]', err?.message || String(err));
   }
 });
+
+/* =========== إشارات الإيقاف — حفظ الحالة قبل الخروج ========== */
+// SIGTERM / SIGINT: نحفظ الداتابيز فورًا (flush)، نقفل سيرفر اللوحة،
+// وبعدين نخرج من العملية بـ exit code 0 (مش 1 — الإيقاف ده طبيعي).
+// ملاحظة: الإطار (meowsab) مسجّل معالج إشارات خاص بيه قبلنا — المعالجين
+// بيشتغلوا مع بعض: احنا بنحفظ الداتابيز ونقفل اللوحة ونخرج بـ 0 فورًا.
+installShutdownHandlers({ db: global.db, server: panelServer });
 
 
 /* 

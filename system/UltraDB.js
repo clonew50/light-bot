@@ -24,13 +24,7 @@ class UltraDB {
             this.#exitHooked = true;
             process.on('exit', () => {
                 if (!this.#saveTimer) return;
-                try {
-                    clearTimeout(this.#saveTimer);
-                    this.#saveTimer = null;
-                    const tmp = `${this.#path}.tmp-final`;
-                    writeFileSync(tmp, JSON.stringify(this.data, null, 2));
-                    renameSync(tmp, this.#path);
-                } catch {}
+                this.flush();
             });
         }
 
@@ -55,14 +49,38 @@ class UltraDB {
         return { groups: {}, users: {}, dev: false };
     }
     
+    #writeNow() {
+        // كتابة ذرية: tmp ثم rename — ما بيبوظش الملف لو العملية ماتت وسط الكتابة
+        const tmp = `${this.#path}.tmp-${process.pid}-${Date.now()}`;
+        writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+        renameSync(tmp, this.#path);
+    }
+
+    /**
+     * flush() — يكتب أي حفظ معلّق فورًا بدل ما نستنى الديبانس.
+     * بتتستخدم عند إشارات الإيقاف (SIGTERM / SIGINT) عشان آخر كتابة
+     * في الداتابيز ما تضيعش (GAP-18).
+     * @returns {boolean} هل الكتابة نجحت
+     */
+    flush() {
+        if (this.#saveTimer) {
+            clearTimeout(this.#saveTimer);
+            this.#saveTimer = null;
+        }
+        try {
+            this.#writeNow();
+            return true;
+        } catch (e) {
+            console.error('⚠️ [DB] فشل حفظ الداتابيز فورًا:', e.message);
+            return false;
+        }
+    }
+
     #save() {
         if (this.#saveTimer) clearTimeout(this.#saveTimer);
         this.#saveTimer = setTimeout(() => {
             try {
-                // كتابة ذرية: tmp ثم rename — ما بيبوظش الملف لو العملية ماتت وسط الكتابة
-                const tmp = `${this.#path}.tmp-${process.pid}-${Date.now()}`;
-                writeFileSync(tmp, JSON.stringify(this.data, null, 2));
-                renameSync(tmp, this.#path);
+                this.#writeNow();
             } catch (e) {
                 console.error('⚠️ [DB] فشل حفظ الداتابيز:', e.message);
             }
@@ -89,6 +107,12 @@ class UltraDB {
         
         return new Proxy(this.data, {
             get(target, prop) {
+                // flush() — الحفظ الفوري. لازم يتوصّل من الـ proxy لأن الـ proxy
+                // بيرمي أي خاصية تانية من الـ data نفسه.
+                if (prop === 'flush') {
+                    return () => self.flush();
+                }
+
                 if (prop === 'groups') {
                     return new Proxy(target.groups, {
                         get(groupTarget, groupId) {
