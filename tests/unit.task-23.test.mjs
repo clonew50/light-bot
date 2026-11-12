@@ -10,6 +10,10 @@
  *  - a 402 / non-2xx provider response replies the Arabic
  *    "تعذر الوصول إلى مزود الذكاء الاصطناعي" and never crashes
  *  - a 200 response whose BODY is a dead marker / HTML page / error JSON is refused
+ *  - ATTEMPT 2: a 200 body that merely CONTAINS a dead marker (inside a longer
+ *    text) is refused too — the exact-match-only check leaked the dead
+ *    provider's real body ("Payment required\n\nDEPLOYMENT_DISABLED\n\nfra1::...")
+ *    verbatim to the user. A 19-body battery pins every one of those bodies.
  *  - a hanging provider is cut off by the timeout — the command never hangs
  *  - the default chain is the free no-key Pollinations text endpoint
  *  - AI_API_URL / AI_API_KEY override the provider (URL + Authorization header)
@@ -29,7 +33,7 @@ const configUrl = pathToFileURL(path.join(repoRoot, 'system', 'config.js')).href
 
 const mod = await import(pluginUrl);
 const handler = mod.default;
-const { AI_ERROR, USAGE_TEXT, DEFAULT_API_BASE } = mod;
+const { AI_ERROR, USAGE_TEXT, DEFAULT_API_BASE, hasDeadMarker, isPlausibleCompletion } = mod;
 const { buildInfo } = await import(configUrl);
 
 /* ------------------------------------------------------------------ *
@@ -162,6 +166,117 @@ test('ai provider chain: a misleading 200 body (dead marker / HTML / error JSON)
     assert.ok(!replies[0].includes('DEPLOYMENT_DISABLED'), 'a dead marker must never be shown as an answer');
     assert.ok(!replies[0].includes('<!DOCTYPE'), 'an HTML page must never be shown as an answer');
   }
+});
+
+/* ------------------------------------------------------------------ *
+ * 2b. ATTEMPT 2 — the 19-body battery
+ *      The attempt-1 defect: the dead-marker guard was an EXACT equality
+ *      test against the whole body, so a 200 body that merely CONTAINED a
+ *      marker was surfaced VERBATIM as the AI's answer. Every body below
+ *      must be REFUSED and must never reach the user.
+ *      [body, the fragment that must never appear in the reply]
+ * ------------------------------------------------------------------ */
+
+const DEAD_BODY_BATTERY = [
+  ['DEPLOYMENT_DISABLED', 'DEPLOYMENT_DISABLED'],
+  ['Payment required\n\nDEPLOYMENT_DISABLED\n\nfra1::tp286-1794514422636-df7de0237fe3', 'DEPLOYMENT_DISABLED'],
+  ['Error: DEPLOYMENT_DISABLED', 'DEPLOYMENT_DISABLED'],
+  ['DEPLOYMENT_DISABLED (deployment off)', 'DEPLOYMENT_DISABLED'],
+  ['402 Payment required', 'Payment required'],
+  ['Payment required', 'Payment required'],
+  ['payment required', 'payment required'],
+  ['PAYMENT_REQUIRED', 'PAYMENT_REQUIRED'],
+  ['INSUFFICIENT_QUOTA', 'INSUFFICIENT_QUOTA'],
+  ['insufficient quota', 'insufficient quota'],
+  ['QUOTA_EXCEEDED', 'QUOTA_EXCEEDED'],
+  ['quota exceeded', 'quota exceeded'],
+  ['DEPLOYMENT DISABLED', 'DEPLOYMENT DISABLED'],
+  ['DEPLOYMENTDISABLED', 'DEPLOYMENTDISABLED'],
+  ['<!DOCTYPE html><html><head><title>502 Bad Gateway</title></head><body>gateway</body></html>', '<!DOCTYPE'],
+  ['{"error":"Payment required"}', '"error"'],
+  ['{"status":402,"message":"Payment required"}', '"status"'],
+  ['null', 'null'],
+  ['ok', null]
+];
+
+test('ai provider chain: the 19-body battery — every dead/misleading 200 body is refused and never shown', async (t) => {
+  cleanEnv(t);
+  assert.equal(DEAD_BODY_BATTERY.length, 19, 'the battery must hold exactly 19 bodies');
+
+  let current = '';
+  const served = [];
+  stubFetch(t, async () => {
+    served.push(current);
+    return res(200, current);
+  });
+
+  for (const [i, [body, leak]] of DEAD_BODY_BATTERY.entries()) {
+    current = body;
+    const { m, replies } = fakeMessage(`20100000${String(30 + i).padStart(4, '0')}@s.whatsapp.net`);
+    await handler(m, { conn: {}, text: 'اختبار', bot: realBot() });
+
+    assert.equal(replies.length, 1, `body #${i} must produce exactly one reply`);
+    assert.ok(
+      replies[0].includes(AI_ERROR),
+      `body #${i} (${JSON.stringify(body)}) must be refused with the Arabic error, got: ${replies[0]}`
+    );
+    assert.notEqual(replies[0].trim(), body.trim(), `body #${i} must never be the answer`);
+    if (leak) {
+      assert.ok(
+        !replies[0].includes(leak),
+        `body #${i} leaked ${JSON.stringify(leak)} into the reply: ${replies[0]}`
+      );
+    }
+  }
+
+  assert.equal(served.length, 19, 'every body must have been served exactly once');
+});
+
+test('ai provider chain: a dead 200 body fails over to the next provider in the chain', async (t) => {
+  cleanEnv(t);
+  process.env.AI_API_URL = 'https://my-provider.example/v1';
+  const seen = [];
+  stubFetch(t, async (url) => {
+    seen.push(String(url));
+    if (String(url).includes('my-provider.example'))
+      return res(200, 'Payment required\n\nDEPLOYMENT_DISABLED\n\nfra1::tp286-1794514422636-df7de0237fe3');
+    return res(200, 'رد المزود المجاني');
+  });
+
+  const { m, replies } = fakeMessage('201000000049@s.whatsapp.net');
+  await handler(m, { conn: {}, text: 'سؤال', bot: realBot() });
+
+  assert.equal(seen.length, 2, 'the dead provider must be skipped, not surfaced');
+  assert.ok(seen[0].includes('my-provider.example'));
+  assert.ok(seen[1].startsWith('https://text.pollinations.ai/'));
+  assert.equal(replies[0], 'رد المزود المجاني');
+  assert.ok(!replies[0].includes('DEPLOYMENT_DISABLED'), 'the dead body must never be shown');
+});
+
+test('ai provider chain: hasDeadMarker / isPlausibleCompletion pin the refusal rules', () => {
+  // dead markers — exact, embedded, case and separator variants
+  for (const mk of ['DEPLOYMENT_DISABLED', 'PAYMENT_REQUIRED', 'PAYMENT REQUIRED', 'INSUFFICIENT_QUOTA', 'QUOTA_EXCEEDED']) {
+    assert.equal(hasDeadMarker(mk), true, mk);
+  }
+  assert.equal(hasDeadMarker('Payment required\n\nDEPLOYMENT_DISABLED\n\nfra1::x'), true);
+  assert.equal(hasDeadMarker('Error: DEPLOYMENT_DISABLED'), true);
+  assert.equal(hasDeadMarker('DEPLOYMENT_DISABLED (deployment off)'), true);
+  assert.equal(hasDeadMarker('402 Payment required'), true);
+  assert.equal(hasDeadMarker('deployment disabled'), true);
+  assert.equal(hasDeadMarker('DEPLOYMENTDISABLED'), true);
+  assert.equal(hasDeadMarker('The capital of France is Paris.'), false);
+
+  // plausibility — a real answer passes, junk does not
+  assert.equal(isPlausibleCompletion('pong'), true);
+  assert.equal(isPlausibleCompletion('2 + 2 equals 4.'), true);
+  assert.equal(isPlausibleCompletion('نص الإجابة من المزود'), true);
+  assert.equal(isPlausibleCompletion(''), false);
+  assert.equal(isPlausibleCompletion('ok'), false); // below the minimum length
+  assert.equal(isPlausibleCompletion('!!!'), false); // no letter/digit
+  assert.equal(isPlausibleCompletion('<!DOCTYPE html><html></html>'), false);
+  assert.equal(isPlausibleCompletion('404 Not Found'), false);
+  assert.equal(isPlausibleCompletion('Service Unavailable'), false);
+  assert.equal(isPlausibleCompletion('null'), false);
 });
 
 test('ai provider chain: a hanging provider is cut off by the timeout and never hangs', async (t) => {

@@ -23,6 +23,13 @@
     • كل طلب ليه مهلة (timeout) — البوت مش هيعلّق أبدًا
     • كولداون لكل مستخدم — يمنع السبام
     • أي فشل بيرد بالعربي برسالة واضحة — مفيش رد فاضي ولا كراش
+    • أي رد من المزود بيتمرّ على فحص " plausibility " قبل ما يوصل للمستخدم:
+        - لو فيه أي علامة ميتة جواه (حتى جوه نص أطول) — مرفوض
+          (DEPLOYMENT_DISABLED / PAYMENT REQUIRED / INSUFFICIENT_QUOTA / QUOTA_EXCEEDED)
+        - لو صفحة HTML أو ظرف خطأ (JSON/HTTP) — مرفوض
+        - لو قصير أوي أو فاضي — مرفوض
+      والرد المرفوض بيفعّل المزود اللي بعده في السلسلة؛ ولو كلهم فشلوا
+      المستخدم بياخد رسالة "المزود غير متاح" بالعربي — جسم الرد الخام مايتوصلش له.
   ═══════════════════════════════════════════════════════════════════════
 */
 
@@ -36,7 +43,7 @@ export const AI_ERROR = "تعذر الوصول إلى مزود الذكاء ال
 /* نص الاستخدام القديم — ما اتغيّرش (نفس صيغة الأمر) */
 export const USAGE_TEXT = "*اكتب سوألك بعد الامر 🤖*";
 
-/* ردود المزودين الميتة/المضللة — لو جت زي كده مش هتعتبر إجابة */
+/* ردود المزودين الميتة/المضللة — لو جت (ولو جواها) مش هتعتبر إجابة */
 const DEAD_MARKERS = new Set([
   "DEPLOYMENT_DISABLED",
   "PAYMENT_REQUIRED",
@@ -44,6 +51,70 @@ const DEAD_MARKERS = new Set([
   "INSUFFICIENT_QUOTA",
   "QUOTA_EXCEEDED"
 ]);
+
+/* نفس العلامات بعد التطبيع: _ / - / مسافة = مسافة
+   (DEPLOYMENT_DISABLED = DEPLOYMENT DISABLED = DEPLOYMENT-DISABLED) */
+const DEAD_MARKERS_NORMALIZED = new Set(
+  [...DEAD_MARKERS].map((mk) => mk.toUpperCase().replace(/[_\-\s]+/g, " "))
+);
+
+/* نسخة من غير أي فاصل (DEPLOYMENTDISABLED) — عشان نلمس كل الكتابات */
+const DEAD_MARKERS_COMPACT = new Set(
+  [...DEAD_MARKERS].map((mk) => mk.toUpperCase().replace(/[^A-Z0-9]/g, ""))
+);
+
+/* أقل طول للإجابة المقبولة — أي نص أقصر من كده مش إجابة حقيقية */
+const MIN_ANSWER_LENGTH = 3;
+
+/* ردود كاملة معناها "مفيش إجابة" (مطابقة كاملة — مش substring) */
+const NON_ANSWER_BODIES = new Set([
+  "NULL",
+  "UNDEFINED",
+  "NAN",
+  "N/A",
+  "NIL",
+  "{}",
+  "[]",
+  "ERROR",
+  "ERRORS",
+  "FAILED",
+  "FAILURE",
+  "NOT FOUND",
+  "NO CONTENT",
+  "SERVICE UNAVAILABLE",
+  "TOO MANY REQUESTS",
+  "INTERNAL SERVER ERROR",
+  "BAD GATEWAY",
+  "GATEWAY TIMEOUT",
+  "UNAUTHORIZED",
+  "FORBIDDEN",
+  "NOT IMPLEMENTED",
+  "RATE LIMITED",
+  "INVALID API KEY",
+  "MISSING API KEY",
+  "MODEL NOT FOUND",
+  "UNPROCESSABLE ENTITY",
+  "CONFLICT",
+  "REQUEST TIMEOUT",
+  "METHOD NOT ALLOWED"
+]);
+
+/* صفحات HTML — مش إجابة على الإطلاق */
+const HTML_START_RE =
+  /^\s*<(!doctype|html|head|body|title|script|style|meta|div|span|p|h[1-6]|table|form|iframe|svg|a)[\s>/]/i;
+const HTML_DOC_RE = /<(!doctype\s+html|html|head|body|frameset)[\s>/]/i;
+
+/* أجسام أخطاء HTTP (404 Not Found / 502 Bad Gateway / 402 Payment required ...) */
+const HTTP_STATUS_ONLY_RE = /^\s*(?:HTTP\/[\d.]+\s+)?[45]\d{2}\s*$/i;
+const HTTP_ERROR_PREFIX_RE =
+  /^\s*(?:HTTP\/[\d.]+\s+)?[45]\d{2}\s+(?:error\b|bad request\b|bad gateway\b|gateway timeout\b|unauthorized\b|unprocessable\b|forbidden\b|not found\b|not implemented\b|service unavailable\b|too many requests\b|internal server error\b|payment required\b|insufficient\b|quota\b|rate limit\b|request timeout\b|unsupported\b|method not allowed\b|conflict\b)/i;
+
+/* JSON مش صالح بس شكله ظرف خطأ (error / status / message) */
+const JSON_ERROR_HINT_RE = /"(?:error|errors|status|status_code|statusCode|code|message|detail|exception)"\s*:/i;
+
+/* عبارات الخطأ الشائعة (بأي capitalization) */
+const ERROR_PHRASE_RE =
+  /error|fail(?:ed|ure)?|denied|disabled|quota|payment required|unauthoriz|forbidden|not found|unavailable|timeout|invalid api key|expired|blocked|rate limit/i;
 
 /* كولداون في الذاكرة لكل مستخدم (زي plugins/ai/imagen.js) */
 const cooldown = new Map();
@@ -150,23 +221,111 @@ function pickJsonText(parsed) {
   return null;
 }
 
-/** بيحوّل جسم الرد لنص — وبي رفض أي رد مضلل (فاضي / HTML / علامة ميتة) */
+/** هل الـ JSON ده ظرف خطأ (مش إجابة)؟ (error / status>=400 / success=false ...) */
+function isJsonErrorEnvelope(parsed) {
+  if (!parsed || typeof parsed !== "object") return false;
+  if (parsed.error) return true;
+  if (parsed.success === false || parsed.ok === false) return true;
+
+  for (const k of ["status", "statusCode", "status_code", "code", "http_status"]) {
+    const v = parsed[k];
+    if (typeof v === "number" && v >= 400) return true;
+    if (typeof v === "string" && /^[45]\d\d$/.test(v.trim())) return true;
+  }
+
+  for (const k of ["type", "error_type", "errorType", "title", "reason", "message"]) {
+    const v = parsed[k];
+    if (typeof v === "string" && ERROR_PHRASE_RE.test(v)) return true;
+  }
+
+  return false;
+}
+
+/** هل الرد ده فيه أي علامة ميتة؟ (تطابق تام أو substring، بدون حساسية للحروف)
+ *  catches: DEPLOYMENT_DISABLED / "Error: DEPLOYMENT_DISABLED" /
+ *  "Payment required\n\nDEPLOYMENT_DISABLED\n\nfra1::..." / "402 Payment required" */
+export function hasDeadMarker(text) {
+  const up = String(text ?? "").toUpperCase();
+  if (!up) return false;
+
+  /* 1) التطابق التام (زي ما كان) */
+  if (DEAD_MARKERS.has(up)) return true;
+
+  /* 2) substring على النص الخام — أي رد فيه العلامة جواه مش إجابة */
+  for (const mk of DEAD_MARKERS) {
+    if (up.includes(mk)) return true;
+  }
+
+  /* 3) التطبيع: _ / - / مسافة = مسافة (DEPLOYMENT DISABLED) */
+  const norm = up.replace(/[_\-\s]+/g, " ");
+  for (const mk of DEAD_MARKERS_NORMALIZED) {
+    if (norm.includes(mk)) return true;
+  }
+
+  /* 4) من غير أي فاصل (DEPLOYMENTDISABLED) */
+  const compact = up.replace(/[^A-Z0-9]/g, "");
+  for (const mk of DEAD_MARKERS_COMPACT) {
+    if (compact.includes(mk)) return true;
+  }
+
+  return false;
+}
+
+/** هل الرد ده شكله إجابة حقيقية؟ (مش HTML / مش خطأ / طويل كفاية) */
+export function isPlausibleCompletion(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw) return false;
+  if (raw.length < MIN_ANSWER_LENGTH) return false;
+  if (!/[\p{L}\p{N}]/u.test(raw)) return false; // رموز و بس
+  if (HTML_START_RE.test(raw)) return false;
+  if (HTML_DOC_RE.test(raw)) return false;
+  if (HTTP_STATUS_ONLY_RE.test(raw)) return false;
+  if (HTTP_ERROR_PREFIX_RE.test(raw)) return false;
+  if (NON_ANSWER_BODIES.has(raw.toUpperCase())) return false;
+  return true;
+}
+
+/** بيحوّل جسم الرد لنص — وبي رفض أي رد مضلل (فاضي / HTML / علامة ميتة / قصير) */
 function extractText(body) {
   const raw = String(body ?? "").trim();
   if (!raw) return { ok: false, reason: "الرد فاضي" };
-  if (/^<(!doctype|html)/i.test(raw)) return { ok: false, reason: "الرد صفحة HTML مش إجابة" };
-  if (DEAD_MARKERS.has(raw.toUpperCase())) return { ok: false, reason: "المزود رجّع استجابة ميتة" };
+
+  /* 1) أي علامة ميتة جواه — بالظبط أو كـ substring (بأي capitals) */
+  if (hasDeadMarker(raw)) return { ok: false, reason: "المزود رجّع استجابة ميتة" };
+
+  /* 2) صفحات HTML / أخطاء HTTP — مرفوضة */
+  if (HTML_START_RE.test(raw) || HTML_DOC_RE.test(raw))
+    return { ok: false, reason: "الرد صفحة HTML مش إجابة" };
+  if (HTTP_STATUS_ONLY_RE.test(raw) || HTTP_ERROR_PREFIX_RE.test(raw))
+    return { ok: false, reason: "المزود رجّع رسالة خطأ" };
 
   if (raw.startsWith("{") || raw.startsWith("[")) {
+    let parsed = null;
+    let parsedOk = true;
     try {
-      const parsed = JSON.parse(raw);
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      parsedOk = false;
+    }
+
+    if (parsedOk) {
+      /* ظرف خطأ (error / status>=400 / success=false) — مرفوض */
+      if (isJsonErrorEnvelope(parsed)) return { ok: false, reason: "المزود رجّع ظرف خطأ" };
       const text = pickJsonText(parsed);
       if (!text) return { ok: false, reason: "الرد JSON من غير نص" };
+      /* النص المستخرج جواه لازم يمر بنفس فحوصات الـ plausibility */
+      if (hasDeadMarker(text)) return { ok: false, reason: "المزود رجّع استجابة ميتة" };
+      if (!isPlausibleCompletion(text)) return { ok: false, reason: "الرد مش إجابة صالحة" };
       return { ok: true, text };
-    } catch (e) {
-      /* مش JSON فعلاً — نعتبره نص عادي */
     }
+
+    /* JSON مش صالح — لو شكله ظرف خطأ (error/status/message) بنرفضه،
+       غير كده ممكن يكون إجابة عادية بتبدأ بـ { أو [ */
+    if (JSON_ERROR_HINT_RE.test(raw)) return { ok: false, reason: "الرد JSON مش صالح" };
   }
+
+  /* 3) الرد لازم يكون إجابة حقيقية (طول كافٍ + مش كلمة فاضية) */
+  if (!isPlausibleCompletion(raw)) return { ok: false, reason: "الرد مش إجابة صالحة" };
 
   return { ok: true, text: raw };
 }
