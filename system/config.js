@@ -53,7 +53,10 @@ export function buildInfo(env = process.env) {
     idChannel: "120363405545946827@newsletter",
     urls: {
       repo: "https://github.com/deveni0/Pomni-AI",
-      api: "https://emam-api.web.id",
+      // المزود الافتراضي للذكاء الاصطناعي: Pollinations النصي المجاني (بدون مفتاح).
+      // المزود القديم كان بيرد 402 على كل طلب فالأمر .اوبن كان مكسور.
+      // المشغّل يقدر يغيّر العنوان من البيئة: AI_API_URL
+      api: (env.AI_API_URL || '').trim().replace(/\/+$/, '') || "https://text.pollinations.ai",
       channel: "https://whatsapp.com/channel/0029Vb7dTmNJENy9sp5yqi3T"
     },
     copyright: { 

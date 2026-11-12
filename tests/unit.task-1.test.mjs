@@ -140,7 +140,7 @@ test('config: buildInfo() returns the unchanged bot info', () => {
   const info = buildInfo();
   assert.equal(info.idChannel, '120363405545946827@newsletter');
   assert.equal(info.urls.repo, 'https://github.com/deveni0/Pomni-AI');
-  assert.equal(info.urls.api, 'https://emam-api.web.id');
+  assert.equal(info.urls.api, 'https://text.pollinations.ai');
   assert.equal(info.urls.channel, 'https://whatsapp.com/channel/0029Vb7dTmNJENy9sp5yqi3T');
   assert.equal(info.copyright.author, info.nameBot);
   assert.equal(info.images.length, 3);
