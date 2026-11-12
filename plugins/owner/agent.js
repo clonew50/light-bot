@@ -5,18 +5,17 @@
  *  📁 المكان: plugins/owner/agent.js
  *  🎯 Framework: meowsab (LIGHT BOT / Pomni-AI)
  *  🔥 كل المميزات: Auto-Discovery + Tor + كل المزودين + NVIDIA
- *  ⏱️ بلا Timeouts • 🔓 بلا حدود
+ *  ⏱️ كل طلب شبكة بمهلة محدودة • 🔓 بلا حدود
  */
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { execFile, execFileSync } from 'child_process'
+import { execFileSync } from 'child_process'
 import https from 'https'
 import http from 'http'
 import axios from 'axios'
 
-// ⏱️ بلا Timeouts — نلغي أي مهلة افتراضية على مستوى axios كله
-axios.defaults.timeout = 0
+// ⏱️ مفيش مهلة عامة على axios — كل نداء شبكة في الملف ده بيمرّ على مهلة صريحة (HTTP_TIMEOUT_*)
 
 const _modURL = new URL(import.meta.url)
 _modURL.search = ''
@@ -32,6 +31,45 @@ const MAX_CUSTOM_TOOLS = 500
 // 🔓 بلا حدود — مفيش سقف حقيقي للدورات (الإيقاف اليدوي بـ "توقف" أو finish)
 const SAFETY_HARD_ITER_LIMIT = Infinity
 const IS_FRESH_START = process.uptime() < 60
+
+// ⏱️ مهلة محدودة لكل طلب شبكة (10-30 ثانية) — مفيش نداء شبكة بلا try/catch
+const HTTP_TIMEOUT_MS = 30 * 1000
+const HTTP_TIMEOUT_SEARCH_MS = 15 * 1000
+const HTTP_TIMEOUT_TOR_MS = 10 * 1000
+
+// ═══════════════════════════════════════════════════════════════
+//  ⏱️ إدارة المؤقّتات — مؤقّت واحد لكل مهمة + تنظيف كامل
+// ═══════════════════════════════════════════════════════════════
+// كل المؤقّتات (تحديث الكاش + نبض الوكيل + حفظ الجلسات) بتتسجّل هنا عشان:
+//  1) مايتكررشش عند إعادة تحميل البلاجين (hot reload)
+//  2) كل المؤقّتات القديمة تتشال أول ما البلاجين يتحمّل تاني
+//  3) تتقفل كلها لما العملية تخرج
+const agentTimers = global.__agentTimers || (global.__agentTimers = new Set())
+
+function registerAgentTimer(timer, kind = 'interval') {
+  if (!timer) return null
+  try { if (kind === 'interval' && typeof timer.unref === 'function') timer.unref() } catch {}
+  agentTimers.add(timer)
+  return timer
+}
+function clearAgentTimer(timer) {
+  if (!timer) return null
+  try { clearInterval(timer) } catch {}
+  try { clearTimeout(timer) } catch {}
+  agentTimers.delete(timer)
+  return null
+}
+function stopAgentTimers() {
+  for (const t of [...agentTimers]) { try { clearInterval(t) } catch {}; try { clearTimeout(t) } catch {} }
+  agentTimers.clear()
+}
+// 🔁 إعادة تحميل البلاجين: بنمسح كل المؤقّتات القديمة الأول (منع التكديس)
+stopAgentTimers()
+global.__agentStopTimers = stopAgentTimers
+if (!global.__agentExitHook) {
+  global.__agentExitHook = () => { try { stopAgentTimers() } catch {} }
+  process.once('exit', global.__agentExitHook)
+}
 
 // 🔑 NVIDIA Key مضاف افتراضيًا
 const DEFAULT_NVIDIA_KEY = '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'
@@ -196,7 +234,7 @@ function buildAxiosConfig(useTor = false) {
 }
 async function checkTor() {
   if (!await initTor()) return { ok: false, error: torState.error }
-  try { const res = await axios.get('https://api.ipify.org?format=json', { timeout: 0, ...buildAxiosConfig(true) }); return { ok: true, ip: res.data?.ip || 'unknown' } }
+  try { const res = await axios.get('https://api.ipify.org?format=json', { ...buildAxiosConfig(true), timeout: HTTP_TIMEOUT_TOR_MS }); return { ok: true, ip: res.data?.ip || 'unknown' } }
   catch (e) { return { ok: false, error: e?.message || String(e) } }
 }
 
@@ -338,7 +376,7 @@ async function discoverProviderModels(provider) {
   if (['groq', 'kilo', 'github', 'nvidia', 'openrouter', 'cerebras'].includes(provider) && !key) { console.log('[models] ' + provider + ': مفيش مفتاح — تخطي'); return [] }
   try {
     const headers = { 'Content-Type': 'application/json', ...ep.auth(key) }
-    const res = await axios.get(ep.url, { headers, timeout: 0 })
+    const res = await axios.get(ep.url, { headers, timeout: HTTP_TIMEOUT_MS })
     let entries = extractModelEntries(res.data)
     const seen = new Set(); const unique = []
     for (const e of entries) { if (!e.id || seen.has(e.id)) continue; seen.add(e.id); unique.push(e) }
@@ -435,7 +473,9 @@ async function groqCall(messages, modelInfo, key, proxyCfg = {}) {
   const modelStr = String(modelInfo?.id || modelInfo || 'openai/gpt-oss-120b')
   const params = { model: modelStr, messages, temperature: Number(st.groqTemperature) ?? 1, max_completion_tokens: Math.min(Number(st.groqMaxTokens) || 4096, 8192), top_p: Number(st.groqTopP) ?? 1, stream: false }
   if (st.groqEnableReasoning && modelInfo?.effort) params.reasoning_effort = ['low', 'medium', 'high'].includes(st.groqReasoningEffort) ? st.groqReasoningEffort : 'high'
-  const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', params, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key }, timeout: 0, ...proxyCfg })
+  let res
+  try { res = await axios.post('https://api.groq.com/openai/v1/chat/completions', params, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key }, ...proxyCfg, timeout: HTTP_TIMEOUT_MS }) }
+  catch (e) { throw new Error('تعذّر الاتصال بـ Groq: ' + (e?.message || e)) }
   const c = res.data?.choices?.[0]?.message?.content
   if (!c) throw new Error('رد فارغ من Groq')
   return String(c)
@@ -444,7 +484,9 @@ async function kiloC(messages, model, proxyCfg = {}) {
   const cfg = getAgentCfg(); const st = getSettings()
   const key = process.env.KILO_API_KEY || cfg.kiloKey || st.kiloKey
   if (!key) throw new Error('Kilo محتاج مفتاح')
-  const res = await axios.post('https://api.kilo.ai/api/gateway/chat/completions', { model: model || 'kilo/glm-5-free', messages, temperature: 0.3, max_tokens: 16384 }, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key, 'X-KILOCODE-EDITORNAME': 'light-agent' }, timeout: 0, ...proxyCfg })
+  let res
+  try { res = await axios.post('https://api.kilo.ai/api/gateway/chat/completions', { model: model || 'kilo/glm-5-free', messages, temperature: 0.3, max_tokens: 16384 }, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key, 'X-KILOCODE-EDITORNAME': 'light-agent' }, ...proxyCfg, timeout: HTTP_TIMEOUT_MS }) }
+  catch (e) { throw new Error('تعذّر الاتصال بـ Kilo: ' + (e?.message || e)) }
   const c = res.data?.choices?.[0]?.message?.content
   if (!c) throw new Error('فورمات غير متوقع من Kilo')
   return String(c)
@@ -452,13 +494,17 @@ async function kiloC(messages, model, proxyCfg = {}) {
 async function llm7Call(messages, model, proxyCfg = {}) {
   const cfg = getAgentCfg(); const st = getSettings()
   const key = process.env.LLM7_KEY || cfg.llm7Key || st.llm7Key || 'unused'
-  const res = await axios.post('https://api.llm7.io/v1/chat/completions', { model: model || 'gpt-4o-mini', messages, temperature: 0.3 }, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key }, timeout: 0, ...proxyCfg })
+  let res
+  try { res = await axios.post('https://api.llm7.io/v1/chat/completions', { model: model || 'gpt-4o-mini', messages, temperature: 0.3 }, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key }, ...proxyCfg, timeout: HTTP_TIMEOUT_MS }) }
+  catch (e) { throw new Error('تعذّر الاتصال بـ LLM7: ' + (e?.message || e)) }
   const c = res.data?.choices?.[0]?.message?.content
   if (!c) throw new Error('فورمات غير متوقع من LLM7')
   return String(c)
 }
 async function openrouterCall(messages, model, key, proxyCfg = {}) {
-  const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', { model, messages, temperature: 0.3 }, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key, 'X-Title': 'LIGHT Agent', 'HTTP-Referer': 'https://lightbot.local' }, timeout: 0, ...proxyCfg })
+  let res
+  try { res = await axios.post('https://openrouter.ai/api/v1/chat/completions', { model, messages, temperature: 0.3 }, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key, 'X-Title': 'LIGHT Agent', 'HTTP-Referer': 'https://lightbot.local' }, ...proxyCfg, timeout: HTTP_TIMEOUT_MS }) }
+  catch (e) { throw new Error('تعذّر الاتصال بـ OpenRouter: ' + (e?.message || e)) }
   const c = res.data?.choices?.[0]?.message?.content
   if (!c) throw new Error('رد غير متوقع من OpenRouter')
   return String(c)
@@ -466,13 +512,17 @@ async function openrouterCall(messages, model, key, proxyCfg = {}) {
 async function nvidiaCall(messages, model, key, proxyCfg = {}) {
   const finalKey = key || DEFAULT_NVIDIA_KEY
   const modelStr = typeof model === 'object' ? (model.id || 'meta/llama-3.1-70b-instruct') : (model || 'meta/llama-3.1-70b-instruct')
-  const res = await axios.post('https://integrate.api.nvidia.com/v1/chat/completions', { model: modelStr, messages, temperature: 0.3, top_p: 0.9, max_tokens: 4096, stream: false }, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + finalKey, Accept: 'application/json' }, timeout: 0, ...proxyCfg })
+  let res
+  try { res = await axios.post('https://integrate.api.nvidia.com/v1/chat/completions', { model: modelStr, messages, temperature: 0.3, top_p: 0.9, max_tokens: 4096, stream: false }, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + finalKey, Accept: 'application/json' }, ...proxyCfg, timeout: HTTP_TIMEOUT_MS }) }
+  catch (e) { throw new Error('تعذّر الاتصال بـ NVIDIA: ' + (e?.message || e)) }
   const c = res.data?.choices?.[0]?.message?.content
   if (!c) throw new Error('فورمات غير متوقع من NVIDIA')
   return String(c)
 }
 async function githubModelsCall(messages, model, key, proxyCfg = {}) {
-  const res = await axios.post('https://models.inference.ai.azure.com/chat/completions', { model: model || 'openai/gpt-4o', messages, temperature: 0.3 }, { headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, timeout: 0, ...proxyCfg })
+  let res
+  try { res = await axios.post('https://models.inference.ai.azure.com/chat/completions', { model: model || 'openai/gpt-4o', messages, temperature: 0.3 }, { headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, ...proxyCfg, timeout: HTTP_TIMEOUT_MS }) }
+  catch (e) { throw new Error('تعذّر الاتصال بـ GitHub Models: ' + (e?.message || e)) }
   const c = res.data?.choices?.[0]?.message?.content
   if (!c) throw new Error('رد غير متوقع من GitHub')
   return String(c)
@@ -481,13 +531,17 @@ async function cerebrasCall(messages, model, proxyCfg = {}) {
   const cfg = getAgentCfg(); const st = getSettings()
   const key = process.env.CEREBRAS_KEY || cfg.cerebrasKey || st.cerebrasKey
   const headers = { 'Content-Type': 'application/json' }; if (key) headers.Authorization = 'Bearer ' + key
-  const res = await axios.post('https://api.cerebras.ai/v1/chat/completions', { model: model || 'llama-3.3-70b', messages, temperature: 0.3 }, { headers, timeout: 0, ...proxyCfg })
+  let res
+  try { res = await axios.post('https://api.cerebras.ai/v1/chat/completions', { model: model || 'llama-3.3-70b', messages, temperature: 0.3 }, { headers, ...proxyCfg, timeout: HTTP_TIMEOUT_MS }) }
+  catch (e) { throw new Error('تعذّر الاتصال بـ Cerebras: ' + (e?.message || e)) }
   const c = res.data?.choices?.[0]?.message?.content
   if (!c) throw new Error('فورمات غير متوقع من Cerebras')
   return String(c)
 }
 async function pollinationsCall(messages, model, proxyCfg = {}) {
-  const res = await axios.post('https://text.pollinations.ai/openai', { model: model || 'openai', messages }, { headers: { 'Content-Type': 'application/json' }, timeout: 0, ...proxyCfg })
+  let res
+  try { res = await axios.post('https://text.pollinations.ai/openai', { model: model || 'openai', messages }, { headers: { 'Content-Type': 'application/json' }, ...proxyCfg, timeout: HTTP_TIMEOUT_MS }) }
+  catch (e) { throw new Error('تعذّر الاتصال بـ Pollinations: ' + (e?.message || e)) }
   const c = res.data?.choices?.[0]?.message?.content || (typeof res.data === 'string' ? res.data : null)
   if (!c) throw new Error('فورمات غير متوقع من Pollinations')
   return String(c)
@@ -495,7 +549,9 @@ async function pollinationsCall(messages, model, proxyCfg = {}) {
 async function gptAiGatewayCall(messages, endpoint, proxyCfg = {}) {
   const text = messages.filter(m => m.role !== 'system').map(m => m.content).join('\n')
   const sys = messages.find(m => m.role === 'system')?.content
-  const res = await axios.post('https://gpt-ai-olive.vercel.app/chat/' + (endpoint || 'v1'), { userMessage: (sys ? sys + '\n\n' : '') + text }, { headers: { 'Content-Type': 'application/json' }, timeout: 0, ...proxyCfg })
+  let res
+  try { res = await axios.post('https://gpt-ai-olive.vercel.app/chat/' + (endpoint || 'v1'), { userMessage: (sys ? sys + '\n\n' : '') + text }, { headers: { 'Content-Type': 'application/json' }, ...proxyCfg, timeout: HTTP_TIMEOUT_MS }) }
+  catch (e) { throw new Error('تعذّر الاتصال بـ GPT-AI: ' + (e?.message || e)) }
   const c = res.data?.reply || res.data?.response || res.data?.message
   if (!c) throw new Error('فورمات غير متوقع')
   return String(c)
@@ -504,13 +560,17 @@ async function apiAirforceCall(messages, model, proxyCfg = {}) {
   const cfg = getAgentCfg(); const st = getSettings()
   const key = process.env.AIRFORCE_KEY || cfg.airforceKey || st.airforceKey
   const headers = { 'Content-Type': 'application/json' }; if (key) headers.Authorization = 'Bearer ' + key
-  const res = await axios.post('https://api.airforce/v1/chat/completions', { model: model || 'llama-3.1-70b', messages, temperature: 0.3 }, { headers, timeout: 0, ...proxyCfg })
+  let res
+  try { res = await axios.post('https://api.airforce/v1/chat/completions', { model: model || 'llama-3.1-70b', messages, temperature: 0.3 }, { headers, ...proxyCfg, timeout: HTTP_TIMEOUT_MS }) }
+  catch (e) { throw new Error('تعذّر الاتصال بـ Airforce: ' + (e?.message || e)) }
   const c = res.data?.choices?.[0]?.message?.content
   if (!c) throw new Error('فورمات غير متوقع من Airforce')
   return String(c)
 }
 async function uncloseAICall(messages, model, proxyCfg = {}) {
-  const res = await axios.post('https://uncloseai.com/v1/chat/completions', { model: model || 'gpt-4o', messages, temperature: 0.3 }, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer unused' }, timeout: 0, ...proxyCfg })
+  let res
+  try { res = await axios.post('https://uncloseai.com/v1/chat/completions', { model: model || 'gpt-4o', messages, temperature: 0.3 }, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer unused' }, ...proxyCfg, timeout: HTTP_TIMEOUT_MS }) }
+  catch (e) { throw new Error('تعذّر الاتصال بـ UncloseAI: ' + (e?.message || e)) }
   const c = res.data?.choices?.[0]?.message?.content
   if (!c) throw new Error('فورمات غير متوقع من UncloseAI')
   return String(c)
@@ -686,7 +746,7 @@ function detectHallucinatedNumbers(reply, session) {
 // ═══════════════════════════════════════════════════════════════
 const KNOWN_TOOLS = ['list_files','read_file','search_code','plugin_list','analyze_plugins','research_plugin','inspect_plugin','test_plugin','suggest_plugins','clone_plugin','write_file','delete_file','npm_install','create_tool','list_tools','read_tool','delete_tool','think','plan','reflect','memory','web_search','wiki_search','fetch_url','ask_user','finish']
 
-const PROTECTED_WRITE = [/^session([\\/]|$)/i, /^system([\\/]|$)/i, /^sub\.js$/i, /^index\.js$/i, /^node_modules([\\/]|$)/i, /^agent-backups([\\/]|$)/i, /^tmp([\\/]|$)/i, /^package(-lock)?\.json$/i, /^\.env/i, /(^|[\\/])creds\.json$/i, /^agent-sessions\.json$/i, /^agent-tools[\\/]/i, /^agent-models\.json$/i]
+const PROTECTED_WRITE = [/^session([\\/]|$)/i, /^system([\\/]|$)/i, /^sub\.js$/i, /^index\.js$/i, /^node_modules([\\/]|$)/i, /^agent-backups([\\/]|$)/i, /^tmp([\\/]|$)/i, /^package(-lock)?\.json$/i, /^\.env/i, /(^|[\\/])creds\.json$/i, /^agent-sessions\.json$/i, /^agent-tools[\\/]/i, /^agent-models\.json$/i, /^plugins[\\/]owner[\\/]agent\.js$/i]
 const PROTECTED_READ = [/^session([\\/]|$)/i, /^node_modules([\\/]|$)/i, /^\.env/i, /(^|[\\/])creds\.json$/i]
 const TEXT_EXT = /\.(js|mjs|cjs|json|md|txt|html|css|py|yml|yaml)$/i
 
@@ -709,9 +769,9 @@ function persistSessions(now = false) {
       fs.writeFileSync(SESSIONS_FILE, JSON.stringify(Object.fromEntries(entries)), 'utf8')
     } catch (e) { console.error('[agent persist]', e?.message || e) }
   }
-  if (now) { if (_persistTimer) { clearTimeout(_persistTimer); _persistTimer = null }; doSave(); return }
-  if (_persistTimer) clearTimeout(_persistTimer)
-  _persistTimer = setTimeout(doSave, 3000)
+  if (now) { _persistTimer = clearAgentTimer(_persistTimer); doSave(); return }
+  _persistTimer = clearAgentTimer(_persistTimer)
+  _persistTimer = registerAgentTimer(setTimeout(doSave, 3000), 'timeout')
 }
 function loadPersistedSessions() {
   try {
@@ -759,7 +819,7 @@ function maskKey(k) { if (!k || typeof k !== 'string') return '(فاضي)'; if (
 // ═══════════════════════════════════════════════════════════════
 class ActivityStatus {
   constructor(conn, chat, quoted) { this.conn = conn; this.chat = chat; this.quoted = quoted; this.key = null; this.startTime = Date.now(); this.activities = []; this.maxActivities = 30; this.current = ''; this.timer = null; this.pending = false; this.cancelled = false; this.settings = getSettings() }
-  async init() { try { const sent = await this.conn.sendMessage(this.chat, { text: this.render() }, { quoted: this.quoted }); this.key = sent?.key || null } catch {}; const hb = Math.max(2000, Number(this.settings.heartbeatMs) || 4000); this.timer = setInterval(() => this.flush(), hb) }
+  async init() { try { const sent = await this.conn.sendMessage(this.chat, { text: this.render() }, { quoted: this.quoted }); this.key = sent?.key || null } catch {}; const hb = Math.max(2000, Number(this.settings.heartbeatMs) || 4000); this.timer = clearAgentTimer(this.timer); this.timer = registerAgentTimer(setInterval(() => this.flush(), hb), 'interval') }
   add(icon, text) { if (this.cancelled) return; if (this.settings.statusMode === 'silent' && !['❌', '⏹️', '✅'].includes(icon)) return; this.activities.push({ icon, text: String(text).slice(0, 200), ts: Date.now() }); if (this.activities.length > this.maxActivities) this.activities.shift(); this.current = ''; this.flush() }
   setCurrent(text) { if (this.cancelled || this.settings.statusMode === 'silent') return; this.current = String(text || '').slice(0, 200); this.flush() }
   render() {
@@ -775,28 +835,235 @@ class ActivityStatus {
     return lines.join('\n').slice(0, 3800)
   }
   async flush() { if (!this.key || this.pending || this.cancelled) return; this.pending = true; try { await this.conn.sendMessage(this.chat, { text: this.render(), edit: this.key }) } catch {} finally { this.pending = false } }
-  async stop(finalText) { this.cancelled = true; if (this.timer) { clearInterval(this.timer); this.timer = null }; if (!this.key) return; try { if (finalText) await this.conn.sendMessage(this.chat, { text: String(finalText).slice(0, 3800), edit: this.key }); else await this.conn.sendMessage(this.chat, { delete: this.key }) } catch {} }
+  async stop(finalText) { this.cancelled = true; this.timer = clearAgentTimer(this.timer); if (!this.key) return; try { if (finalText) await this.conn.sendMessage(this.chat, { text: String(finalText).slice(0, 3800), edit: this.key }); else await this.conn.sendMessage(this.chat, { delete: this.key }) } catch {} }
 }
 
 // ═══════════════════════════════════════════════════════════════
 //  🧰 Custom Tools
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  🛡️ صندوق الأدوات — قائمة سماح (Allowlist) مش قائمة منع
+// ═══════════════════════════════════════════════════════════════
+// كود الأداة المخصصة بيتنفّذ جوه البوت، فبنسمح بالعمليات المعلنة دي بالظبط:
+//  • API السياق (ctx): ROOT, safePath, relPath, fs (مقيّد على مجلد المشروع), path,
+//    now, log, readText, listDir, exists, axios (بمهلة محدودة)
+//  • دوال JS الآمنة (من غير وصول للنظام ولا الشبكة ولا العمليات)
+// أي اسم بره القائمة (process, require, eval, child_process, fetch, setTimeout...) = مرفوض،
+// وكمان بنرفض أي أمر نظام مكتوب جوّه الكود (rm -rf, curl, npm install, chmod...).
+const TOOL_CTX_PROPS = new Set(['ROOT', 'safePath', 'relPath', 'fs', 'path', 'now', 'log', 'readText', 'listDir', 'exists', 'axios'])
+const TOOL_ALLOWED_FS = new Set(['readFileSync', 'writeFileSync', 'readdirSync', 'existsSync', 'statSync', 'lstatSync', 'mkdirSync', 'unlinkSync', 'copyFileSync', 'renameSync', 'appendFileSync', 'readFile', 'writeFile', 'readdir', 'stat', 'mkdir', 'unlink', 'copyFile', 'rename', 'appendFile', 'promises'])
+const TOOL_ALLOWED_PATH = new Set(['join', 'resolve', 'dirname', 'basename', 'extname', 'relative', 'sep', 'normalize', 'parse', 'format', 'isAbsolute'])
+const TOOL_ALLOWED_AXIOS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'request', 'create', 'defaults', 'interceptors'])
+const TOOL_ALLOWED_GLOBALS = new Set([
+  ...TOOL_CTX_PROPS, 'args', 'ctx', 'console', 'JSON', 'Math', 'Date', 'String', 'Number', 'Boolean', 'Array', 'Object',
+  'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Symbol', 'RegExp', 'Error', 'TypeError', 'RangeError', 'SyntaxError',
+  'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'encodeURIComponent', 'decodeURIComponent', 'encodeURI', 'decodeURI',
+  'Intl', 'ArrayBuffer', 'Uint8Array', 'Int16Array', 'Int32Array', 'Float32Array', 'Float64Array', 'TextEncoder', 'TextDecoder',
+  'URL', 'URLSearchParams', 'structuredClone', 'Buffer', 'Infinity', 'NaN', 'undefined'
+])
+const TOOL_KEYWORDS = new Set(['break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default', 'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function', 'if', 'import', 'in', 'instanceof', 'let', 'new', 'return', 'super', 'switch', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield', 'async', 'await', 'of', 'static', 'get', 'set', 'true', 'false', 'null', 'this', 'arguments'])
+// ⛔ أوامر النظام — مرفوضة حتى لو مكتوبة كنص جوّه الكود
+const TOOL_BLOCKED_COMMANDS = [
+  { re: /\brm\s+-[a-z]*[rf]/i, msg: 'أوامر الحذف (rm) ممنوعة' },
+  { re: /\bcurl\b|\bwget\b/i, msg: 'أوامر الشبكة (curl/wget) ممنوعة' },
+  { re: /\bnpm\s+(i|install|add|ci|uninstall)\b|\bnpx\b|\byarn\b|\bpnpm\b/i, msg: 'تثبيت الحزم ممنوع' },
+  { re: /\bpip3?\s+install\b|\bapt(-get)?\b|\byum\b|\bapk\b/i, msg: 'تثبيت النظام ممنوع' },
+  { re: /\bchmod\b|\bchown\b|\bsudo\b|\bmount\b/i, msg: 'صلاحيات النظام ممنوعة' },
+  { re: /\bkill(all)?\b|\bshutdown\b|\breboot\b|\bhalt\b/i, msg: 'أوامر إيقاف النظام ممنوعة' },
+  { re: /\bmkfs\b|\bdd\s+if=|\bfdisk\b/i, msg: 'أوامر الأقراص ممنوعة' },
+  { re: /shell\s*:\s*(true|1)\b/i, msg: 'تشغيل shell ممنوع' }
+]
+
+// 🔧 بنشيل التعليقات والنصوص من الكود قبل الفحص (عشان نحصّي القدرات المستخدمة فعلاً)
+function stripToolLiterals(src) {
+  const s = String(src || '')
+  let out = '', i = 0, prev = '', prevWord = ''
+  const regexWords = ['return', 'typeof', 'case', 'in', 'of', 'new', 'delete', 'void', 'instanceof', 'do', 'else', 'await', 'yield']
+  const setPrev = (ch) => { if (/\s/.test(ch)) return; prev = ch; prevWord = /[\w$]/.test(ch) ? prevWord + ch : '' }
+  while (i < s.length) {
+    const ch = s[i], nx = s[i + 1]
+    if (ch === '/' && nx === '/') { while (i < s.length && s[i] !== '\n') i++; continue }
+    if (ch === '/' && nx === '*') { i += 2; while (i < s.length && !(s[i] === '*' && s[i + 1] === '/')) i++; i += 2; continue }
+    if (ch === '"' || ch === "'") {
+      i++
+      while (i < s.length) { if (s[i] === '\\') { i += 2; continue } if (s[i] === ch) { i++; break } i++ }
+      out += ' 0 '; setPrev('0'); continue
+    }
+    if (ch === '`') {
+      i++
+      while (i < s.length) {
+        if (s[i] === '\\') { i += 2; continue }
+        if (s[i] === '`') { i++; break }
+        if (s[i] === '$' && s[i + 1] === '{') {
+          out += ' ${ '; i += 2; let depth = 1
+          while (i < s.length) {
+            if (s[i] === '{') { depth++; out += s[i]; i++; continue }
+            if (s[i] === '}') { depth--; if (depth === 0) { out += ' } '; i++; break } out += s[i]; i++; continue }
+            out += s[i]; i++
+          }
+          continue
+        }
+        i++
+      }
+      out += ' 0 '; setPrev('0'); continue
+    }
+    if (ch === '/' && (prev === '' || '(,=:[!&|?{;'.includes(prev) || regexWords.includes(prevWord))) {
+      i++
+      let cls = false
+      while (i < s.length) {
+        if (s[i] === '\\') { i += 2; continue }
+        if (s[i] === '[') cls = true
+        else if (s[i] === ']') cls = false
+        else if (s[i] === '/' && !cls) { i++; break }
+        else if (s[i] === '\n') break
+        i++
+      }
+      out += ' 0 '; setPrev('0'); continue
+    }
+    out += ch; setPrev(ch); i++
+  }
+  return out
+}
+function charBefore(src, idx) { let i = idx - 1; while (i >= 0 && /\s/.test(src[i])) i--; return i >= 0 ? src[i] : '' }
+function charAfter(src, idx) { let i = idx; while (i < src.length && /\s/.test(src[i])) i++; return i < src.length ? src[i] : '' }
+// 🧾 الأسماء اللي الكود نفسه معرّفها (متغيرات/دوال/بارامترات) — دي مسموحة
+function collectDeclaredNames(src) {
+  const names = new Set()
+  const add = (n) => { const t = String(n || '').trim().replace(/^\.\.\./, ''); if (/^[A-Za-z_$][\w$]*$/.test(t)) names.add(t) }
+  let m
+  const declRe = /\b(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/g
+  while ((m = declRe.exec(src))) add(m[1])
+  const destrRe = /\b(?:const|let|var)\s*(\{|\[)([^\}\]]*)([\}\]])/g
+  while ((m = destrRe.exec(src))) {
+    for (const part of m[2].split(',')) {
+      const t = part.trim()
+      if (!t) continue
+      add(t.includes(':') ? t.split(':').pop() : t)
+    }
+  }
+  const catchRe = /\bcatch\s*\(\s*([A-Za-z_$][\w$]*)/g
+  while ((m = catchRe.exec(src))) add(m[1])
+  const parenRe = /\(([^()]*)\)/g
+  while ((m = parenRe.exec(src))) {
+    const start = m.index, end = start + m[0].length
+    const after = src.slice(end, end + 4)
+    const before = src.slice(Math.max(0, start - 40), start)
+    const isArrow = /^\s*=>/.test(after)
+    const isFn = /(?:^|[\s;{}])function\s*\*?\s*[A-Za-z_$][\w$]*\s*$/.test(before) || /(?:^|[\s;{}])function\s*\*?\s*$/.test(before)
+    if (!isArrow && !isFn) continue
+    for (const part of m[1].split(',')) {
+      const t = part.trim()
+      if (!t) continue
+      if (t.startsWith('{') || t.startsWith('[')) {
+        for (const p2 of t.slice(1, -1).split(',')) {
+          const t2 = p2.trim()
+          if (!t2) continue
+          add(t2.includes(':') ? t2.split(':').pop() : t2)
+        }
+        continue
+      }
+      add(t.split('=')[0])
+    }
+  }
+  return names
+}
+// 🔍 الأسماء الحرة (مش خصائص) المستخدمة في الكود
+function collectFreeIdentifiers(src) {
+  const out = []
+  const re = /[A-Za-z_$][\w$]*/g
+  let m
+  while ((m = re.exec(src))) {
+    if (charBefore(src, m.index) === '.') continue
+    const next = charAfter(src, m.index + m[0].length)
+    if (next === ':') {
+      const pb = charBefore(src, m.index)
+      if (pb === '{' || pb === ',') continue // مفتاح في object literal
+    }
+    out.push(m[0])
+  }
+  return out
+}
+// 🔗 سلاسل الخصائص (ctx.fs.readFileSync) عشان نقيّد الطرق المسموحة
+function collectToolChains(src) {
+  const chains = []
+  const re = /[A-Za-z_$][\w$]*|\./g
+  const toks = []
+  let m
+  while ((m = re.exec(src))) toks.push(m[0])
+  for (let i = 0; i < toks.length; i++) {
+    if (toks[i] === '.') continue
+    const chain = [toks[i]]
+    let j = i + 1
+    while (j + 1 < toks.length && toks[j] === '.' && toks[j + 1] !== '.') { chain.push(toks[j + 1]); j += 2 }
+    if (chain.length > 1) chains.push(chain)
+  }
+  return chains
+}
 function safetyCheckToolCode(code) {
-  const c = String(code || '')
-  const blocked = [{ re: /\bchild_process\b/, msg: 'ممنوع child_process' }, { re: /new\s+Function\s*\(/, msg: 'ممنوع new Function()' }, { re: /\bsession\b/i, msg: 'ممنوع session' }, { re: /creds\.json/, msg: 'ممنوع creds.json' }, { re: /\.env\b/, msg: 'ممنوع .env' }, { re: /database\.json/, msg: 'ممنوع database.json' }]
-  for (const b of blocked) if (b.re.test(c)) return b.msg
+  const raw = String(code || '')
+  if (!raw.trim()) return 'غير مسموح: الكود فاضي'
+  if (raw.length > 500 * 1024) return 'غير مسموح: الكود أكبر من 500KB'
+  // 1) أوامر النظام (بنفحص النص الخام)
+  for (const b of TOOL_BLOCKED_COMMANDS) if (b.re.test(raw)) return 'غير مسموح: ' + b.msg
+  const src = stripToolLiterals(raw)
+  // 1.5) ممنوع أي import (ثابت أو ديناميكي) — الأداة بتاخد كل حاجة من ctx
+  if (/\bimport\b/.test(src)) return 'غير مسموح: الاستيراد (import) ممنوع داخل الأدوات'
+  const declared = collectDeclaredNames(src)
+  // 2) كل اسم لازم يكون معرّف جوّه الكود أو ضمن القائمة المسموحة
+  for (const id of collectFreeIdentifiers(src)) {
+    if (TOOL_KEYWORDS.has(id)) continue
+    if (declared.has(id)) continue
+    if (TOOL_ALLOWED_GLOBALS.has(id)) continue
+    return 'غير مسموح: "' + id + '" بره قائمة العمليات المسموحة'
+  }
+  // 3) الطرق الممنوعة على fs/path/axios/ctx
+  for (const chain of collectToolChains(src)) {
+    const root = chain[0]
+    if (root === 'fs' && chain.length > 1 && !TOOL_ALLOWED_FS.has(chain[1])) return 'غير مسموح: fs.' + chain[1] + ' ممنوعة'
+    if (root === 'path' && chain.length > 1 && !TOOL_ALLOWED_PATH.has(chain[1])) return 'غير مسموح: path.' + chain[1] + ' ممنوعة'
+    if (root === 'axios' && chain.length > 1 && !TOOL_ALLOWED_AXIOS.has(chain[1])) return 'غير مسموح: axios.' + chain[1] + ' ممنوعة'
+    if (root === 'ctx' && chain.length > 1 && !TOOL_CTX_PROPS.has(chain[1])) return 'غير مسموح: ctx.' + chain[1] + ' مش متاحة'
+  }
   return null
 }
 async function loadCustomTool(name) {
   const fp = path.join(TOOLS_DIR, name + '.js')
   if (!fs.existsSync(fp)) return null
-  try { const url = 'file://' + fp.replace(/\\/g, '/') + '?t=' + Date.now(); const mod = await import(url); const def = mod.default || mod.handler; if (typeof def !== 'function') return null; const tool = { name, description: mod.description || '(بدون وصف)', argsSchema: mod.args_schema || {}, example: mod.example || '', file: name + '.js', run: def }; customTools.set(name, tool); return tool } catch (e) { console.error('[agent-tool load]', name, e?.message); return null }
+  try {
+    // 🛡️ نفس صندوق الأدوات بيتطبّق على أي ملف أداة موجود في المجلد (مش بس اللي اتعمل من الشات)
+    let code = ''
+    try { code = fs.readFileSync(fp, 'utf8') } catch {}
+    const secErr = safetyCheckToolCode(code)
+    if (secErr) { console.error('[agent-tool load] مرفوض أمنيًا:', name, secErr); return null }
+    const url = 'file://' + fp.replace(/\\/g, '/') + '?t=' + Date.now(); const mod = await import(url); const def = mod.default || mod.handler; if (typeof def !== 'function') return null; const tool = { name, description: mod.description || '(بدون وصف)', argsSchema: mod.args_schema || {}, example: mod.example || '', file: name + '.js', run: def }; customTools.set(name, tool); return tool
+  } catch (e) { console.error('[agent-tool load]', name, e?.message); return null }
 }
 async function loadAllCustomTools() {
   try { if (!fs.existsSync(TOOLS_DIR)) { fs.mkdirSync(TOOLS_DIR, { recursive: true }); return 0 }; const files = fs.readdirSync(TOOLS_DIR).filter(f => /^[a-z][a-z0-9_]{2,40}\.js$/i.test(f)); let loaded = 0; for (const file of files) { const name = file.replace(/\.js$/i, ''); if (customTools.has(name)) continue; const t = await loadCustomTool(name); if (t) loaded++ }; if (loaded) console.log('[agent-tools] حمّلنا ' + loaded + ' أداة'); return loaded } catch (e) { return 0 }
 }
+// 🌐 عميل HTTP مخصص للأدوات — مهلة وحدود حجم (مفيش نداء بلا مهلة)
+const toolAxios = axios.create({ timeout: HTTP_TIMEOUT_MS, maxRedirects: 3, maxContentLength: 10 * 1024 * 1024, maxBodyLength: 10 * 1024 * 1024 })
+
+// 🛡️ واجهة fs مقيّدة — كل المسارات جوّه المشروع والمسارات المحمية مقفولة
+function buildRestrictedFs() {
+  const readGuard = (abs) => { const rel = relPath(abs); for (const re of PROTECTED_READ) if (re.test(rel)) throw new Error('مسار محمي: ' + rel) }
+  const writeGuard = (abs) => { readGuard(abs); guardWrite(abs) }
+  return {
+    readFileSync: (p, ...rest) => { const abs = safePath(p); readGuard(abs); return fs.readFileSync(abs, ...rest) },
+    writeFileSync: (p, data, ...rest) => { const abs = safePath(p); writeGuard(abs); return fs.writeFileSync(abs, data, ...rest) },
+    appendFileSync: (p, data, ...rest) => { const abs = safePath(p); writeGuard(abs); return fs.appendFileSync(abs, data, ...rest) },
+    readdirSync: (p, ...rest) => { const abs = safePath(p); readGuard(abs); return fs.readdirSync(abs, ...rest) },
+    existsSync: (p) => { try { return fs.existsSync(safePath(p)) } catch { return false } },
+    statSync: (p, ...rest) => fs.statSync(safePath(p), ...rest),
+    lstatSync: (p, ...rest) => fs.lstatSync(safePath(p), ...rest),
+    mkdirSync: (p, ...rest) => { const abs = safePath(p); writeGuard(abs); return fs.mkdirSync(abs, ...rest) },
+    unlinkSync: (p) => { const abs = safePath(p); writeGuard(abs); return fs.unlinkSync(abs) },
+    copyFileSync: (a, b, ...rest) => { const absA = safePath(a), absB = safePath(b); writeGuard(absA); writeGuard(absB); return fs.copyFileSync(absA, absB, ...rest) },
+    renameSync: (a, b, ...rest) => { const absA = safePath(a), absB = safePath(b); writeGuard(absA); writeGuard(absB); return fs.renameSync(absA, absB, ...rest) }
+  }
+}
 function buildToolContext(toolName) {
-  return { ROOT, safePath, relPath, fs, path, now: () => Date.now(), log: (...args) => console.log('[custom-tool:' + toolName + ']', ...args), readText: (p) => { const abs = safePath(p), rel = relPath(abs); for (const re of PROTECTED_READ) if (re.test(rel)) throw new Error('مسار محمي: ' + rel); return fs.readFileSync(abs, 'utf8') }, listDir: (p) => { const abs = safePath(p), rel = relPath(abs); for (const re of PROTECTED_READ) if (re.test(rel)) throw new Error('مسار محمي: ' + rel); return fs.readdirSync(abs) }, exists: (p) => { try { return fs.existsSync(safePath(p)) } catch { return false } }, axios }
+  return { ROOT, safePath, relPath, fs: buildRestrictedFs(), path, now: () => Date.now(), log: (...args) => console.log('[custom-tool:' + toolName + ']', ...args), readText: (p) => { const abs = safePath(p), rel = relPath(abs); for (const re of PROTECTED_READ) if (re.test(rel)) throw new Error('مسار محمي: ' + rel); return fs.readFileSync(abs, 'utf8') }, listDir: (p) => { const abs = safePath(p), rel = relPath(abs); for (const re of PROTECTED_READ) if (re.test(rel)) throw new Error('مسار محمي: ' + rel); return fs.readdirSync(abs) }, exists: (p) => { try { return fs.existsSync(safePath(p)) } catch { return false } }, axios: toolAxios }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -811,7 +1078,7 @@ function nodeCheckSyntax(code, file) {
   const tmp = path.join(tmpDir, 'chk-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.mjs')
   try {
     fs.writeFileSync(tmp, String(code), 'utf8')
-    execFileSync(process.execPath, ['--check', tmp], { stdio: 'pipe' })
+    execFileSync(process.execPath, ['--check', tmp], { stdio: 'pipe', timeout: 10000, maxBuffer: 8 * 1024 * 1024 })
     return '✅ الصياغة سليمة.'
   } catch (e) {
     const out = String((e?.stderr && e.stderr.toString()) || e?.message || e)
@@ -823,7 +1090,7 @@ function nodeCheckSyntax(code, file) {
   } finally { try { fs.unlinkSync(tmp) } catch {} }
 }
 async function checkSyntax(code, file) {
-  // نفضّل مكتبة syntax-error لو موجودة، وإلا نرجع على node --check (مفيش Timeout/مفيش تبعية)
+  // نفضّل مكتبة syntax-error لو موجودة، وإلا نرجع على node --check (بمهلة محدودة/مفيش تبعية)
   try { if (_synErr === null) _synErr = (await import('syntax-error')).default } catch { _synErr = false }
   if (_synErr) {
     try {
@@ -1132,7 +1399,9 @@ function decodeDDGUrl(rawUrl) { let f = rawUrl; const m = rawUrl.match(/uddg=([^
 
 async function searchDDGLite(query, limit = 8) {
   const url = 'https://lite.duckduckgo.com/lite/?q=' + encodeURIComponent(query)
-  const res = await axios.get(url, { headers: { 'User-Agent': BROWSER_UA, 'Accept': 'text/html' }, timeout: 0, maxRedirects: 5, validateStatus: s => s < 500 })
+  let res
+  try { res = await axios.get(url, { headers: { 'User-Agent': BROWSER_UA, 'Accept': 'text/html' }, maxRedirects: 5, validateStatus: s => s < 500, timeout: HTTP_TIMEOUT_SEARCH_MS }) }
+  catch (e) { throw new Error('فشل الاتصال بـ DuckDuckGo: ' + (e?.message || e)) }
   const html = String(res.data || '')
   if (res.status === 403 || /captcha|challenge|blocked/i.test(html.slice(0, 500))) throw new Error('blocked')
   const results = []
@@ -1144,7 +1413,9 @@ async function searchDDGLite(query, limit = 8) {
 }
 async function searchDDGHTML(query, limit = 8) {
   const url = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query)
-  const res = await axios.get(url, { headers: { 'User-Agent': BROWSER_UA, 'Accept': 'text/html', 'Referer': 'https://duckduckgo.com/' }, timeout: 0, maxRedirects: 5, validateStatus: s => s < 500 })
+  let res
+  try { res = await axios.get(url, { headers: { 'User-Agent': BROWSER_UA, 'Accept': 'text/html', 'Referer': 'https://duckduckgo.com/' }, maxRedirects: 5, validateStatus: s => s < 500, timeout: HTTP_TIMEOUT_SEARCH_MS }) }
+  catch (e) { throw new Error('فشل الاتصال بـ DuckDuckGo: ' + (e?.message || e)) }
   const html = String(res.data || '')
   if (res.status === 403 || /captcha/i.test(html.slice(0, 500))) throw new Error('blocked')
   const results = []
@@ -1156,7 +1427,9 @@ async function searchDDGHTML(query, limit = 8) {
 }
 async function searchBing(query, limit = 8) {
   const url = 'https://www.bing.com/search?q=' + encodeURIComponent(query)
-  const res = await axios.get(url, { headers: { 'User-Agent': BROWSER_UA, 'Accept': 'text/html' }, timeout: 0, maxRedirects: 5, validateStatus: s => s < 500 })
+  let res
+  try { res = await axios.get(url, { headers: { 'User-Agent': BROWSER_UA, 'Accept': 'text/html' }, maxRedirects: 5, validateStatus: s => s < 500, timeout: HTTP_TIMEOUT_SEARCH_MS }) }
+  catch (e) { throw new Error('فشل الاتصال بـ Bing: ' + (e?.message || e)) }
   const html = String(res.data || '')
   if (res.status === 403 || /captcha/i.test(html.slice(0, 500))) throw new Error('blocked')
   const results = []
@@ -1169,7 +1442,9 @@ async function searchSearXNG(query, limit = 8) {
   const instances = ['https://searx.be', 'https://search.bus-hit.me', 'https://searx.tiekoetter.com']
   for (const inst of instances) {
     try {
-      const res = await axios.get(inst + '/search', { params: { q: query, format: 'json' }, headers: { 'User-Agent': BROWSER_UA }, timeout: 0, validateStatus: s => s < 500 })
+      let res
+      try { res = await axios.get(inst + '/search', { params: { q: query, format: 'json' }, headers: { 'User-Agent': BROWSER_UA }, validateStatus: s => s < 500, timeout: HTTP_TIMEOUT_SEARCH_MS }) }
+      catch (e) { console.log('[web_search] SearXNG ' + inst + ': ' + String(e?.message || e).slice(0, 100)); continue }
       const data = res.data; if (!data || !Array.isArray(data.results)) continue
       const results = data.results.slice(0, limit).map(r => ({ title: stripHtml(r.title || ''), url: r.url || '', snippet: stripHtml(r.content || '') })).filter(r => r.title && r.url)
       if (results.length) return results
@@ -1198,18 +1473,18 @@ async function toolWikiSearch(query, lang) {
   if (!query) return '❌ محتاج query.'
   const l = String(lang || 'ar').toLowerCase()
   try {
-    const searchRes = await axios.get(`https://${l}.wikipedia.org/w/api.php`, { params: { action: 'query', list: 'search', srsearch: query, format: 'json', srlimit: 5, srprop: 'snippet' }, headers: { 'User-Agent': 'Agent/1.0' }, timeout: 0 })
+    const searchRes = await axios.get(`https://${l}.wikipedia.org/w/api.php`, { params: { action: 'query', list: 'search', srsearch: query, format: 'json', srlimit: 5, srprop: 'snippet' }, headers: { 'User-Agent': 'Agent/1.0' }, timeout: HTTP_TIMEOUT_SEARCH_MS })
     const hits = searchRes.data?.query?.search || []
     if (!hits.length) return `📚 مفيش نتائج لـ "${query}"`
     const out = []
-    for (const hit of hits) { try { const sumRes = await axios.get(`https://${l}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(hit.title)}`, { headers: { 'User-Agent': 'Agent/1.0' }, timeout: 0 }); const d = sumRes.data; out.push(`📖 *${d.title}*\n${(d.extract || '').slice(0, 800)}`) } catch { out.push(`📖 *${hit.title}*\n${(hit.snippet || '').replace(/<[^>]+>/g, '')}`) } }
+    for (const hit of hits) { try { const sumRes = await axios.get(`https://${l}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(hit.title)}`, { headers: { 'User-Agent': 'Agent/1.0' }, timeout: HTTP_TIMEOUT_SEARCH_MS }); const d = sumRes.data; out.push(`📖 *${d.title}*\n${(d.extract || '').slice(0, 800)}`) } catch { out.push(`📖 *${hit.title}*\n${(hit.snippet || '').replace(/<[^>]+>/g, '')}`) } }
     return `📚 WIKI: "${query}"\n\n` + out.join('\n\n')
   } catch (e) { return '❌ فشل: ' + (e?.message || String(e)).slice(0, 300) }
 }
 async function toolFetchUrl(url, maxLen) {
   if (!url) return '❌ محتاج url.'
   try {
-    const res = await axios.get(String(url), { headers: { 'User-Agent': BROWSER_UA }, timeout: 0, maxContentLength: 50 * 1024 * 1024 })
+    const res = await axios.get(String(url), { headers: { 'User-Agent': BROWSER_UA }, maxContentLength: 50 * 1024 * 1024, timeout: HTTP_TIMEOUT_SEARCH_MS })
     let text = String(res.data || '')
     if (/<html/i.test(text)) text = text.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
     const max = Math.min(Number(maxLen) || 10000, 100000)
@@ -1245,15 +1520,10 @@ function toolDeleteFile(p) {
   return '🗑️ حذف ' + relPath(abs) + (bak ? ' | نسخة: ' + bak : '')
 }
 function toolNpm(pkg) {
-  return new Promise(resolve => {
-    const name = String(pkg || '').trim()
-    if (!name || !/^[@a-zA-Z0-9\/\.\-_]+$/.test(name)) return resolve('❌ اسم غير صالح')
-    execFile('npm', ['install', '--no-audit', '--no-fund', name], { cwd: ROOT, maxBuffer: 100 * 1024 * 1024, shell: process.platform === 'win32' }, (err, stdout) => {
-      if (err) return resolve('❌ فشل: ' + String(err.message || err).slice(0, 500))
-      logAction('npm install ' + name)
-      resolve('✅ تم تثبيت ' + name)
-    })
-  })
+  // 🛑 مفيش تثبيت حزم من جوه البوت — ممنوع تشغيل npm/شِل وقت التشغيل
+  const name = String(pkg || '').trim()
+  if (!name) return Promise.resolve('❌ غير مسموح: اسم الحزمة فاضي')
+  return Promise.resolve('❌ غير مسموح: تثبيت الحزم (' + name.slice(0, 40) + ') ممنوع داخل الوكيل. ابعت الحزم من جهازك وأعد تشغيل البوت.')
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1408,7 +1678,7 @@ function buildToolsSection() {
     '─── الأدوات ───', '',
     '📦 list_files • read_file • search_code • plugin_list',
     '🔍 analyze_plugins • research_plugin • inspect_plugin • test_plugin • suggest_plugins • clone_plugin',
-    '✏️ write_file • delete_file • npm_install',
+    '✏️ write_file • delete_file (⛔ npm_install ممنوع)',
     '🧰 create_tool • list_tools • read_tool • delete_tool',
     '🧠 think • plan • reflect • memory',
     '🌐 web_search • wiki_search • fetch_url',
@@ -1427,7 +1697,7 @@ function buildSystemPrompt() {
     '🤖 البوت: ' + cfg.name + ' — عدد البلاجينز: ' + pluginCount,
     'البيئة: Node ' + process.version + ' — ROOT: ' + ROOT + ' — ' + new Date().toISOString().slice(0, 10),
     '',
-    '═══ 🔓 بلا حدود — ولا Timeouts ═══',
+    '═══ 🔓 بلا حدود — وكل طلب شبكة بمهلة محدودة ═══',
     '',
     '═══ 🧠 ReAct Loop ═══',
     '1. 💭 فكر  2. 📝 خطّط  3. 🔧 نفّذ  4. 🪞 راجع  5. 🧠 اتذكر  6. ✅ خلّص',
@@ -1671,7 +1941,7 @@ function buildHelp(p) {
   return [
     '🤖 *صانع البلاجينز — LIGHT Agent (v28.0)*',
     '',
-    '🎯 LIGHT BOT (meowsab) • 🔓 بلا حدود • ⏱️ بلا Timeouts',
+    '🎯 LIGHT BOT (meowsab) • 🔓 بلا حدود • ⏱️ مهلة 30ث على كل طلب',
     '🎯 NVIDIA Key مضاف ✅',
     '',
     '*🚀:* ' + p + 'صانع <وصف>',
@@ -1690,7 +1960,7 @@ function buildHelp(p) {
   ].join('\n')
 }
 function toolsListText() {
-  return ['🧰 *أدوات الوكيل (LIGHT v28):*','','📦 list_files • read_file • search_code • plugin_list','🔍 analyze_plugins • research_plugin • inspect_plugin • test_plugin • suggest_plugins • clone_plugin','✏️ write_file • delete_file • npm_install','🧰 create_tool • list_tools • read_tool • delete_tool','🧠 think • plan • reflect • memory','🌐 web_search • wiki_search • fetch_url','🎯 ask_user • finish','','🧰 *مخصصة:* ' + customTools.size].join('\n')
+  return ['🧰 *أدوات الوكيل (LIGHT v28):*','','📦 list_files • read_file • search_code • plugin_list','🔍 analyze_plugins • research_plugin • inspect_plugin • test_plugin • suggest_plugins • clone_plugin','✏️ write_file • delete_file • npm_install (ممنوع)','🧰 create_tool • list_tools • read_tool • delete_tool','🧠 think • plan • reflect • memory','🌐 web_search • wiki_search • fetch_url','🎯 ask_user • finish','','🧰 *مخصصة:* ' + customTools.size].join('\n')
 }
 function providerStatus() {
   const cfg = getAgentCfg(); const st = getSettings()
@@ -1702,7 +1972,7 @@ function providerStatus() {
   const afKey = process.env.AIRFORCE_KEY || cfg.airforceKey || st.airforceKey
   const cbKey = process.env.CEREBRAS_KEY || cfg.cerebrasKey || st.cerebrasKey
   const ghKey = process.env.GITHUB_TOKEN || cfg.githubToken || st.githubToken
-  return ['🌐 *المزودين:*','',(kiloKey ? '🥇 Kilo ✅' : '🥇 Kilo ⬜'),(gqKey ? '🥈 Groq ✅' : '🥈 Groq ⬜'),(llm7Key ? '🥉 LLM7 ✅' : '🥉 LLM7 ⚪'),(nvKey ? '🎯 NVIDIA ✅' : '🎯 NVIDIA ⬜'),(orKey ? '🔷 OpenRouter ✅' : '🔷 OpenRouter ⬜'),(ghKey ? '🐙 GitHub ✅' : '🐙 GitHub ⬜'),(cbKey ? '⚡ Cerebras ✅' : '⚡ Cerebras ⬜'),(afKey ? '✈️ Airforce ✅' : '✈️ Airforce ⬜'),'🎨 Pollinations ✅ (مجاني)','🤖 GPT-AI ✅ (مجاني)','💳 UncloseAI','','🎯 Framework: LIGHT BOT','⏱️ Timeouts: صفر','🔓 بلا حدود: ✅','🧅 Tor: ' + (st.useTor ? '✅' : '⬜'),'💾 جلسات: ' + sessions.size,'🧰 أدوات: ' + customTools.size].join('\n')
+  return ['🌐 *المزودين:*','',(kiloKey ? '🥇 Kilo ✅' : '🥇 Kilo ⬜'),(gqKey ? '🥈 Groq ✅' : '🥈 Groq ⬜'),(llm7Key ? '🥉 LLM7 ✅' : '🥉 LLM7 ⚪'),(nvKey ? '🎯 NVIDIA ✅' : '🎯 NVIDIA ⬜'),(orKey ? '🔷 OpenRouter ✅' : '🔷 OpenRouter ⬜'),(ghKey ? '🐙 GitHub ✅' : '🐙 GitHub ⬜'),(cbKey ? '⚡ Cerebras ✅' : '⚡ Cerebras ⬜'),(afKey ? '✈️ Airforce ✅' : '✈️ Airforce ⬜'),'🎨 Pollinations ✅ (مجاني)','🤖 GPT-AI ✅ (مجاني)','💳 UncloseAI','','🎯 Framework: LIGHT BOT','⏱️ مهلة الطلبات: 30ث','🔓 بلا حدود: ✅','🧅 Tor: ' + (st.useTor ? '✅' : '⬜'),'💾 جلسات: ' + sessions.size,'🧰 أدوات: ' + customTools.size].join('\n')
 }
 function settingsText() {
   const st = getSettings(); const cfg = getAgentCfg()
@@ -1728,7 +1998,7 @@ function infoText(bot) {
   const cfg = getBotConfig(bot)
   const mem = process.memoryUsage(); const uptime = Math.round(process.uptime())
   const totalModels = Object.values(modelsCache.providers).reduce((a, b) => a + b.length, 0)
-  return ['ℹ️ *معلومات:*','',`• Framework: LIGHT BOT (meowsab)`,`• Bot: ${cfg.name}`,`• Node: ${process.version}`,`• الرام: ${Math.round(mem.rss / 1024 / 1024)}MB`,`• Uptime: ${Math.floor(uptime / 3600)}س ${Math.floor((uptime % 3600) / 60)}د`,`• الجلسات: ${sessions.size}`,`• 🧰 أدوات: ${customTools.size}`,`• 🧠 موديلات: ${totalModels}`,`• 🔓 بلا حدود: ✅`,`• ⏱️ بلا Timeouts: ✅`,`• 🎯 NVIDIA: ✅ مضاف`].join('\n')
+  return ['ℹ️ *معلومات:*','',`• Framework: LIGHT BOT (meowsab)`,`• Bot: ${cfg.name}`,`• Node: ${process.version}`,`• الرام: ${Math.round(mem.rss / 1024 / 1024)}MB`,`• Uptime: ${Math.floor(uptime / 3600)}س ${Math.floor((uptime % 3600) / 60)}د`,`• الجلسات: ${sessions.size}`,`• 🧰 أدوات: ${customTools.size}`,`• 🧠 موديلات: ${totalModels}`,`• 🔓 بلا حدود: ✅`,`• ⏱️ مهلة الطلبات: 30ث`,`• 🎯 NVIDIA: ✅ مضاف`].join('\n')
 }
 function factsText(s) { if (!s?.facts?.length) return '📊 مفيش حقائق.'; return '📊 *حقائق:*\n' + s.facts.map(f => `• ${f.key}: ${f.value}`).join('\n') }
 
@@ -1851,7 +2121,7 @@ const handler = async (m, ctx) => {
     const cfg = getAgentCfg(); const st = getSettings(); const key = process.env.KILO_API_KEY || cfg.kiloKey || st.kiloKey
     if (!key) return m.reply('❌ مفيش مفتاح Kilo.')
     m.reply('🧪 بختبر Kilo…')
-    try { const t0 = Date.now(); const res = await axios.post('https://api.kilo.ai/api/gateway/chat/completions', { model: 'kilo/glm-5-free', messages: [{ role: 'user', content: 'قول "OK"' }], max_tokens: 20 }, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key, 'X-KILOCODE-EDITORNAME': 'light-agent' }, timeout: 0 }); const c = res.data?.choices?.[0]?.message?.content; return c ? m.reply('✅ (' + Math.round((Date.now() - t0) / 1000) + 'ث)\n📤 ' + c.slice(0, 100)) : m.reply('⚠️ رد غير متوقع') }
+    try { const t0 = Date.now(); const res = await axios.post('https://api.kilo.ai/api/gateway/chat/completions', { model: 'kilo/glm-5-free', messages: [{ role: 'user', content: 'قول "OK"' }], max_tokens: 20 }, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key, 'X-KILOCODE-EDITORNAME': 'light-agent' }, timeout: HTTP_TIMEOUT_MS }); const c = res.data?.choices?.[0]?.message?.content; return c ? m.reply('✅ (' + Math.round((Date.now() - t0) / 1000) + 'ث)\n📤 ' + c.slice(0, 100)) : m.reply('⚠️ رد غير متوقع') }
     catch (e) { return m.reply('❌ فشل: ' + String(e?.message || e).slice(0, 300)) }
   }
   if (['اختبر-llm7', 'llm7-test'].includes(a0)) {
@@ -1915,7 +2185,7 @@ const handler = async (m, ctx) => {
   }
   if (['تصفير-الصحة'].includes(a0)) { providerHealth.clear(); return m.reply('♻️') }
 
-  if (['بلا-حدود', 'unlimited'].includes(a0)) { setSetting('maxIter', 0); setSetting('maxTools', 0); setSetting('safetyEnabled', false); return m.reply('🔓 بلا حدود + بلا Timeouts.') }
+  if (['بلا-حدود', 'unlimited'].includes(a0)) { setSetting('maxIter', 0); setSetting('maxTools', 0); setSetting('safetyEnabled', false); return m.reply('🔓 بلا حدود (مع مهلة على كل طلب شبكة).') }
   if (['وضع', 'mode'].includes(a0) && a1) { if (!['silent', 'normal', 'verbose'].includes(a1)) return m.reply('silent/normal/verbose'); setSetting('statusMode', a1); return m.reply('🎛️ ' + a1) }
   if (['توازي'].includes(a0) && args[1]) { const n = Number(args[1]); if (isNaN(n) || n < 1 || n > 20) return m.reply('1-20'); setSetting('maxConcurrentProviders', n); return m.reply('⚡ ' + n) }
   if (['استئناف-تلقائي'].includes(a0) && args[1]) { const v = ['on', 'تشغيل'].includes(a1.toLowerCase()) ? true : ['off', 'ايقاف'].includes(a1.toLowerCase()) ? false : null; if (v === null) return m.reply('on|off'); setSetting('autoResume', v); return m.reply('♻️ ' + (v ? '✅' : '⬜')) }
@@ -1988,8 +2258,13 @@ if (IS_FRESH_START) {
   })()
 }
 
-// Refresh كل 6 ساعات
-setInterval(() => { refreshModelsCache(true).catch(e => console.error('[agent] refresh:', e?.message)) }, MODELS_CACHE_TTL)
+// Refresh كل 6 ساعات — مؤقّت واحد بس (بيتشال مع أي إعادة تحميل للبلاجين)
+let modelsRefreshTimer = null
+function startModelsRefreshTimer() {
+  modelsRefreshTimer = clearAgentTimer(modelsRefreshTimer)
+  modelsRefreshTimer = registerAgentTimer(setInterval(() => { refreshModelsCache(true).catch(e => console.error('[agent] refresh:', e?.message)) }, MODELS_CACHE_TTL), 'interval')
+}
+startModelsRefreshTimer()
 
 // ═══════════════════════════════════════════════════════════════
 //  🎯 handler.before
@@ -2024,5 +2299,8 @@ handler.usage = ['صانع <وصف المطلوب>']
 handler.category = 'owner'
 handler.owner = true
 handler.usePrefix = true
+
+// 🧪 سطح اختبار — نفس دوال الحماية المستخدمة جوه البوت
+export { safetyCheckToolCode, toolNpm, toolCreateTool, buildToolContext, ActivityStatus, agentTimers, stopAgentTimers, TOOL_ALLOWED_GLOBALS, TOOL_CTX_PROPS, HTTP_TIMEOUT_MS }
 
 export default handler
