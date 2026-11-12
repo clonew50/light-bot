@@ -590,7 +590,7 @@ async function handle(req, res, client) {
           sendJson(res, 200, { ok: true, message: 'جاري إعادة التشغيل...' });
           setTimeout(() => {
             if (typeof global.restartBot === 'function') global.restartBot('لوحة التحكم');
-            else client.restart?.();
+            else pushEvent('تعذّر إعادة التشغيل: المسار المركزي غير متاح');
           }, 600);
           return;
 
@@ -648,7 +648,7 @@ async function handle(req, res, client) {
           sendJson(res, 200, { ok: true, message: 'تم الحفظ، جاري إعادة التشغيل...' });
           setTimeout(() => {
             if (typeof global.restartBot === 'function') global.restartBot('تغيير إعدادات الربط');
-            else client.restart?.();
+            else pushEvent('تعذّر إعادة التشغيل: المسار المركزي غير متاح');
           }, 700);
           return;
         }

@@ -6,6 +6,7 @@ import { readPanelConfig, startWebPanel, panelRuntime } from './system/webPanel.
 import { attachHealer } from './system/healer.js';
 import { pullOnce } from './system/autoUpdate.mjs';
 import { buildConfig, buildInfo } from './system/config.js';
+import { createRestartController, installGlobalRestart } from './system/restart-ladder.js';
 
 /* =========== 🛡️ Shield — إلغاء الأسلحة الخفية في الإطار ========== */
 // فك تشفير ملف المكتبة نفسه (node_modules/meowsab/dist) أثبت وجود 3 حاجات خفية:
@@ -128,31 +129,42 @@ const RESTART_MS = RESTART_INTERVAL_MIN * 60 * 1000;
 // واللوج / لوحة التحكم / المنفذ مش بيتقفلوا خالص.
 // لو عايز السلوك القديم (نخرج من العملية ومدير العمليات هو اللي يرجّعنا):
 //   RESTART_MODE=exit npm start
-function restartBot(reason = 'scheduled') {
-  const mode = process.env.RESTART_MODE === 'exit' ? 'exit' : 'inprocess';
-  console.log(`\n🔄 [RESTART] إعادة تشغيل البوت (${reason}) — الوضع: ${mode}`);
+//
+// كل مصادر إعادة التشغيل (المؤقّت، الحرس، حرس الذاكرة، التحديث التلقائي،
+// مُصلح الجلسة، أزرار اللوحة، أمر المالك) بتمر من المسار الواحد ده:
+//   system/restart-ladder.js فيه القفل أحادي المسار (عملية واحدة في نفس الوقت)
+//   + سلّم التصعيد (بعد محاولتين متتاليتين من غير open ← خروج نظيف بكود 1).
+// تفصيل القفل والتصعيد كله في system/restart-ladder.js.
 
-  // احتياطي بس لو حطيته بنفسك: نخرج من العملية ومدير العمليات هيرجّعها
-  if (mode === 'exit') {
-    process.exit(0);
-    return;
+// تفريغ الداتابيز قبل أي خروج قاتل.
+// UltraDB بيكتب الملف عند process.on('exit') (system/UltraDB.js) — فبنطلب
+// flush صريح لو متاح، وبعدين الخروج بيكمل حفظ أي تغييرات معلّقة.
+async function flushDb() {
+  try {
+    const db = global.db;
+    if (db && typeof db.flush === 'function') { await db.flush(); return true; }
+  } catch (e) {
+    console.error('⚠️ [RESTART] فشل تفريغ الداتابيز:', e?.message || e);
   }
-
-  // الوضع الافتراضي: ريستارت داخل العملية من غير إغلاق السيرفر
-  (async () => {
-    try {
-      await client.restart();
-      console.log('✅ [RESTART] البوت رجع اشتغل داخل نفس العملية — السيرفر متقفلش');
-    } catch (err) {
-      console.error('❌ [RESTART] فشل الريستارت داخل العملية:', err?.message || err);
-      console.error('🔁 [RESTART] نخرج من العملية احتياطاً...');
-      process.exit(0);
-    }
-  })();
+  return false;
 }
 
-// نعرّضها عامًّا عشان تقدر تستخدمها في أي مكان لو حبيت
-global.restartBot = restartBot;
+const restartController = createRestartController({
+  client,
+  mode: process.env.RESTART_MODE === 'exit' ? 'exit' : 'inprocess',
+  flushDb,
+  log: (...a) => console.log(...a),
+  logError: (...a) => console.error(...a),
+});
+
+// الدالة المحلية (المؤقّت + التحديث التلقائي) والنسخة العامة
+// (لوحة التحكم + أمر المالك) — الاتنين بيروحوا لنفس القفل ونفس السلّم.
+function restartBot(reason = 'scheduled') {
+  return restartController.restart(reason);
+}
+
+// نعرّضها عامًّا عشان تقدر تستخدمها في أي مكان لو حبيت
+installGlobalRestart(restartController);
 
 /* =========== Watchdog — حرس الاتصال ========== */
 // كل دقيقة: لو السوكيت مش متصل + عدّى 5 دقايق من التشغيل + مفيش عملية ربط
@@ -164,10 +176,6 @@ if (process.env.WATCHDOG !== '0') {
   const NEEDS_BOOT_MS = 5 * 60 * 1000;   // بعد التشغيل قبل ما يشتغل الحرس
   const COOLDOWN_MS = 5 * 60 * 1000;     // المسافة الدنيا بين ريستارتين من الحرس
   let lastWatchdogRestart = 0;
-  let esc = 0;                           // محاولات ريستارت ما فيش منها الاتصال رجع
-  // نتابع آخر مرة شفنا اتصال ناجح (لو HEALER مقفول عشان ما نتصعّدش غلط)
-  let lastOpenSeen = client.isConnected?.() ? Date.now() : 0;
-  setInterval(() => { if (client.isConnected?.()) lastOpenSeen = Date.now(); }, 10 * 1000);
   setInterval(() => {
     try {
       if (Date.now() - BOOT_AT < NEEDS_BOOT_MS) return;
@@ -177,15 +185,10 @@ if (process.env.WATCHDOG !== '0') {
       if (rt.pairing) return;   // في وسط عملية ربط/اسكان — هنسيبها تكمل
       if (client.isConnected?.()) return;
       if (Date.now() - lastWatchdogRestart < COOLDOWN_MS) return;
-      // لو الريستارت اللي قبل كده مهرّجش الاتصال (مفيش open من ساعتها) — نصعّد.
-      // بعد محاولتين فاشلت: نخرج من العملية خالص عشان مدير العمليات في لوحة
-      // الاستضافة يرجّعنا بحالة نضيفة (جلسة فاسدة مش دايمًا بتتصلح داخل العملية).
-      if (lastWatchdogRestart && lastOpenSeen < lastWatchdogRestart) esc++; else esc = 0;
+      // التصعيد (محاولتين متتاليتين من غير open ← خروج نظيف بكود 1) بقى
+      // جوّه السلّم المشترك في system/restart-ladder.js — هنا بنطلب إعادة
+      // تشغيل بس، والباقي (العدّاد والخروج) على السلّم.
       lastWatchdogRestart = Date.now();
-      if (esc >= 2) {
-        console.error('💀 [WATCHDOG] الريستارت الداخلي مهرّجش الاتصال بعد محاولات — خروج كامل عشان لوحة الاستضافة ترجّعنا نضيفين');
-        process.exit(0);
-      }
       console.log('⏱️ [WATCHDOG] الاتصال مقطوع من فترة طويلة — ريستارت تلقائي');
       global.restartBot('watchdog');
     } catch (e) {

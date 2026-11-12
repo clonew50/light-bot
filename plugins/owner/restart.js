@@ -9,10 +9,11 @@ const test = async (m, { conn, bot }) => {
   });
   
   setTimeout(() => {
-    // بنستخدم global.restartBot (نفس دالة البوت المركزية) للحفاظ على
-    // سلوك ريستارت داخل العملية — و bot.restart() كخطة احتياطية
+    // بنستخدم global.restartBot (نفس دالة البوت المركزية + القفل أحادي
+    // المسار) — كل مسارات إعادة التشغيل بتعدّي من القفل عشان ما
+    // يحصلش ريستارت متداخل. لو المسار مش موجود بنسجّل وبس.
     if (typeof global.restartBot === 'function') global.restartBot('أمر رستارت من المالك');
-    else bot.restart();
+    else console.error('⚠️ [RESTART] مسار إعادة التشغيل المركزي غير متاح — تم تجاهل الأمر');
   }, 1000); 
 };
 
