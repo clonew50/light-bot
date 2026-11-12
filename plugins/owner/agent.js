@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url'
 import { execFileSync } from 'child_process'
 import https from 'https'
 import http from 'http'
+import vm from 'vm'
 import axios from 'axios'
 
 // ⏱️ مفيش مهلة عامة على axios — كل نداء شبكة في الملف ده بيمرّ على مهلة صريحة (HTTP_TIMEOUT_*)
@@ -938,7 +939,8 @@ function collectDeclaredNames(src) {
     for (const part of m[2].split(',')) {
       const t = part.trim()
       if (!t) continue
-      add(t.includes(':') ? t.split(':').pop() : t)
+      const lhs = t.split('=')[0].trim()
+      add(lhs.includes(':') ? lhs.split(':').pop().trim() : lhs)
     }
   }
   const catchRe = /\bcatch\s*\(\s*([A-Za-z_$][\w$]*)/g
@@ -973,6 +975,7 @@ function collectFreeIdentifiers(src) {
   const re = /[A-Za-z_$][\w$]*/g
   let m
   while ((m = re.exec(src))) {
+    if (m[0] === '$') continue // علامة قالب السلسلة (${...}) مش اسم متغيّر
     if (charBefore(src, m.index) === '.') continue
     const next = charAfter(src, m.index + m[0].length)
     if (next === ':') {
@@ -999,12 +1002,434 @@ function collectToolChains(src) {
   }
   return chains
 }
+// ═══════════════════════════════════════════════════════════════
+//  🧱 Structural sandbox v2 — tokenizer + member/assignment analysis
+//  القرار مبني على *شكل* الكود (شكل الوصول للخصائص والتعديلات)
+//  مش على النصوص: أي مسار يوصل لـ constructor/prototype/__proto__
+//  أو يعدّل إعدادات مشتركة (axios.defaults) أو يستورد وحدات = مرفوض.
+// ═══════════════════════════════════════════════════════════════
+const TOOL_FORBIDDEN_MEMBERS = new Set(['constructor', 'prototype', '__proto__', 'caller', 'callee', 'eval', 'getOwnPropertyDescriptor', 'getOwnPropertyDescriptors', 'getOwnPropertyNames', 'getOwnPropertySymbols', 'getPrototypeOf', 'setPrototypeOf', 'defineProperty', 'defineProperties'])
+const TOOL_BLOCKED_GLOBALS = new Set(['process', 'globalThis', 'global', 'require', 'import', 'eval', 'Function', 'module', 'exports', '__dirname', '__filename', 'WebAssembly', 'Worker', 'SharedWorker', 'SharedArrayBuffer', 'Atomics'])
+const TOOL_MUTATION_MEMBERS = new Set(['defaults', 'interceptors'])
+const TOOL_DYNAMIC_SAFE_ROOTS = new Set(['args'])
+const TOOL_ASSIGN_OPS = new Set(['=', '+=', '-=', '*=', '/=', '%=', '**=', '<<=', '>>=', '>>>=', '&=', '|=', '^=', '&&=', '||=', '??='])
+const TOOL_REGEX_BEFORE = new Set(['return', 'typeof', 'case', 'in', 'of', 'new', 'delete', 'void', 'instanceof', 'do', 'else', 'await', 'yield', 'throw'])
+const TOOL_MARKUP_RE = /<\s*\/?\s*(?:iframe|script|object|embed|svg|meta|base)\b|srcdoc\s*=|\bon(?:error|load|click|mouseover|focus)\s*=|javascript\s*:/i
+const TOOL_PUNCT = ['>>>=', '===', '!==', '**=', '<<=', '>>=', '>>>', '&&=', '||=', '??=', '=>', '==', '!=', '<=', '>=', '&&', '||', '??', '?.', '++', '--', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '**', '<<', '>>', '{', '}', '(', ')', '[', ']', ';', ',', '.', '<', '>', '+', '-', '*', '/', '%', '&', '|', '^', '!', '~', '?', ':', '=', '@', '#']
+
+function toolDecodeEscapes(s) {
+  return String(s).replace(/\\(u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[\s\S])/g, (m, g) => {
+    if (g[0] === 'u') {
+      const hex = g[1] === '{' ? g.slice(2, -1) : g.slice(1)
+      try { return String.fromCodePoint(parseInt(hex, 16)) } catch { return '' }
+    }
+    if (g[0] === 'x') { try { return String.fromCharCode(parseInt(g.slice(1), 16)) } catch { return '' } }
+    if (g === 'n') return '\n'
+    if (g === 't') return '\t'
+    if (g === 'r') return '\r'
+    if (g === 'b') return '\b'
+    if (g === 'f') return '\f'
+    if (g === 'v') return '\v'
+    if (g === '0') return '\0'
+    return g
+  })
+}
+// 🔎 بنلاقي آخر قوس إغلاق لقالب `${ ... }` جوه template literal
+function toolFindTemplateExprEnd(s, start) {
+  const n = s.length
+  let i = start, depth = 0
+  while (i < n) {
+    const c = s[i]
+    if (c === '"' || c === "'") {
+      const q = c; i++
+      while (i < n) { if (s[i] === '\\') { i += 2; continue } if (s[i] === q) { i++; break } i++ }
+      continue
+    }
+    if (c === '`') {
+      i++
+      while (i < n) {
+        if (s[i] === '\\') { i += 2; continue }
+        if (s[i] === '`') { i++; break }
+        if (s[i] === '$' && s[i + 1] === '{') { i = toolFindTemplateExprEnd(s, i + 2) + 1; continue }
+        i++
+      }
+      continue
+    }
+    if (c === '/' && s[i + 1] === '/') { while (i < n && s[i] !== '\n') i++; continue }
+    if (c === '/' && s[i + 1] === '*') { i += 2; while (i < n && !(s[i] === '*' && s[i + 1] === '/')) i++; i += 2; continue }
+    if (c === '{') { depth++; i++; continue }
+    if (c === '}') { if (depth === 0) return i; depth--; i++; continue }
+    i++
+  }
+  return n
+}
+// 🧪 Tokenizer: بيحوّل الكود لتوكنات (مع فكّ الـ unicode escapes جوّه الأسماء)
+function toolTokenize(src) {
+  const s = String(src || '')
+  const n = s.length
+  const tokens = []
+  let i = 0
+  let line = 1
+  let linePos = 0
+  const lineAt = (pos) => {
+    let l = line
+    for (let k = linePos; k < pos && k < n; k++) if (s[k] === '\n') l++
+    line = l
+    linePos = pos
+    return l
+  }
+  const isIdStart = (c) => /[A-Za-z_$]/.test(c)
+  const isIdPart = (c) => /[A-Za-z0-9_$]/.test(c)
+  while (i < n) {
+    const c = s[i]
+    const startPos = i
+    if (/\s/.test(c) || c === '\ufeff') { i++; continue }
+    if (c === '/' && s[i + 1] === '/') { while (i < n && s[i] !== '\n') i++; continue }
+    if (c === '/' && s[i + 1] === '*') { i += 2; while (i < n && !(s[i] === '*' && s[i + 1] === '/')) i++; i += 2; continue }
+    if (c === '"' || c === "'") {
+      let j = i + 1, out = ''
+      while (j < n) {
+        if (s[j] === '\\') { out += s[j] + (s[j + 1] || ''); j += 2; continue }
+        if (s[j] === c) { j++; break }
+        out += s[j]; j++
+      }
+      tokens.push({ t: 'str', v: toolDecodeEscapes(out), line: lineAt(startPos) })
+      i = j
+      continue
+    }
+    if (c === '`') {
+      const baseLine = lineAt(startPos)
+      let j = i + 1, chunk = ''
+      const segs = []
+      while (j < n) {
+        if (s[j] === '\\') { chunk += s[j] + (s[j + 1] || ''); j += 2; continue }
+        if (s[j] === '`') { j++; break }
+        if (s[j] === '$' && s[j + 1] === '{') {
+          const exprEnd = toolFindTemplateExprEnd(s, j + 2)
+          segs.push({ before: chunk, expr: s.slice(j + 2, exprEnd) })
+          chunk = ''
+          j = exprEnd + 1
+          continue
+        }
+        chunk += s[j]; j++
+      }
+      const tail = chunk
+      if (!segs.length) {
+        tokens.push({ t: 'tmplFull', v: toolDecodeEscapes(tail), line: baseLine })
+      } else {
+        tokens.push({ t: 'tmplStart', v: toolDecodeEscapes(segs[0].before), line: baseLine })
+        for (let k = 0; k < segs.length; k++) {
+          for (const tk of toolTokenize(segs[k].expr)) { tk.line = baseLine + (tk.line || 1) - 1; tokens.push(tk) }
+          const last = k === segs.length - 1
+          tokens.push({ t: last ? 'tmplEnd' : 'tmplSeg', v: toolDecodeEscapes(last ? tail : segs[k + 1].before), line: baseLine })
+        }
+      }
+      i = j
+      continue
+    }
+    if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(s[i + 1] || ''))) {
+      let j = i
+      while (j < n) {
+        const d = s[j]
+        if (/[0-9a-fA-FxXoObBn._]/.test(d)) { j++; continue }
+        if ((d === '+' || d === '-') && /[eE]/.test(s[j - 1] || '')) { j++; continue }
+        break
+      }
+      tokens.push({ t: 'num', v: s.slice(i, j), line: lineAt(startPos) })
+      i = j
+      continue
+    }
+    if (isIdStart(c) || (c === '\\' && /u/i.test(s[i + 1] || ''))) {
+      let j = i, raw = ''
+      while (j < n) {
+        if (isIdPart(s[j])) { raw += s[j]; j++; continue }
+        if (s[j] === '\\' && s[j + 1] === 'u') {
+          let k = j + 2, hex = ''
+          if (s[k] === '{') { while (k < n && s[k] !== '}') { hex += s[k]; k++ }; k++ } else { hex = s.slice(k, k + 4); k += 4 }
+          raw += s.slice(j, k); j = k; continue
+        }
+        break
+      }
+      tokens.push({ t: 'id', v: toolDecodeEscapes(raw), line: lineAt(startPos) })
+      i = j
+      continue
+    }
+    if (c === '/') {
+      const prev = tokens[tokens.length - 1]
+      const canBeRegex = !prev || (prev.t === 'punct' && ![')', ']', '}', '++', '--'].includes(prev.v)) || (prev.t === 'id' && TOOL_REGEX_BEFORE.has(prev.v))
+      if (canBeRegex) {
+        let j = i + 1, inClass = false, closed = false
+        while (j < n) {
+          const d = s[j]
+          if (d === '\\') { j += 2; continue }
+          if (d === '\n') break
+          if (d === '[') inClass = true
+          else if (d === ']') inClass = false
+          else if (d === '/' && !inClass) { j++; closed = true; break }
+          j++
+        }
+        if (closed) {
+          while (j < n && /[a-z]/i.test(s[j])) j++
+          tokens.push({ t: 'regex', v: s.slice(i, j), line: lineAt(startPos) })
+          i = j
+          continue
+        }
+      }
+      tokens.push({ t: 'punct', v: '/', line: lineAt(startPos) })
+      i++
+      continue
+    }
+    let matched = ''
+    for (const p of TOOL_PUNCT) if (s.startsWith(p, i)) { matched = p; break }
+    if (matched) { tokens.push({ t: 'punct', v: matched, line: lineAt(startPos) }); i += matched.length; continue }
+    tokens.push({ t: 'punct', v: c, line: lineAt(startPos) })
+    i++
+  }
+  return tokens
+}
+
+// ➕ ثابت نصّي؟ (سلسلة literals متلصقة بـ +) — عشان نكشف الخصائص المخفية
+function toolFoldStrings(tokens) {
+  let out = '', expect = true
+  for (const tk of tokens) {
+    if (expect) {
+      if (tk.t === 'str') { out += tk.v; expect = false; continue }
+      if (tk.t === 'punct' && tk.v === '+') continue
+      return null
+    }
+    if (tk.t === 'punct' && tk.v === '+') { expect = true; continue }
+    return null
+  }
+  return expect ? null : out
+}
+// 📦 قوس مربّع: بنرجع اسم الخاصية لو ثابت، أو null لو ديناميكي
+function toolReadComputed(tokens, i) {
+  let depth = 0, j = i
+  for (; j < tokens.length; j++) {
+    const t = tokens[j]
+    if (t.t === 'punct') {
+      if (t.v === '[') depth++
+      else if (t.v === ']') { depth--; if (depth === 0) break }
+    }
+  }
+  const endIdx = Math.min(j, tokens.length - 1)
+  const inner = tokens.slice(i + 1, Math.max(i + 1, endIdx))
+  let value = null, dynamic = true
+  if (inner.length === 1 && (inner[0].t === 'str' || inner[0].t === 'num')) { value = String(inner[0].v); dynamic = false }
+  else {
+    const folded = toolFoldStrings(inner)
+    if (folded !== null) { value = folded; dynamic = false }
+  }
+  return { value, dynamic, endIdx }
+}
+// 🔗 سلاسل الخصائص: root.constructor / ctx.axios.defaults / Object[dynamic]
+const TOOL_NO_EXPR_END = new Set(['return', 'typeof', 'case', 'in', 'of', 'new', 'delete', 'void', 'instanceof', 'do', 'else', 'await', 'yield', 'const', 'let', 'var', 'function', 'class', 'export', 'default', 'if', 'while', 'for', 'switch', 'throw', 'try', 'catch', 'finally', 'import', 'extends', 'static', 'get', 'set', 'async'])
+// هل التوكن ده ممكن ينهي تعبير؟ (بيفرّق بين arr[x] و数组 literal [])
+function toolCanEndExpression(tk) {
+  if (!tk) return false
+  if (tk.t === 'id') return !TOOL_NO_EXPR_END.has(tk.v)
+  if (tk.t === 'num' || tk.t === 'str' || tk.t === 'regex' || tk.t.startsWith('tmpl')) return true
+  if (tk.t === 'punct') return tk.v === ')' || tk.v === ']' || tk.v === '}' || tk.v === '++' || tk.v === '--'
+  return false
+}
+function toolBuildChains(tokens) {
+  const chains = []
+  let cur = null
+  const close = (endIdx) => { if (cur) { cur.endIdx = endIdx; chains.push(cur); cur = null } }
+  for (let i = 0; i < tokens.length; i++) {
+    const tk = tokens[i]
+    if (tk.t === 'id') {
+      close(i - 1)
+      cur = { names: [tk.v], computed: [false], root: tk.v, startIdx: i, endIdx: i }
+      continue
+    }
+    if (tk.t === 'punct' && (tk.v === '.' || tk.v === '?.')) {
+      const nx = tokens[i + 1]
+      if (nx && nx.t === 'id') {
+        if (!cur) cur = { names: [], computed: [], root: null, startIdx: i + 1, endIdx: i + 1 }
+        cur.names.push(nx.v); cur.computed.push(false); cur.endIdx = i + 1
+        i++
+        continue
+      }
+      close(i - 1)
+      continue
+    }
+    if (tk.t === 'punct' && tk.v === '[') {
+      if (!toolCanEndExpression(tokens[i - 1])) { close(i - 1); continue } // ده array literal مش وصول لخاصية
+      const res = toolReadComputed(tokens, i)
+      if (!cur) cur = { names: [], computed: [], root: null, startIdx: i + 1, endIdx: res.endIdx }
+      cur.names.push(res.value); cur.computed.push(res.dynamic); cur.endIdx = res.endIdx
+      i = res.endIdx
+      continue
+    }
+    close(i - 1)
+  }
+  close(tokens.length - 1)
+  return chains
+}
+// ✏️ عمليات الإسناد (الهدف + الطرف الأيمن)
+function toolFindAssignments(tokens, chains) {
+  const byEnd = new Map()
+  for (const ch of chains) byEnd.set(ch.endIdx, ch)
+  const out = []
+  for (let i = 0; i < tokens.length; i++) {
+    const tk = tokens[i]
+    if (tk.t !== 'punct' || !TOOL_ASSIGN_OPS.has(tk.v)) continue
+    let depth = 0, end = tokens.length
+    for (let j = i + 1; j < tokens.length; j++) {
+      const t2 = tokens[j]
+      if (t2.t !== 'punct') continue
+      if (t2.v === '(' || t2.v === '[' || t2.v === '{') depth++
+      else if (t2.v === ')' || t2.v === ']' || t2.v === '}') depth--
+      else if (t2.v === ';' && depth <= 0) { end = j; break }
+    }
+    const rhs = chains.filter((ch) => ch.startIdx > i && ch.startIdx < end)
+    out.push({ op: tk.v, target: byEnd.get(i - 1) || null, rhs })
+  }
+  return out
+}
+// 📞 وسائط الاستدعاءات (لو حد مرّر كائن مشترك لدالة يقدر يعدّله)
+function toolFindCallArgs(tokens, chains) {
+  const out = []
+  for (let i = 0; i < tokens.length; i++) {
+    const tk = tokens[i]
+    if (tk.t !== 'punct' || tk.v !== '(') continue
+    let depth = 0, j = i
+    for (; j < tokens.length; j++) {
+      const t2 = tokens[j]
+      if (t2.t !== 'punct') continue
+      if (t2.v === '(' || t2.v === '[' || t2.v === '{') depth++
+      else if (t2.v === ')' || t2.v === ']' || t2.v === '}') { depth--; if (depth === 0) break }
+    }
+    out.push(chains.filter((ch) => ch.startIdx > i && ch.startIdx < j))
+  }
+  return out
+}
+// 🛡️ كائن مشترك (axios/إعداداته) — أي تعديل أو تمرير له ممنوع
+function toolHasSharedMember(ch) {
+  if (!ch || !ch.names) return false
+  for (const nm of ch.names) if (nm && TOOL_MUTATION_MEMBERS.has(nm)) return true
+  return false
+}
+// 🎯 هدف الإسناد: أي كتابة على كائن مشترك ممنوعة
+function toolIsSharedTarget(ch) {
+  if (!ch || !ch.names || !ch.names.length) return false
+  if (toolHasSharedMember(ch)) return true
+  if (ch.root === 'axios' && ch.names.length >= 2) return true
+  if (ch.root === 'ctx' && ch.names.length >= 3 && ch.names[1] === 'axios') return true
+  return false
+}
+// ✅ صياغة الكود لازم تكون JavaScript صالحة (المدخلات الناقصة/المكسورة = مرفوضة)
+function toolEscapeTemplate(v) {
+  return String(v == null ? '' : v).replace(/[\\`]/g, '\\$&').replace(/\$\{/g, '\\${')
+}
+function toolCodeParses(tokens) {
+  try {
+    const parts = []
+    let line = 0
+    const pushNl = (tk) => { const l = tk.line || 0; if (l > line) { parts.push('\n'); line = l } }
+    for (let i = 0; i < tokens.length; i++) {
+      const tk = tokens[i]
+      if (tk.t === 'id' && tk.v === 'export') {
+        const nx = tokens[i + 1]
+        if (nx && nx.t === 'id' && nx.v === 'default') { pushNl(tk); parts.push('const __agentToolDefault ='); line = nx.line || line; i++; continue }
+        if (nx && nx.t === 'punct' && nx.v === '{') {
+          let depth = 0
+          while (i < tokens.length) { const t2 = tokens[i]; if (t2.t === 'punct' && t2.v === '{') depth++; else if (t2.t === 'punct' && t2.v === '}') { depth--; if (depth === 0) { i++; break } } i++ }
+          parts.push('0')
+          continue
+        }
+        continue
+      }
+      if (tk.t === 'tmplFull') { pushNl(tk); parts.push('`' + toolEscapeTemplate(tk.v) + '`'); continue }
+      if (tk.t === 'tmplStart') { pushNl(tk); parts.push('`' + toolEscapeTemplate(tk.v) + '${'); continue }
+      if (tk.t === 'tmplSeg') { pushNl(tk); parts.push('}' + toolEscapeTemplate(tk.v) + '${'); continue }
+      if (tk.t === 'tmplEnd') { pushNl(tk); parts.push('}' + toolEscapeTemplate(tk.v) + '`'); continue }
+      pushNl(tk)
+      if (tk.t === 'id' || tk.t === 'punct') parts.push(tk.v)
+      else parts.push('0')
+    }
+    new vm.Script('(async()=>{' + parts.join(' ') + '})', { filename: 'agent-tool.js', produceCachedData: false })
+    return true
+  } catch { return false }
+}
+
+// 🧨 الفحص البنيوي — القرار مش نصّي: بنشوف إيه اللي الكود بيعمله فعلاً
+function toolStructuralCheck(raw) {
+  const tokens = toolTokenize(raw)
+  // 0) أي ذكر لـ __proto__ (متغير أو نص) ممنوع — تلويث النماذج الأولية
+  if (raw.includes('__proto__')) return 'غير مسموح: تلويث النماذج الأولية (__proto__) ممنوع'
+  // 1) أسماء محظورة (process/require/import/eval/Function/globalThis...) — الاسم الحر بس
+  for (let i = 0; i < tokens.length; i++) {
+    const tk = tokens[i]
+    if (tk.t !== 'id') continue
+    const prev = tokens[i - 1]
+    const next = tokens[i + 1]
+    const isProp = prev && prev.t === 'punct' && (prev.v === '.' || prev.v === '?.')
+    const isKey = next && next.t === 'punct' && next.v === ':'
+    if (TOOL_BLOCKED_GLOBALS.has(tk.v) && !isProp) return 'غير مسموح: "' + tk.v + '" غير متاح داخل الأدوات'
+    if (tk.v === '__proto__' && !isProp) return 'غير مسموح: تلويث النماذج الأولية (__proto__) ممنوع'
+    // اسم خطير مستخدم كاسم متغيّر/مفتاح (زي const { constructor: c } = x) — مرفوض كمان
+    if (TOOL_FORBIDDEN_MEMBERS.has(tk.v) && !isProp) return 'غير مسموح: الوصول إلى "' + tk.v + '" ممنوع داخل الأدوات'
+    if (isProp || isKey) continue
+  }
+  const chains = toolBuildChains(tokens)
+  // 2) أي وصول لخصائص خطرة (constructor/prototype/__proto__/caller/callee/eval) — بأي root
+  for (const ch of chains) {
+    for (const nm of ch.names) {
+      if (nm == null) continue
+      if (TOOL_FORBIDDEN_MEMBERS.has(nm)) return 'غير مسموح: الوصول إلى "' + nm + '" ممنوع داخل الأدوات'
+    }
+  }
+  // 3) وصول ديناميكي لخصائص كائن مسموح (Object[x] / ctx.fs[fn]) — مش بنعرف إيه اللي هيتنفّذ
+  for (const ch of chains) {
+    const root = ch.root
+    if (root && (!TOOL_ALLOWED_GLOBALS.has(root) || TOOL_DYNAMIC_SAFE_ROOTS.has(root))) continue
+    for (let k = root ? 1 : 0; k < ch.names.length; k++) {
+      if (ch.computed[k] && ch.names[k] == null) return 'غير مسموح: الوصول الديناميكي لخصائص "' + (root || 'قيمة مُقوَّمة') + '" ممنوع داخل الأدوات'
+    }
+  }
+  // 4) نفس قائمة السماح للخصائص (ctx/fs/path/axios) — وبتشمل الخصائص المحسوبة
+  for (const ch of chains) {
+    const root = ch.root
+    if (!root || !ch.names.length) continue
+    const m1 = ch.names[1]
+    if (m1 == null) continue
+    if (root === 'fs' && !TOOL_ALLOWED_FS.has(m1)) return 'غير مسموح: fs.' + m1 + ' ممنوعة'
+    if (root === 'path' && !TOOL_ALLOWED_PATH.has(m1)) return 'غير مسموح: path.' + m1 + ' ممنوعة'
+    if (root === 'axios' && !TOOL_ALLOWED_AXIOS.has(m1)) return 'غير مسموح: axios.' + m1 + ' ممنوعة'
+    if (root === 'ctx') {
+      if (!TOOL_CTX_PROPS.has(m1)) return 'غير مسموح: ctx.' + m1 + ' مش متاحة'
+      const m2 = ch.names[2]
+      if (m2 == null) continue
+      if (m1 === 'fs' && !TOOL_ALLOWED_FS.has(m2)) return 'غير مسموح: ctx.fs.' + m2 + ' ممنوعة'
+      if (m1 === 'path' && !TOOL_ALLOWED_PATH.has(m2)) return 'غير مسموح: ctx.path.' + m2 + ' ممنوعة'
+      if (m1 === 'axios' && !TOOL_ALLOWED_AXIOS.has(m2)) return 'غير مسموح: ctx.axios.' + m2 + ' ممنوعة'
+    }
+  }
+  // 5) أي تعديل على إعدادات axios المشتركة (defaults/interceptors) أو تمريرها لدالة
+  for (const a of toolFindAssignments(tokens, chains)) {
+    if (toolIsSharedTarget(a.target)) return 'غير مسموح: تعديل الإعدادات المشتركة (axios/prototype) ممنوع'
+    for (const r of a.rhs) if (toolHasSharedMember(r)) return 'غير مسموح: تعديل الإعدادات المشتركة (axios/prototype) ممنوع'
+  }
+  for (const args of toolFindCallArgs(tokens, chains)) {
+    for (const a of args) if (toolHasSharedMember(a)) return 'غير مسموح: تمرير إعدادات مشتركة لدالة ممنوع'
+  }
+  // 6) لازم يكون الكود JavaScript صالحة (مدخلات ناقصة/مشكلة = مرفوضة)
+  if (!toolCodeParses(tokens)) return 'غير مسموح: صياغة الكود غير صالحة'
+  return null
+}
 function safetyCheckToolCode(code) {
   const raw = String(code || '')
   if (!raw.trim()) return 'غير مسموح: الكود فاضي'
   if (raw.length > 500 * 1024) return 'غير مسموح: الكود أكبر من 500KB'
   // 1) أوامر النظام (بنفحص النص الخام)
   for (const b of TOOL_BLOCKED_COMMANDS) if (b.re.test(raw)) return 'غير مسموح: ' + b.msg
+  // 1.2) وسوم HTML/JS مضمّنة (مفيش ليها معنى جوه JS ودي مسار حقن)
+  if (TOOL_MARKUP_RE.test(raw)) return 'غير مسموح: وسوم HTML/JS مضمّنة ممنوعة داخل الأدوات'
+  // 1.3) الفحص البنيوي: القرار مبني على شكل الكود (سلاسل الخصائص/التعديلات/الاستيرادات)
+  const structural = toolStructuralCheck(raw)
+  if (structural) return structural
   const src = stripToolLiterals(raw)
   // 1.5) ممنوع أي import (ثابت أو ديناميكي) — الأداة بتاخد كل حاجة من ctx
   if (/\bimport\b/.test(src)) return 'غير مسموح: الاستيراد (import) ممنوع داخل الأدوات'
