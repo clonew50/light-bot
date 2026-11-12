@@ -2,7 +2,7 @@ import { Client, Utils } from 'meowsab';
 import { group, access } from "./system/control.js";
 import UltraDB from "./system/UltraDB.js";
 import sub from './sub.js';
-import { readPanelConfig, startWebPanel, panelRuntime, pushEvent } from './system/webPanel.js';
+import { readPanelConfig, startWebPanel, panelRuntime, pushEvent, pairingActive } from './system/webPanel.js';
 import { attachHealer } from './system/healer.js';
 import { pullOnce } from './system/autoUpdate.mjs';
 import { buildConfig, buildInfo } from './system/config.js';
@@ -95,7 +95,8 @@ if (process.env.HEALER !== '0') {
     shouldSkip: () => {
       try {
         const rt = panelRuntime();
-        return !!(rt.stopped || rt.pairing);
+        // نقف بس لو في عملية ربط حقيقية شغالة دلوقتي (الحالة عندها عمر محدود)
+        return !!(rt.stopped || pairingActive());
       } catch { return false; }
     }
   });
@@ -198,7 +199,7 @@ if (process.env.WATCHDOG !== '0') {
       if (typeof global.restartBot !== 'function') return;
       const rt = panelRuntime();
       if (rt.stopped) return;   // المستخدم وقف البوت عمدًا من اللوحة — مش هنعمل حاجة
-      if (rt.pairing) return;   // في وسط عملية ربط/اسكان — هنسيبها تكمل
+      if (pairingActive()) return;   // في وسط عملية ربط حقيقية شغالة — هنسيبها تكمل
       if (client.isConnected?.()) return;
       if (Date.now() - lastWatchdogRestart < COOLDOWN_MS) return;
       // التصعيد (محاولتين متتاليتين من غير open ← خروج نظيف بكود 1) بقى

@@ -15,6 +15,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createPairingState } from './pairing.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_FILE = path.join(__dirname, 'panel-config.json');
@@ -99,11 +100,28 @@ const state = {
   stopped: false // true لما المستخدم يوقف البوت عمدًا من اللوحة (بيستخدمه الـ watchdog)
 };
 
+/* حالة الربط — المصدر الوحيد للحقيقة:
+   الـ pairing نشط بس لو اتصدر QR/كود، ومفيش open بعده، ومفيش 3 دقايق عدّت.
+   الشكل القديم (وجود QR/كود في الذاكرة) كان بيفضل true للأبد، وده كان
+   بيوقف الـ watchdog والـ healer للأبد (GAP-13). */
+export const pairingState = createPairingState();
+
+/* في عملية ربط حقيقية شغالة دلوقتي؟ (الحالة نفسها هي المرجع — مش flag قديم) */
+export function pairingActive(now = Date.now()) {
+  try { return pairingState.isActive(now) === true; } catch { return false; }
+}
+
 /* حالة اللوحة للأجزاء الخارجية (مثلاً watchdog في index.js):
-   pairing  = مستخدم/كود ربط موجود دلوقتي (عملية ربط شغالة — ماتلمسوش)
-   stopped  = البوت متقفل عمدًا من اللوحة (ماتعملش restart له) */
-export function panelRuntime() {
-  return { pairing: !!(state.qr || state.pairingCode), stopped: !!state.stopped };
+   pairing       = في عملية ربط حقيقية شغالة دلوقتي (مش بس QR قديم في الذاكرة)
+   pairingAgeMs  = عمر عملية الربط بالمللي ثانية (0 لو مفيش عملية)
+   stopped       = البوت متقفل عمدًا من اللوحة (ماتعملش restart له) */
+export function panelRuntime(now = Date.now()) {
+  const active = pairingActive(now);
+  return {
+    pairing: active,
+    stopped: !!state.stopped,
+    pairingAgeMs: active ? pairingState.ageMs(now) : 0
+  };
 }
 
 function pushEvent(msg) {
@@ -127,6 +145,7 @@ function hookConsole() {
       if (m) {
         state.pairingCode = m[1];
         state.qr = null;
+        pairingState.setPairingCode(m[1]);
         pushEvent('تم إصدار كود ربط: ' + m[1]);
       }
     } catch {}
@@ -136,7 +155,16 @@ function hookConsole() {
 
 /* ============ ربط مستمع الـ QR/الاتصال بجلسة واتساب ============ */
 let attachedSock = null;
-function onConnUpdate(update) {
+
+/* كود الفصل من آخر حدث close (401 = loggedOut | 403 = forbidden) */
+function closeStatusCode(update) {
+  const err = update?.lastDisconnect?.error;
+  const code = err?.output?.statusCode ?? err?.status;
+  const n = Number(code);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function handleConnectionUpdate(update) {
   try {
     const { connection, qr } = update || {};
     if (qr) {
@@ -145,6 +173,7 @@ function onConnUpdate(update) {
       state.qrDataUrl = null;
       state.qrCacheFor = null;
       state.pairingCode = null;
+      pairingState.setQr(qr);
       pushEvent('QR جديد جاهز للاسكان');
     }
     if (connection) {
@@ -153,6 +182,11 @@ function onConnUpdate(update) {
         state.qr = null;
         state.pairingCode = null;
         state.lastConnected = Date.now();
+        pairingState.clear(); // الاتصال اتفتح — خلاص مفيش ربط شغال
+      }
+      if (connection === 'close') {
+        const code = closeStatusCode(update);
+        if (code === 401 || code === 403) pairingState.clear(); // اتقفل الحساب/الجهاز — اربط تاني
       }
     }
   } catch (e) {
@@ -164,10 +198,10 @@ function attachSock(client) {
   const sock = client?.sock;
   if (!sock || sock === attachedSock) return;
   if (attachedSock?.ev) {
-    try { attachedSock.ev.removeListener('connection.update', onConnUpdate); } catch {}
+    try { attachedSock.ev.removeListener('connection.update', handleConnectionUpdate); } catch {}
   }
   attachedSock = sock;
-  try { sock.ev.on('connection.update', onConnUpdate); } catch (e) { pushEvent('تعذّر ربط السوكيت: ' + e.message); }
+  try { sock.ev.on('connection.update', handleConnectionUpdate); } catch (e) { pushEvent('تعذّر ربط السوكيت: ' + e.message); }
 }
 
 /* ============ أدوات مساعدة ============ */
@@ -705,7 +739,18 @@ export function startWebPanel(client, options = {}) {
 
   // نتأكد من ربط مستمع QR بأي سوكيت جديد
   const watcher = setInterval(() => attachSock(client), 800);
-  server.on('close', () => clearInterval(watcher));
+
+  // حالة الربط ليها صلاحية 3 دقايق — من غير فحص كده الـ flag القديم بيفضل
+  // true للأبد والـ watchdog يفضل متسلّح. هنا بنقفلها أول ما تنتهي صلاحيتها
+  // (من غير ما نلمس الجلسة خالص).
+  const pairingTimer = setInterval(() => {
+    const now = Date.now();
+    if (!pairingState.expired(now)) return;
+    pairingState.clear();
+    pushEvent('انتهت صلاحية حالة الربط — رجع الحارس يشتغل');
+  }, 15 * 1000);
+
+  server.on('close', () => { clearInterval(watcher); clearInterval(pairingTimer); });
 
   return server;
 }
