@@ -1,5 +1,24 @@
 import { pullOnce, checkUpdate } from '../../system/autoUpdate.mjs';
 
+/**
+ * المسار الاحتياطي القاتل بعد التحديث (todo 38).
+ * لو global.restartBot مش متاح بعد تنزيل تحديث الريبو، لازم نخرج بكود 1
+ * (مش 0): الكود 0 بيقول لمدير العمليات (systemd Restart=on-failure / PM2)
+ * إن "الشغل خلص طبيعي" فيسيب البوت ميت — الكود 1 يرجّعه. الداتابيز بتتفريغ
+ * الأول عشان أي حالة معلّقة ما تضيعش قبل الخروج.
+ * @param {string} [reason]
+ */
+export async function fatalRestartFallback(reason = 'تحديث من الريبو') {
+  console.error(`💀 [UPDATE] المسار المركزي لإعادة التشغيل غير متاح (${reason}) — خروج بكود 1 عشان مدير العمليات يرجّع البوت`);
+  try {
+    const db = global.db;
+    if (db && typeof db.flush === 'function') await db.flush();
+  } catch (e) {
+    console.error('⚠️ [UPDATE] فشل تفريغ الداتابيز قبل الخروج:', e?.message || e);
+  }
+  process.exit(1);
+}
+
 let handler = async (m, { conn, text, command }) => {
   const arg = (text || '').trim().toLowerCase();
 
@@ -39,7 +58,8 @@ let handler = async (m, { conn, text, command }) => {
   if (r.needsRestart) {
     setTimeout(() => {
       if (global.restartBot) global.restartBot('تحديث من الريبو');
-      else process.exit(0);
+      // المسار الاحتياطي: تفريغ الداتابيز وبعدين خروج بكود 1 (مش 0) — todo 38.
+      else void fatalRestartFallback();
     }, 1500);
   }
 };
