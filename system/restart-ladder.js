@@ -45,6 +45,7 @@ export const POLL_MS = 2_000;           // فحص احتياطي: هل الات�
  * @param {object} [options.client]        عميل meowsab (أو أي mock بيحاكيّه)
  * @param {'inprocess'|'exit'} [options.mode]  وضع إعادة التشغيل
  * @param {()=>Promise<void>} [options.flushDb]  تفريغ الداتابيز قبل الخروج
+ * @param {()=>boolean} [options.isStopped]   هل البوت متوقف عمدًا من لوحة التحكم؟ (todo 10)
  * @param {(code:number)=>void} [options.exit]   الخروج من العملية
  * @param {(...a:any[])=>void} [options.log]
  * @param {(...a:any[])=>void} [options.logError]
@@ -60,6 +61,7 @@ export function createRestartController(options = {}) {
     client = null,
     mode = 'inprocess',
     flushDb = async () => {},
+    isStopped = () => false,
     exit = (code) => process.exit(code),
     log = (...args) => console.log(...args),
     logError = (...args) => console.error(...args),
@@ -78,6 +80,7 @@ export function createRestartController(options = {}) {
     lastExitCode: null,      // آخر كود خروج استخدمناه
     lastOpenAt: 0,           // آخر مرة شفنا فيها connection === 'open'
     watchedSock: null,       // السوكيت اللي مستمعنا مربوط عليه دلوقتي
+    stoppedRefusals: 0,      // طلبات إعادة تشغيل اترفضت عشان البوت متوقف من اللوحة (todo 10)
     // كل محاولة ليها موعد نهائي بها — محاولة جديدة ما بتلغيش موعد المحاولة
     // اللي قبلهما: لو الاتصال ما رجعش خلال 90 ثانية من بداية كل محاولة، كل
     // محاولة بتحسب فشل متتالي (مهم لما مصلح الجلسة يعيد المحاولة بسرعة).
@@ -265,10 +268,30 @@ export function createRestartController(options = {}) {
   /**
    * القفل أحادي المسار: كل الطلبات اللي جت وقت العملية الجارية بترجع
    * نفس الـ promise — فمفيش أي تداخل بين عمليتين.
+   *
+   * حرس الإيقاف (todo 10): لو المستخدم وقف البوت عمدًا من لوحة التحكم
+   * (panelRuntime().stopped === true) أي طلب إعادة تشغيل بيرفض وبيسجّل
+   * بالعربي إن البوت متوقف — من غير أي client.restart() ولا عدّاد فشل
+   * ولا تصعيد ولا خروج. الإيقاف العمدًا حالة مقصودة مش حالة خطأ.
+   * المصادر اللي بتمر من هنا كلها: اللوحة، الحرس، حرس الذاكرة، المؤقّت
+   * الدوري، التحديث التلقائي، مُصلح الجلسة، uncaughtException، أمر المالك.
+   * الوحيد اللي بيتخطّى الحرس هو `force: true` — بيستخدمه بس مسار
+   * التشغيل/إعادة التشغيل من اللوحة نفسها (اللي بيمسح علم الإيقاف الأول
+   * أصلًا) وسلّم التصعيد القاتل (fatal() بيتنادى داخليًا ومش بيمر من هنا).
+   *
    * @param {string} reason
-   * @returns {Promise<void>}
+   * @param {{force?:boolean}} [opts]
+   * @returns {Promise<void|{skipped:boolean,reason:string}>}
    */
-  function restart(reason = 'scheduled') {
+  function restart(reason = 'scheduled', opts = {}) {
+    const force = !!(opts && opts.force);
+    // الحرس قبل فحص القفل: طلب مؤقّت متجمع (inflight) ما يقدرش يراكب
+    // فوق حالة الإيقاف العمدًا — الإيقاف إرادة المشغّل وهي الأعلى أولوية.
+    if (!force && isStopped()) {
+      state.stoppedRefusals += 1;
+      log(`⏹️ [RESTART] البوت متوقف من اللوحة — تم تجاهل طلب إعادة التشغيل (${reason})`);
+      return Promise.resolve({ skipped: true, reason: 'البوت متوقف من اللوحة' });
+    }
     if (state.inflight) {
       log(`⏳ [RESTART] فيه عملية إعادة تشغيل شغّالة بالفعل — الطلب اتضاف ليها (${reason})`);
       return state.inflight;
@@ -295,6 +318,8 @@ export function createRestartController(options = {}) {
       watchingSocket: !!state.watchedSock,
       activeTrials: state.deadlines.size,
       mode: mode === 'exit' ? 'exit' : 'inprocess',
+      stopped: !!isStopped(),              // حالة الإيقاف العمدًا (todo 10)
+      stoppedRefusals: state.stoppedRefusals, // كام طلب اتردّ عشان الإيقاف
     };
   }
 
@@ -315,11 +340,13 @@ export function createRestartController(options = {}) {
 /**
  * يركّب global.restartBot — نفس الدالة اللي بتستدعيها لوحة التحكم
  * (system/webPanel.js) وأمر المالك (plugins/owner/restart.js).
+ * خيار `force` (todo 10) بيتمرّر زي ما هو — بيستخدمه بس مسار تشغيل
+ * اللوحة بعد مسح علم الإيقاف، ومافيش مصدر تاني المفروض يستخدمه.
  * @param {ReturnType<typeof createRestartController>} controller
  * @param {object} [target] الهدف (global افتراضيًا)
  */
 export function installGlobalRestart(controller, target = global) {
-  const fn = (reason = 'scheduled') => controller.restart(reason);
+  const fn = (reason = 'scheduled', opts = {}) => controller.restart(reason, opts);
   target.restartBot = fn;
   return fn;
 }

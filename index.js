@@ -237,6 +237,14 @@ const restartController = createRestartController({
   client,
   mode: process.env.RESTART_MODE === 'exit' ? 'exit' : 'inprocess',
   flushDb,
+  // حرس الإيقاف (todo 10): البوت متوقف عمدًا من لوحة التحكم → أي طلب
+  // إعادة تشغيل (الحرس، الذاكرة، المؤقّت، التحديث، uncaughtException،
+  // مُصلح الجلسة، أمر المالك) بيرفض جوّه السلّم نفسه ويبلّغ بالعربي،
+  // من غير client.restart() ولا عدّاد فشل ولا تصعيد. البلوك الوحيد
+  // لطريق force هو مسار تشغيل/إعادة تشغيل اللوحة نفسها.
+  isStopped: () => {
+    try { return !!panelRuntime().stopped; } catch { return false; }
+  },
   escalateAfter: RESTART_FULL_EVERY,
   log: (...a) => console.log(...a),
   logError: (...a) => console.error(...a),
@@ -244,8 +252,8 @@ const restartController = createRestartController({
 
 // الدالة المحلية (المؤقّت + التحديث التلقائي) والنسخة العامة
 // (لوحة التحكم + أمر المالك) — الاتنين بيروحوا لنفس القفل ونفس السلّم.
-function restartBot(reason = 'scheduled') {
-  return restartController.restart(reason);
+function restartBot(reason = 'scheduled', opts = {}) {
+  return restartController.restart(reason, opts);
 }
 
 // نعرّضها عامًّا عشان تقدر تستخدمها في أي مكان لو حبيت
