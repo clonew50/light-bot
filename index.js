@@ -6,9 +6,11 @@ import { readPanelConfig, startWebPanel, panelRuntime, pushEvent, pairingActive 
 import { attachHealer } from './system/healer.js';
 import { pullOnce } from './system/autoUpdate.mjs';
 import { buildConfig, buildInfo, lastClientError } from './system/config.js';
+import { parseNumEnv } from './system/config.js';
 import { startClientBounded } from './system/bootGuard.js';
 import { createRestartController, installGlobalRestart } from './system/restart-ladder.js';
 import { attachSessionBackup, installShutdownHandlers, restoreSessionFromBackup, warnSubBotSessionsNotCovered } from './system/sessionBackup.js';
+import { createPeriodicRestartScheduler, installPresenceCap } from './system/runtime-controls.js';
 
 /* =========== 🛡️ Shield — إلغاء الأسلحة الخفية في الإطار ========== */
 // فك تشفير ملف المكتبة نفسه (node_modules/meowsab/dist) أثبت وجود 3 حاجات خفية:
@@ -48,6 +50,18 @@ if (BOT_SHIELD) {
 const client = new Client(buildConfig());
 // بصمة الجهاز الثابتة — بتتحوّل جوه واتساب لـ ['Ubuntu', <browser>, '22.04.4']
 console.log(`🔎 بصمة الجهاز: ${client.config.browser}`);
+
+/* =========== Presence — كبح الإرسال المكرّر ========== */
+// الإطار (meowsab) بيضيف setInterval(25s) جوه كل start() بيعمل
+// sendPresenceUpdate("available")، وبيسيب المؤقّت من غير ما يمسحه وبيحفظش
+// الـ handle — فبعد كل ريستارت بيبعت presence مرّة إضافية كل 25 ثانية.
+// الحل من غير أي تعديل في node_modules: غلاف runtime على sendPresenceUpdate
+// ( جنب الشيلد ) بيكبح الإرسال التلقائي، ومؤقّت واحد بتاعنا هو اللي بيبعت
+// رسالة واحدة كل 25 ثانية — والعدّاد بيتعرض في اللوحة.
+const presenceCap = installPresenceCap(client, {
+  log: (...a) => console.log(...a),
+});
+global.presenceStats = () => presenceCap.stats();
 
 client.onGroupEvent(group);
 client.onCommandAccess(access);
@@ -155,10 +169,9 @@ try {
 // كل كام دقيقة يعمل البوت ريستارت (الافتراضي 10).
 // غيّرها من غير ما تعدّل الكود:  RESTART_INTERVAL_MIN=15 npm start
 // وعشان تقفله خالص:  RESTART_INTERVAL_MIN=0 npm start
-const RESTART_INTERVAL_MIN =
-  process.env.RESTART_INTERVAL_MIN === undefined
-    ? 10
-    : Number(process.env.RESTART_INTERVAL_MIN) || 0;
+// القيمة بتتحقّق parseNumEnv: قيمة مش رقم بتتحذّر بالعربي وبترجع للافتراضي
+// (مش بتتحوّل لـ 0 زي الأول — كانت القيمة الغلط بتقفل الحماية من غير ما حد يعلم).
+const RESTART_INTERVAL_MIN = parseNumEnv('RESTART_INTERVAL_MIN', 10, { min: 0, max: 1440 });
 const RESTART_MS = RESTART_INTERVAL_MIN * 60 * 1000;
 
 // الريستارت بقى من غير ما نقفل العملية خالص: بنستخدم client.restart()
@@ -187,10 +200,15 @@ async function flushDb() {
   return false;
 }
 
+// كم محاولة فاشلة متتالية قبل ما نعمل خروج كامل نظيف (كود 1) عشان مدير
+// العمليات يرجّع البوت. الافتراضي 2 (زي سلّم التصعيد في system/restart-ladder.js).
+const RESTART_FULL_EVERY = parseNumEnv('RESTART_FULL_EVERY', 2, { min: 1, max: 100 });
+
 const restartController = createRestartController({
   client,
   mode: process.env.RESTART_MODE === 'exit' ? 'exit' : 'inprocess',
   flushDb,
+  escalateAfter: RESTART_FULL_EVERY,
   log: (...a) => console.log(...a),
   logError: (...a) => console.error(...a),
 });
@@ -210,6 +228,7 @@ installGlobalRestart(restartController);
 // → ريستارت داخل العملية، مع كولداون: مرة واحدة كل 5 دقايق كحد أقصى.
 // اقفله: WATCHDOG=0 npm start
 if (process.env.WATCHDOG !== '0') {
+  const WATCHDOG_INTERVAL_S = parseNumEnv('WATCHDOG_INTERVAL_S', 60, { min: 5, max: 3600 });
   const BOOT_AT = Date.now();
   const NEEDS_BOOT_MS = 5 * 60 * 1000;   // بعد التشغيل قبل ما يشتغل الحرس
   const COOLDOWN_MS = 5 * 60 * 1000;     // المسافة الدنيا بين ريستارتين من الحرس
@@ -232,14 +251,16 @@ if (process.env.WATCHDOG !== '0') {
     } catch (e) {
       console.error('⚠️ [WATCHDOG] خطأ في فحص الحرس:', e?.message || e);
     }
-  }, 60 * 1000);
+  }, WATCHDOG_INTERVAL_S * 1000);
 }
 
 /* =========== Memory Guard — حرس الذاكرة ========== */
 // لو الذاكرة علت فوق الحد نعمل ريستارت داخل العملية قبل ما لوحة الاستضافة
 // تقتل العملية بـ OOM (وده موت مفاجئ للبوت واللوحة مع بعض).
 // الحد بالـ MB:  MEMORY_RESTART_MB=950 (افتراضي)  |  0 = مقفول
-const MEMORY_RESTART_MB = Number(process.env.MEMORY_RESTART_MB ?? '950') || 0;
+// القيمة بتتحقّق parseNumEnv: قيمة مش رقم بتحذّر بالعربي وبترجع 950
+// (مش 0 — الرقم الغلط كان بيقفل حرس الذاكرة من غير ما حد يعلم).
+const MEMORY_RESTART_MB = parseNumEnv('MEMORY_RESTART_MB', 950, { min: 0, max: 65536 });
 if (MEMORY_RESTART_MB > 0) {
   setInterval(() => {
     try {
@@ -272,9 +293,23 @@ if (process.env.AUTO_UPDATE !== '0') {
   console.log('ℹ️ [UPDATE] التحديث التلقائي مقفول (AUTO_UPDATE=0)');
 }
 
-// المؤقّت: ريستارت دوري كل RESTART_INTERVAL_MIN دقيقة
+// المؤقّت: ريستارت دوري بيتكرر كل RESTART_INTERVAL_MIN دقيقة.
+// كان setTimeout واحد → بيتنفّذ مرة واحدة بس في عمر العملية. دلوقتي جدولة
+// بتتعاد بعد كل دورة (فبتفضل شغالة بعد كل ريستارت) وبتتخطّى
+// لو البوت واقف من اللوحة أو فيه ريستارت شغّال، وبتروح كلها لنفس القفل
+// الأحادي في system/restart-ladder.js (global.restartBot).
+const periodicRestart = createPeriodicRestartScheduler({
+  intervalMs: RESTART_MS,
+  restart: (reason) => global.restartBot(reason),
+  isStopped: () => {
+    try { return !!panelRuntime().stopped; } catch { return false; }
+  },
+  isRestarting: () => !!restartController.isRestarting?.(),
+  log: (...a) => console.log(...a),
+  logError: (...a) => console.error(...a),
+});
 if (RESTART_INTERVAL_MIN > 0) {
-  setTimeout(() => restartBot(`كل ${RESTART_INTERVAL_MIN} دقيقة`), RESTART_MS);
+  periodicRestart.start();
 } else {
   console.log('ℹ️ [RESTART] الريستارت الدوري مقفول (RESTART_INTERVAL_MIN=0)');
 }

@@ -44,6 +44,48 @@ export function lastClientError() {
 
 
 /**
+ * parseNumEnv — قراءة رقم من متغيّرات البيئة بشكل آمن.
+ *
+ * المشكلة القديمة: `Number(env) || 0` كان بيحوّل أي قيمة غلط (أو سالبة)
+ * لـ 0 — يعني حماية كانت شغالة بقت مقفولة من غير ما حد يعلم.
+ *
+ * القواعد:
+ *   • متغيّر مش موجود → القيمة الافتراضية (من غير تحذير).
+ *   • قيمة فاضية أو مش رقم → تحذير بالعربي + القيمة الافتراضية.
+ *   • قيمة سالبة → بتتقصّ على min (مش بترجع للافتراضي).
+ *   * القيمة 0 بتتم محترمة (0 = مقفول هو قيمة مقصودة مش غلطة).
+ *   • أكبر من max → بتتقصّ على max.
+ *
+ * @param {string} name اسم المتغيّر
+ * @param {number} fallback القيمة الافتراضية
+ * @param {object} [options] { min, max, env, warn }
+ * @returns {number}
+ */
+export function parseNumEnv(name, fallback, options = {}) {
+  const {
+    min,
+    max,
+    env = process.env,
+    warn = (msg) => console.warn(msg),
+  } = options;
+
+  const raw = env?.[name];
+  if (raw === undefined || raw === null) return fallback;
+
+  const text = String(raw).trim();
+  const parsed = text === '' ? NaN : Number(text);
+  if (!Number.isFinite(parsed)) {
+    warn(`⚠️ قيمة ${name} غير صالحة، استخدمت ${fallback}`);
+    return fallback;
+  }
+
+  let value = parsed;
+  if (typeof min === 'number' && value < min) value = min;
+  if (typeof max === 'number' && value > max) value = max;
+  return value;
+}
+
+/**
  * يبني إعدادات الـ Client.
  * @param {NodeJS.ProcessEnv} env
  */
