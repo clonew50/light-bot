@@ -24,10 +24,13 @@
     • كولداون لكل مستخدم — يمنع السبام
     • أي فشل بيرد بالعربي برسالة واضحة — مفيش رد فاضي ولا كراش
     • أي رد من المزود بيتمرّ على فحص " plausibility " قبل ما يوصل للمستخدم:
-        - لو فيه أي علامة ميتة جواه (حتى جوه نص أطول) — مرفوض
-          (DEPLOYMENT_DISABLED / PAYMENT REQUIRED / INSUFFICIENT_QUOTA / QUOTA_EXCEEDED)
-        - لو صفحة HTML أو ظرف خطأ (JSON/HTTP) — مرفوض
-        - لو قصير أوي أو فاضي — مرفوض
+        - الجسم الفاضي أو صفحة HTML من أول حرف أو ظرف خطأ (JSON/HTTP) — مرفوض
+        - العلامة الميتة (DEPLOYMENT_DISABLED / PAYMENT_REQUIRED /
+          INSUFFICIENT_QUOTA / QUOTA_EXCEEDED) بالتطابق الكامل أو كـ substring
+          في النص الأصلي — مرفوضة
+        - إجابة بتشرح مثلاً "HTTP 402 Payment Required" بتتبعت عادي — الفحص
+          على النص الأصلي من غير ما نشيل حروف، والعبارات بفواصل مبتنرفضش
+        - حرف واحد مش فاضي يكفي ("42" إجابة صحيحة)
       والرد المرفوض بيفعّل المزود اللي بعده في السلسلة؛ ولو كلهم فشلوا
       المستخدم بياخد رسالة "المزود غير متاح" بالعربي — جسم الرد الخام مايتوصلش له.
   ═══════════════════════════════════════════════════════════════════════
@@ -43,7 +46,7 @@ export const AI_ERROR = "تعذر الوصول إلى مزود الذكاء ال
 /* نص الاستخدام القديم — ما اتغيّرش (نفس صيغة الأمر) */
 export const USAGE_TEXT = "*اكتب سوألك بعد الامر 🤖*";
 
-/* ردود المزودين الميتة/المضللة — لو جت (ولو جواها) مش هتعتبر إجابة */
+/* ردود المزودين الميتة/المضللة — لو الجسم كله هو العلامة دي مش هتعتبر إجابة */
 const DEAD_MARKERS = new Set([
   "DEPLOYMENT_DISABLED",
   "PAYMENT_REQUIRED",
@@ -58,13 +61,20 @@ const DEAD_MARKERS_NORMALIZED = new Set(
   [...DEAD_MARKERS].map((mk) => mk.toUpperCase().replace(/[_\-\s]+/g, " "))
 );
 
-/* نسخة من غير أي فاصل (DEPLOYMENTDISABLED) — عشان نلمس كل الكتابات */
+/* نسخة من غير أي فاصل (DEPLOYMENTDISABLED) — للتطابق الكامل للجسم بس */
 const DEAD_MARKERS_COMPACT = new Set(
   [...DEAD_MARKERS].map((mk) => mk.toUpperCase().replace(/[^A-Z0-9]/g, ""))
 );
 
-/* أقل طول للإجابة المقبولة — أي نص أقصر من كده مش إجابة حقيقية */
-const MIN_ANSWER_LENGTH = 3;
+/* العلامات "البرمجية" (بها _) دي ما بتظهرش في كلام عادي، فممكن ندوّر عليها
+   كـ substring جوه النص الأصلي من غير ما نكسر إجابة حقيقية بتشرح مثلاً
+   خطأ HTTP 402 ("Payment Required") — العبارات بفواصل (مسافة/شرطة) مش
+   بنلقطها كـ substring لأنها كلمات إنجليزية عادية ممكن تكون جوه إجابة سليمة */
+const CODE_DEAD_MARKERS = ["DEPLOYMENT_DISABLED", "PAYMENT_REQUIRED", "INSUFFICIENT_QUOTA", "QUOTA_EXCEEDED"];
+
+/* أقل طول للإجابة المقبولة — حرف واحد مش فاضي يكفي ("42" إجابة صحيحة)
+   (الفحص بيرفض الأجسام الفاضية بس، مش القصيرة) */
+const MIN_ANSWER_LENGTH = 1;
 
 /* ردود كاملة معناها "مفيش إجابة" (مطابقة كاملة — مش substring) */
 const NON_ANSWER_BODIES = new Set([
@@ -99,10 +109,11 @@ const NON_ANSWER_BODIES = new Set([
   "METHOD NOT ALLOWED"
 ]);
 
-/* صفحات HTML — مش إجابة على الإطلاق */
+/* صفحات HTML — مش إجابة على الإطلاق.
+   الفحص "بيبدأ" بس: لو الجسم نفسه صفحة HTML من أول حرف.
+   جملة سليمة فيها وسم <body> في النص مش بتنرفض. */
 const HTML_START_RE =
   /^\s*<(!doctype|html|head|body|title|script|style|meta|div|span|p|h[1-6]|table|form|iframe|svg|a)[\s>/]/i;
-const HTML_DOC_RE = /<(!doctype\s+html|html|head|body|frameset)[\s>/]/i;
 
 /* أجسام أخطاء HTTP (404 Not Found / 502 Bad Gateway / 402 Payment required ...) */
 const HTTP_STATUS_ONLY_RE = /^\s*(?:HTTP\/[\d.]+\s+)?[45]\d{2}\s*$/i;
@@ -241,44 +252,42 @@ function isJsonErrorEnvelope(parsed) {
   return false;
 }
 
-/** هل الرد ده فيه أي علامة ميتة؟ (تطابق تام أو substring، بدون حساسية للحروف)
- *  catches: DEPLOYMENT_DISABLED / "Error: DEPLOYMENT_DISABLED" /
- *  "Payment required\n\nDEPLOYMENT_DISABLED\n\nfra1::..." / "402 Payment required" */
+/** هل الرد ده فيه أي علامة ميتة؟
+ *  القاعدة: الفحص على النص الأصلي (من غير ما نشيل أي حروف) —
+ *    1) تطابق كامل للجسم بأي capitalization / تطبيع فواصل / من غير فواصل
+ *       (DEPLOYMENT_DISABLED = DEPLOYMENT DISABLED = DEPLOYMENTDISABLED)
+ *    2) العلامات البرمجية (بها _) كـ substring في النص الأصلي —
+ *       أي رد فيه DEPLOYMENT_DISABLED جواه (ولو جوه نص أطول) مش إجابة.
+ *  إجابة بتشرح مثلاً "HTTP 402 Payment Required" مبتنرفضش، لأن
+ *  العبارات المتعددة الكلمات مش علامة برمجية وبنلمها في النص الأصلي بس. */
 export function hasDeadMarker(text) {
   const up = String(text ?? "").toUpperCase();
   if (!up) return false;
 
-  /* 1) التطابق التام (زي ما كان) */
+  /* 1) الجسم كله هو العلامة — بالظبط / بعد التطبيع / من غير فواصل */
   if (DEAD_MARKERS.has(up)) return true;
 
-  /* 2) substring على النص الخام — أي رد فيه العلامة جواه مش إجابة */
-  for (const mk of DEAD_MARKERS) {
-    if (up.includes(mk)) return true;
-  }
+  const norm = up.replace(/[_\-\s]+/g, " ").trim();
+  if (DEAD_MARKERS_NORMALIZED.has(norm)) return true;
 
-  /* 3) التطبيع: _ / - / مسافة = مسافة (DEPLOYMENT DISABLED) */
-  const norm = up.replace(/[_\-\s]+/g, " ");
-  for (const mk of DEAD_MARKERS_NORMALIZED) {
-    if (norm.includes(mk)) return true;
-  }
-
-  /* 4) من غير أي فاصل (DEPLOYMENTDISABLED) */
   const compact = up.replace(/[^A-Z0-9]/g, "");
-  for (const mk of DEAD_MARKERS_COMPACT) {
-    if (compact.includes(mk)) return true;
+  if (compact && DEAD_MARKERS_COMPACT.has(compact)) return true;
+
+  /* 2) علامة برمجية (بها _) كـ substring في النص الأصلي — بدون تجريد أي حروف */
+  for (const mk of CODE_DEAD_MARKERS) {
+    if (up.includes(mk)) return true;
   }
 
   return false;
 }
 
-/** هل الرد ده شكله إجابة حقيقية؟ (مش HTML / مش خطأ / طويل كفاية) */
+/** هل الرد ده شكله إجابة حقيقية؟ (مش HTML / مش خطأ / مش فاضي) */
 export function isPlausibleCompletion(text) {
   const raw = String(text ?? "").trim();
   if (!raw) return false;
-  if (raw.length < MIN_ANSWER_LENGTH) return false;
+  if (raw.length < MIN_ANSWER_LENGTH) return false; // الفاضي بس — "42" إجابة صحيحة
   if (!/[\p{L}\p{N}]/u.test(raw)) return false; // رموز و بس
   if (HTML_START_RE.test(raw)) return false;
-  if (HTML_DOC_RE.test(raw)) return false;
   if (HTTP_STATUS_ONLY_RE.test(raw)) return false;
   if (HTTP_ERROR_PREFIX_RE.test(raw)) return false;
   if (NON_ANSWER_BODIES.has(raw.toUpperCase())) return false;
@@ -293,8 +302,8 @@ function extractText(body) {
   /* 1) أي علامة ميتة جواه — بالظبط أو كـ substring (بأي capitals) */
   if (hasDeadMarker(raw)) return { ok: false, reason: "المزود رجّع استجابة ميتة" };
 
-  /* 2) صفحات HTML / أخطاء HTTP — مرفوضة */
-  if (HTML_START_RE.test(raw) || HTML_DOC_RE.test(raw))
+  /* 2) صفحة HTML من أول حرف / أخطاء HTTP — مرفوضة */
+  if (HTML_START_RE.test(raw))
     return { ok: false, reason: "الرد صفحة HTML مش إجابة" };
   if (HTTP_STATUS_ONLY_RE.test(raw) || HTTP_ERROR_PREFIX_RE.test(raw))
     return { ok: false, reason: "المزود رجّع رسالة خطأ" };
