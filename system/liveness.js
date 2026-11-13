@@ -9,14 +9,18 @@
   ما بيطلقش، واللوحة بتقول "متصل ✅" while the bot is dead.
 
   الحل: إشارة واحدة مشتركة بتعتمد على الحاجات اللي الإطار مش بيقدر يكدب فيها:
-    1) socket.ws.readyState === 1 (WebSocket.OPEN) — السوكيت مقفول = مش عايش.
+    1) socket.ws.readyState === 1 (WebSocket.OPEN) — السوكيت مقفول/بيتقفل (2/3)
+       = مش عايش فورًا.
     2) sock.user موجود (جلسة واتساب حقيقية، مش مجرد كائن).
-    3) آخر connection === 'open' حصل خلال آخر 3 دقايق (نافذة الحياة).
+    3) نافذة الـ 3 دقايق (OPEN_WINDOW_MS) بتطبق بس قبل أول open (أو على سوكيت
+       جديد بعد التبديل): قبل أي open، isAlive() = false. وبعد أول open حقيقي،
+       طول ما ws.readyState === 1 + sock.user ومفيش close بعده → ALIVE (مهما طال
+       الزمن من غير ما يتقفل السوكيت).
   وكمان:
     • heartbeat كل 30 ثانية: أي رسالة داخلة/ خارجة (messages.upsert /
       messages.update / أي frame على الـ WebSocket) بتحدّث lastTrafficAt.
-    • بعد 10 دقايق صمت كامل بن状态 "degraded" — بننشر حدث عربي للوحة بس،
-      من غير أي ريستارت (الصمت ممكن يكون هدوء طبيعي في الشات).
+    • بعد 10 دقايق صمت كامل بنعلّم الحالة "degraded" — بننشر حدث عربي للوحة بس،
+      من غير أي ريستارت، ومبيبطلش isAlive().
 
   القواعد:
     • الوحدة دي مفيهاش أي process.exit ولا restart — هي قياس بس.
@@ -49,6 +53,8 @@ function newTracker(now) {
     lastTrafficAt: now(),
     degraded: false,
     openWaiters: new Set(),
+    openedSock: null,
+    closedSock: null,
   };
 }
 
@@ -86,7 +92,13 @@ export function isSocketOpen(client) {
  */
 export function isAlive(client, now = Date.now(), extra = {}) {
   if (!isSocketOpen(client)) return false;
+  const sock = socketOf(client);
   const tr = trackers.get(client);
+  // تبديل سوكيت بعد open سابق (client.sock = s2) مع سوكيت جديد مفتوح قبل ما
+  // مستمع liveness يرتبط بيه (ما نطبّقش ده قبل أول open في العملية).
+  if (!extra.lastOpenAt && tr && tr.lastOpenAt > 0 && tr.openedSock && sock && sock !== tr.openedSock && sock !== tr.closedSock) {
+    markOpen(client, now, sock);
+  }
   const openAt = Number.isFinite(extra.lastOpenAt) && extra.lastOpenAt > 0
     ? extra.lastOpenAt
     : (tr?.lastOpenAt || 0);
@@ -95,14 +107,18 @@ export function isAlive(client, now = Date.now(), extra = {}) {
     : (tr?.lastCloseAt || 0);
   if (!openAt) return false;                 // مفيش open اتسجّل خالص
   if (closeAt >= openAt) return false;       // فيه close بعد آخر open
-  const age = now - openAt;
-  return age >= 0 && age <= OPEN_WINDOW_MS;
+  // بعد ما open اتسجّل، طول ما ws.readyState === 1 + sock.user ومفيش close
+  // بيفضل alive مهما مرّ من وقت (نافذة الـ 3 دقايق بتمنع ريستارت على اتصال سليم).
+  return true;
 }
 
 /** يسجّل open (من مستمع connection.update أو من اختبار). */
-export function markOpen(client, ts = Date.now()) {
+export function markOpen(client, ts = Date.now(), sock = socketOf(client)) {
   const tr = trackerFor(client, () => ts);
   tr.lastOpenAt = ts;
+  if (tr.lastCloseAt > ts) tr.lastCloseAt = 0;
+  tr.openedSock = sock || null;
+  tr.closedSock = null;
   tr.lastTrafficAt = ts;
   tr.degraded = false;
   for (const resolve of [...tr.openWaiters]) {
@@ -113,9 +129,10 @@ export function markOpen(client, ts = Date.now()) {
 }
 
 /** يسجّل close. */
-export function markClose(client, ts = Date.now()) {
+export function markClose(client, ts = Date.now(), sock = socketOf(client)) {
   const tr = trackerFor(client, () => ts);
   tr.lastCloseAt = ts;
+  if (sock) tr.closedSock = sock;
   return tr;
 }
 
@@ -190,8 +207,9 @@ export function attachLiveness(client, opts = {}) {
 
   const onConnection = (u) => {
     const conn = u?.connection;
-    if (conn === 'open') markOpen(client, now());
-    else if (conn === 'close') markClose(client, now());
+    const sock = attached || socketOf(client);
+    if (conn === 'open') markOpen(client, now(), sock);
+    else if (conn === 'close') markClose(client, now(), sock);
   };
 
   const onMessage = () => markTraffic(client, now());
@@ -226,10 +244,20 @@ export function attachLiveness(client, opts = {}) {
     } catch { /* ws وهمي */ }
   }
 
-  function beat() {
+  function syncSocket() {
     if (stopped) return;
     const sock = socketOf(client);
-    if (sock && sock !== attached) bindSocket(sock);
+    if (sock && sock !== attached) {
+      bindSocket(sock);
+      if (isSocketOpen(client) && sock !== tr.closedSock) {
+        markOpen(client, now(), sock);
+      }
+    }
+  }
+
+  function beat() {
+    if (stopped) return;
+    syncSocket();
     if (!tr.lastOpenAt) return;
     const silence = now() - (tr.lastTrafficAt || tr.lastOpenAt);
     if (!tr.degraded && silence >= DEGRADED_AFTER_MS) {
@@ -282,18 +310,39 @@ export function waitForOpen(client, opts = {}) {
   return new Promise((resolve) => {
     let done = false;
     let handle = null;
+    let watchedSock = null;
+    let detachWatcher = null;
 
     const finish = (value) => {
       if (done) return;
       done = true;
       if (handle != null) { try { clearTimer(handle); } catch { /* وهمي */ } handle = null; }
+      if (detachWatcher) { try { detachWatcher(); } catch { /* وهمي */ } detachWatcher = null; }
       tr.openWaiters.delete(check);
       resolve(value);
     };
 
+    function watchSock(sock) {
+      if (detachWatcher) { try { detachWatcher(); } catch { /* وهمي */ } detachWatcher = null; }
+      watchedSock = sock;
+      if (!sock || !sock.ev || typeof sock.ev.on !== 'function') return;
+      const onEv = (u) => {
+        const conn = u?.connection;
+        if (conn === 'open') markOpen(client, now(), sock);
+        else if (conn === 'close') markClose(client, now(), sock);
+        check();
+      };
+      sock.ev.on('connection.update', onEv);
+      detachWatcher = () => {
+        try { sock.ev.removeListener?.('connection.update', onEv); } catch { /* وهمي */ }
+        try { sock.ev.off?.('connection.update', onEv); } catch { /* وهمي */ }
+      };
+    }
+
     const check = () => {
+      const sock = socketOf(client);
+      if (sock !== watchedSock) watchSock(sock);
       if (tr.lastOpenAt > baseline && isAlive(client, now())) { finish(true); return; }
-      // لو الـ open جه بنفس المللي ثانية (baseline=0) بنقبل أي open حي
       if (baseline === 0 && tr.lastOpenAt >= baseline && isAlive(client, now())) { finish(true); return; }
     };
 

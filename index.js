@@ -77,9 +77,11 @@ client.onCommandAccess(access);
 /* =========== Liveness — إشارة حياة حقيقية (todo 35) ===========
    client.isConnected() بتقرأ running/sock/sock.user بس وبتكدب بعد badSession
    (الإطار بيسيب السوكيت موجود ويقفل الـ ws). نبضة الحياة هنا بتعتمد على
-   ws.readyState === 1 + sock.user + آخر open خلال 3 دقايق، وبتضيف نبضة
-   حركة مرور كل 30 ثانية + حدث "degraded" بعد 10 دقايق صمت (من غير ريستارت).
-   كل المستهلكين (watchdog / panel / healer) بيقروا من نفس الوحدة. */
+   ws.readyState === 1 + sock.user: قبل أول open مش حي، وبعد أول open بيفضل
+   حي طول ما ws.readyState === 1 + sock.user ومفيش close بعده (حتى لو مرّت
+   10 دقايق من غير قطع)، وبتضيف نبضة حركة مرور كل 30 ثانية + حدث "degraded"
+   بعد 10 دقايق صمت (من غير ريستارت). كل المستهلكين (watchdog / panel / healer)
+   بيقروا من نفس الوحدة. */
 const liveness = attachLiveness(client, {
   emit: (kind, message) => pushRuntimeEvent(kind, message),
 });

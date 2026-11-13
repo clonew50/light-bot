@@ -213,7 +213,7 @@ function attachSock(client) {
    system/liveness.js نفسها اللي بيقرا منها الـ watchdog والـ healer:
      • socket.ws.readyState === 1 (WebSocket.OPEN)
      • sock.user موجود
-     • آخر open خلال آخر 3 دقايق، ومفيش close بعده
+     • اتسجّل open ومفيش close بعده (قبل أول open = مش متصل)
    بنحتفظ بس بتوقيع state.lastConnected/lastCloseAt المحلي عشان مستمع
    connection.update بتاع اللوحة، وبناخد الأحدث بينه وبين نبضة الحياة. */
 export function computeConnected(client, now = Date.now()) {
