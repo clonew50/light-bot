@@ -146,7 +146,9 @@ if (process.env.HEALER !== '0') {
         // نقف بس لو في عملية ربط حقيقية شغالة دلوقتي (الحالة عندها عمر محدود)
         return !!(rt.stopped || pairingActive());
       } catch { return false; }
-    }
+    },
+    // كل علاج/تصعيد يظهر في اللوحة (todo 8 بيجمع الأحداث وي capّها)
+    emit: (kind, message) => { try { pushEvent(message); } catch { /* اللوحة مش جاهزة */ } }
   });
 }
 
