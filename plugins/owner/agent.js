@@ -5,7 +5,7 @@
  *  📁 المكان: plugins/owner/agent.js
  *  🎯 Framework: meowsab (LIGHT BOT / Pomni-AI)
  *  🔥 كل المميزات: Auto-Discovery + Tor + كل المزودين + NVIDIA
- *  ⏱️ كل طلب شبكة بمهلة محدودة • 🔓 بلا حدود
+ *  ⏱️ كل طلب شبكة بمهلة محدودة • 🔓 سقف أمان ثابت
  */
 import fs from 'fs'
 import path from 'path'
@@ -29,8 +29,14 @@ const SESSIONS_FILE = path.join(ROOT, 'agent-sessions.json')
 const MAX_PERSISTED = 500
 const TOOLS_DIR = path.join(ROOT, 'agent-tools')
 const MAX_CUSTOM_TOOLS = 500
-// 🔓 بلا حدود — مفيش سقف حقيقي للدورات (الإيقاف اليدوي بـ "توقف" أو finish)
-const SAFETY_HARD_ITER_LIMIT = Infinity
+// 🔒 سقف أمان ثابت — المالك يقدر يقلّل الرقم (maxIter/maxTools) لكن عمره ما يتعدّاه.
+// (كان مافيش سقف، ومع "بلا-حدود" كان الوكيل يفضل يلفّ على موديلات وأدوات للأبد على سيرفر 512MB.)
+const SAFETY_HARD_ITER_LIMIT = 50
+const SAFETY_HARD_TOOL_LIMIT = 400
+// ⏰ أي موافقة كتابة/حذف معلّقة بتموت بعد كده (وبتموت مع الريستارت — مبتتحفظش في الديسك).
+const APPROVAL_TTL_MS = 5 * 60 * 1000
+// 🛡️ أدوات شغّالة على النظام نفسه — safetyEnabled بيقفلها تمامًا (مش بس بيسأل عليها).
+const SAFETY_GATED_TOOLS = new Set(['create_tool', 'delete_tool', 'npm_install'])
 const IS_FRESH_START = process.uptime() < 60
 
 // ⏱️ مهلة محدودة لكل طلب شبكة (10-30 ثانية) — مفيش نداء شبكة بلا try/catch
@@ -2506,6 +2512,8 @@ function toolDeleteTool(name) { if (KNOWN_TOOLS.includes(name)) return '❌ أد
 async function executeTool(c, ctx) {
   const a = c.args || {}; const s = c._session
   const bot = ctx?.bot || global.bot
+  // 🛡️ safetyEnabled بيقفل دي حتى لو الطلب جه من مسار تاني
+  if (isSafetyGated(c.tool)) return '⛔ الأداة *' + c.tool + '* مقفولة و safetyEnabled شغّال — ماتفذتش.'
   try {
     switch (c.tool) {
       case 'list_files': return toolListFiles(a.dir)
@@ -2536,7 +2544,12 @@ async function executeTool(c, ctx) {
     const ct = customTools.get(c.tool)
     if (ct) { const result = await Promise.resolve(ct.run(a, buildToolContext(c.tool))); return String(typeof result === 'string' ? result : JSON.stringify(result, null, 2)).slice(0, 50000) }
     return '❓ أداة غير معروفة: *' + c.tool + '*'
-  } catch (e) { return '❌ خطأ في ' + c.tool + ': ' + (e?.message || String(e)) }
+  } catch (e) { return toolErrorObservation(c.tool, e) }
+}
+// أي استثناء من أداة بيتحوّل لملاحظة عربية قابلة لإعادة المحاولة للموديل — مش موت للتشغيل.
+async function executeToolSafe(c, ctx) {
+  try { return await executeTool(c, ctx) }
+  catch (e) { return toolErrorObservation(c.tool, e) }
 }
 function toolLabel(c) {
   const a = c.args || {}
@@ -2562,26 +2575,66 @@ function extractJsonObjects(text) {
   }
   return objs
 }
+// يقرأ أول كائن JSON متوازن في النص بدءًا من فهرس { ويعيده ككائن (أو null).
+function readJsonObjectAt(text, start) {
+  const t = String(text || '')
+  const i = Number(start)
+  if (t[i] !== '{') return null
+  let depth = 0, inStr = false, esc = false
+  for (let j = i; j < t.length; j++) {
+    const ch = t[j]
+    if (inStr) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') inStr = false; continue }
+    if (ch === '"') inStr = true
+    else if (ch === '{') depth++
+    else if (ch === '}') { depth--; if (depth === 0) { const parsed = tryParseJson(t.slice(i, j + 1)); return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null } }
+  }
+  return null
+}
 function parseToolCalls(text) {
   const src = String(text || '')
-  const calls = []; const unknown = []; const seen = new Set()
+  const calls = []; const unknown = []; const seen = new Set(); const sigs = new Set()
   const addCall = (name, args, srcId) => {
     if (!name || seen.has(srcId)) return
     seen.add(srcId)
     const nm = String(name).trim()
-    if (KNOWN_TOOLS.includes(nm) || customTools.has(nm)) { const safeArgs = (args && typeof args === 'object' && !Array.isArray(args)) ? args : {}; calls.push({ tool: nm, args: safeArgs }) }
+    if (KNOWN_TOOLS.includes(nm) || customTools.has(nm)) {
+      const safeArgs = (args && typeof args === 'object' && !Array.isArray(args)) ? args : {}
+      // نفس النداء ممكن يتقري مرتين (tag + JSON احتياطي) — من dedupe مرة واحدة بس.
+      const sig = nm + '|' + JSON.stringify(safeArgs).slice(0, 500)
+      if (sigs.has(sig)) return
+      sigs.add(sig)
+      calls.push({ tool: nm, args: safeArgs })
+    }
     else if (!unknown.includes(nm)) unknown.push(nm)
   }
+  // ── الشكل الموثّق 1: <tool>{"name":...,"args":{...}}</tool>
   const xmlRe = /<tool>\s*([\s\S]*?)\s*<\/tool>/gi; let m
-  while ((m = xmlRe.exec(src)) !== null) { const inner = m[1].trim(); const obj = tryParseJson(inner); if (obj && typeof obj === 'object') { const name = obj.name || obj.tool; const args = obj.args || obj.arguments || {}; if (name) addCall(String(name), args, 'xml:' + m.index) } }
+  while ((m = xmlRe.exec(src)) !== null) { const inner = m[1].trim(); const obj = tryParseJson(inner); if (obj && typeof obj === 'object') { const name = obj.name || obj.tool; const args = obj.args || obj.arguments || obj; if (name) addCall(String(name), args, 'xml:' + m.index) } }
+  // ── الشكل الموثّق 2: <tool_call>...</tool_call> — جسم JSON، أو اسم + أزواج (parameter/arg_key)
   const tcRe = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/gi
   while ((m = tcRe.exec(src)) !== null) {
     const body = m[1].trim(); if (!body) continue
+    if (body.startsWith('{')) {
+      const obj = tryParseJson(body)
+      if (obj && typeof obj === 'object') { const name = obj.name || obj.tool; if (name) addCall(String(name), obj.args || obj.arguments || obj, 'tcj:' + m.index); continue }
+    }
     const nameMatch = body.match(/^([a-z][a-z0-9_]{2,40})\b/i); if (!nameMatch) continue
     const toolName = nameMatch[1].trim(); const rest = body.slice(nameMatch[0].length); const args = {}
     const pairRe = /<arg_key>\s*([\s\S]*?)\s*<\/arg_key>\s*<arg_value>\s*([\s\S]*?)\s*<\/arg_value>/gi; let pm
     while ((pm = pairRe.exec(rest)) !== null) { const k = pm[1].trim(); let v = pm[2].trim(); const parsed = tryParseJson(v); if (parsed !== null && parsed !== undefined && typeof parsed !== 'string') v = parsed; else if (/^-?\d+$/.test(v)) v = Number(v); else if (v === 'true') v = true; else if (v === 'false') v = false; if (k) args[k] = v }
+    const paramRe = /<parameter\s+name\s*=\s*["']?([a-zA-Z0-9_]+)["']?\s*>([\s\S]*?)<\/parameter>/gi
+    while ((pm = paramRe.exec(rest)) !== null) { const k = pm[1].trim(); let v = pm[2].trim(); const parsed = tryParseJson(v); if (parsed !== null && parsed !== undefined && typeof parsed !== 'string') v = parsed; else if (/^-?\d+$/.test(v)) v = Number(v); else if (v === 'true') v = true; else if (v === 'false') v = false; if (k && args[k] === undefined) args[k] = v }
     addCall(toolName, args, 'tc:' + m.index)
+  }
+  // ── الشكل الموثّق 2 (الصيغة الثانية): tool <name> {"args":{...}} / tool <name> = {...}
+  const pairHeadRe = /(?:^|[\s`'"*_])tool\s+([a-z][a-z0-9_]{2,40})\s*(?:=\s*)?(?=\{)/gi
+  while ((m = pairHeadRe.exec(src)) !== null) {
+    const braceAt = src.indexOf('{', m.index + m[0].length - 1)
+    if (braceAt === -1) continue
+    const obj = readJsonObjectAt(src, braceAt)
+    if (!obj) continue
+    const name = m[1].trim()
+    addCall(name, (obj.args && typeof obj.args === 'object') ? obj.args : (obj.arguments && typeof obj.arguments === 'object') ? obj.arguments : obj, 'pair:' + m.index)
   }
   for (const obj of extractJsonObjects(src)) {
     // مفتاح فريد لكل كائن JSON — عشان منسيبش استدعاءين مختلفين لنفس الأداة يتلخبطوا
@@ -2603,12 +2656,15 @@ function parseToolCalls(text) {
 function buildToolsSection() {
   const parts = [
     '═══ 🔧 صيغة استدعاء الأدوات ═══', '',
-    '<tool>{"name":"TOOL_NAME","args":{...}}</tool>', '',
+    '✅ الشكل 1 (JSON): <tool>{"name":"TOOL_NAME","args":{...}}<\/tool>',
+    '✅ الشكل 2 (الزوج): tool TOOL_NAME {"args":{...}}   —   أو   <tool_call>TOOL_NAME<parameter name="k">v<\/parameter><parameter name="path">x.js<\/parameter><\/tool_call>',
+    '',
     '📌 أمثلة:',
-    '• قراءة: <tool>{"name":"read_file","args":{"path":"plugins/x.js","offset":1,"limit":100}}</tool>',
-    '• بحث: <tool>{"name":"search_code","args":{"query":"handler.command","path":"plugins"}}</tool>',
-    '• قائمة: <tool>{"name":"list_files","args":{"dir":"plugins"}}</tool>', '',
-    '❌ مرفوض: <tool_call>, <arg_key>, {tool:...} بدون <tool> tag', '',
+    '• قراءة: <tool>{"name":"read_file","args":{"path":"plugins/x.js","offset":1,"limit":100}}<\/tool>',
+    '• قراءة (زوج): tool read_file {"path":"plugins/x.js","offset":1,"limit":100}',
+    '• بحث: <tool>{"name":"search_code","args":{"query":"handler.command","path":"plugins"}}<\/tool>',
+    '• قائمة: <tool>{"name":"list_files","args":{"dir":"plugins"}}<\/tool>', '',
+    '❌ مرفوض: {tool:...} من غير اسم أداة معروف، أو أداة مش موجودة.',
     '─── الأدوات ───', '',
     '📦 list_files • read_file • search_code • plugin_list',
     '🔍 analyze_plugins • research_plugin • inspect_plugin • test_plugin • suggest_plugins • clone_plugin',
@@ -2631,7 +2687,7 @@ function buildSystemPrompt() {
     '🤖 البوت: ' + cfg.name + ' — عدد البلاجينز: ' + pluginCount,
     'البيئة: Node ' + process.version + ' — ROOT: ' + ROOT + ' — ' + new Date().toISOString().slice(0, 10),
     '',
-    '═══ 🔓 بلا حدود — وكل طلب شبكة بمهلة محدودة ═══',
+    '═══ 🔓 سقف أمان ثابت — ' + SAFETY_HARD_ITER_LIMIT + ' دورة / ' + SAFETY_HARD_TOOL_LIMIT + ' أداة — وكل طلب شبكة بمهلة محدودة ═══',
     '',
     '═══ 🧠 ReAct Loop ═══',
     '1. 💭 فكر  2. 📝 خطّط  3. 🔧 نفّذ  4. 🪞 راجع  5. 🧠 اتذكر  6. ✅ خلّص',
@@ -2732,11 +2788,143 @@ function extractFactsFromResult(toolName, args, result) {
 // ═══════════════════════════════════════════════════════════════
 //  🔁 runLoop
 // ═══════════════════════════════════════════════════════════════
-async function runLoop(s, m, conn, status, bot) {
+// سقف الأمان الفعلي: الإعداد مسموح يقلّل الرقم، لكن عمره ما يتعدّى SAFETY_HARD_*_LIMIT.
+function resolveLimits(st = getSettings()) {
+  const rawIter = Number(st?.maxIter)
+  const rawTools = Number(st?.maxTools)
+  const iter = Number.isFinite(rawIter) && rawIter > 0 ? Math.min(Math.floor(rawIter), SAFETY_HARD_ITER_LIMIT) : SAFETY_HARD_ITER_LIMIT
+  const tools = Number.isFinite(rawTools) && rawTools > 0 ? Math.min(Math.floor(rawTools), SAFETY_HARD_TOOL_LIMIT) : SAFETY_HARD_TOOL_LIMIT
+  return { maxIter: iter, maxTools: tools, iterCapped: Number.isFinite(rawIter) && rawIter > SAFETY_HARD_ITER_LIMIT, toolsCapped: Number.isFinite(rawTools) && rawTools > SAFETY_HARD_TOOL_LIMIT }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  🛡️ بوابة الموافقة (موافق / رفض)
+// ═══════════════════════════════════════════════════════════════
+// الافتراضي زي ما هو: askBeforeWrite/askBeforeDelete = false — مفيش موافقة بتتحول على ملك قديم.
+function approvalKindFor(tool, st = getSettings()) {
+  if (tool === 'write_file' && st?.askBeforeWrite) return 'write'
+  if (tool === 'delete_file' && st?.askBeforeDelete) return 'delete'
+  return null
+}
+// safetyEnabled بيقفل الأدوات اللي بتلمس النظام/المكتبات (مش بس بيسأل عليها).
+function isSafetyGated(tool, st = getSettings()) { return !!st?.safetyEnabled && SAFETY_GATED_TOOLS.has(tool) }
+function askBudgetLeft(s, st = getSettings()) { const max = Number(st?.maxAskPerSession) || 0; if (max <= 0) return Number.MAX_SAFE_INTEGER; return Math.max(0, max - (Number(s?.askCount) || 0)) }
+function clearApproval(s) { if (!s) return null; const had = s.awaitingApproval || s.pendingWrite || s.pendingDelete || null; s.pendingWrite = null; s.pendingDelete = null; s.awaitingApproval = null; return had }
+function pendingApprovalKind(s) { if (s?.pendingDelete) return 'delete'; if (s?.pendingWrite) return 'write'; return null }
+// ⏰ أي موافقة معلّقة بتموت بعد APPROVAL_TTL_MS — مافيش تنفيذ بعد كده، ولا بتنفّذ بعد رفض.
+function checkApprovalTimeout(s, now = Date.now()) {
+  const at = Number(s?.awaitingApproval?.at) || 0
+  if (!at) return null
+  if (now - at <= APPROVAL_TTL_MS) return null
+  clearApproval(s)
+  return '⏰ *انتهت مهلة الموافقة* (' + Math.round(APPROVAL_TTL_MS / 60000) + ' دقايق) — الوكيل كمّل من غير ما ينفّذ أي كتابة أو حذف.'
+}
+// بيعلّق المهمة: بيسأل المالك في الشات، ومينفّذش الأداة إلا بكلمة "موافق".
+async function requestApproval(s, m, conn, status, call, kind) {
+  const st = getSettings()
+  if (askBudgetLeft(s, st) <= 0) {
+    const msg = '⛔ *سقف الموافقات:* (' + Number(st.maxAskPerSession) + ' في الجلسة) — *' + call.tool + '* اترفض تلقائيًا وماتنفذش.'
+    s.messages.push({ role: 'user', content: toolObservation(call.tool, msg) })
+    if (status) status.add('⛔', 'سقف الموافقات — ' + call.tool + ' اترفض')
+    return { state: 'denied', message: msg }
+  }
+  s.askCount = (Number(s.askCount) || 0) + 1
+  clearApproval(s)
+  s.awaitingApproval = { kind, tool: call.tool, args: call.args || {}, at: Date.now() }
+  if (kind === 'delete') s.pendingDelete = call; else s.pendingWrite = call
+  const target = String(call.args?.path || '?')
+  const ttlMin = Math.round(APPROVAL_TTL_MS / 60000)
+  const msg = kind === 'delete'
+    ? '⚠️ *موافقة مطلوبة — حذف:*\n\nالوكيل عايز يحذف `' + target + '`\n\n• *موافق* = ينفّذ الحذف\n• *رفض* = يلغي\n• *توقف* = يوقف المهمة\n\n⏰ المهلة ' + ttlMin + ' دقايق وبالمهلة دي المهمة بتكمّل من غير تنفيذ.\n↩️ أو رد على الرسالة دي بـ *موافق* / *رفض*.'
+    : '⚠️ *موافقة مطلوبة — كتابة:*\n\nالوكيل عايز يكتب في `' + target + '`\n\n• *موافق* = ينفّذ الكتابة\n• *رفض* = يلغي\n• *توقف* = يوقف المهمة\n\n⏰ المهلة ' + ttlMin + ' دقايق وبالمهلة دي المهمة بتكمّل من غير تنفيذ.\n↩️ أو رد على الرسالة دي بـ *موافق* / *رفض*.'
+  if (status) status.add('⏸️', 'مستني موافقتك: ' + call.tool + ' → ' + target)
+  try {
+    const sent = await conn.sendMessage(m.chat, { text: msg }, { quoted: m })
+    // نسجّل مفتاح رسالة الموافقة عشان الرد عليها (quote + موافق) يتحسب رد على الوكيل.
+    if (sent?.key?.id && s.agentMsgIds) { s.agentMsgIds.add(sent.key.id); if (s.agentMsgIds.size > 50) s.agentMsgIds = new Set([...s.agentMsgIds].slice(-30)) }
+    return { state: 'pending', message: msg, key: sent?.key || null }
+  }
+  catch { return { state: 'pending', message: msg, key: null } }
+}
+// بينفّذ الموافقة المعلّقة مرة واحدة بس (بعد "موافق") — والمهلة لو خلصت مابينفّذش حاجة.
+async function resumeApproved(s, m, conn, status, bot) {
+  const expired = checkApprovalTimeout(s)
+  if (expired) { s.messages.push({ role: 'user', content: 'APPROVAL [timeout]: ' + expired }); return { ok: false, expired: true, message: expired } }
+  const kind = pendingApprovalKind(s)
+  if (!kind) return { ok: false, message: 'مفيش موافقة معلّقة.' }
+  const call = kind === 'delete' ? s.pendingDelete : s.pendingWrite
+  clearApproval(s)
+  const t0 = Date.now()
+  if (status) status.setCurrent('🔧 بنفّذ ' + call.tool + ' بعد موافقتك…')
+  const result = await executeToolSafe(call, { bot, conn })
+  const dur = Math.round((Date.now() - t0) / 1000)
+  const ok = !isToolErrorResult(result) && !String(result).startsWith('❌')
+  const summary = String(result).split('\n')[0].slice(0, 120)
+  if (status) status.add(ok ? '✅' : '⚠️', call.tool + ' → ' + summary)
+  s.messages.push({ role: 'user', content: 'APPROVAL [approved]: المالك وافق — ' + call.tool + ' اتنفّذ.' })
+  s.messages.push({ role: 'user', content: toolObservation(call.tool, result) })
+  logAction('موافقة المالك: ' + call.tool + ' (' + dur + 'ث)')
+  return { ok: true, kind, tool: call.tool, result, dur }
+}
+// "رفض" = الأداة اللي طلبت الموافقة تتلغي (مش المهمة كلها) — والتاريخ يفضل متّسق للجلسة.
+function rejectPending(s) {
+  const expired = checkApprovalTimeout(s)
+  if (expired) return { ok: false, expired: true, message: expired }
+  const kind = pendingApprovalKind(s)
+  if (!kind) return { ok: false, message: 'مفيش موافقة معلّقة.' }
+  const call = kind === 'delete' ? s.pendingDelete : s.pendingWrite
+  const target = String(call.args?.path || '?')
+  clearApproval(s)
+  const msg = kind === 'delete' ? '❌ رفض المالك الحذف — `' + target + '` اتحذفش.' : '❌ رفض المالك الكتابة — `' + target + '` اتكتبش.'
+  s.messages.push({ role: 'user', content: 'APPROVAL [rejected]: المالك رفض — ' + call.tool + ' ماتفذش.' })
+  s.messages.push({ role: 'user', content: toolObservation(call.tool, '⛔ المالك رفض التنفيذ — الأداة دي اتلغت، كمّل من غيرها.') })
+  logAction('رفض المالك: ' + call.tool)
+  return { ok: true, rejected: true, kind, tool: call.tool, message: msg }
+}
+
+// يرد على "موافق"/"رفض" — نفس المنطق للأمر (بـ prefix) وللرد المباشر في الشات.
+// opts.model بيتحقن في الاختبارات (نفس منفذ runLoop) — الإنتاج بيستخدم callAI.
+async function handleApprovalReply(s, m, conn, bot, word, opts = {}) {
+  const approve = ['موافق', 'اوافق', 'ok', 'yes'].includes(String(word || '').toLowerCase())
+  if (!pendingApprovalKind(s)) return checkApprovalTimeout(s) || 'مفيش موافقة معلّقة.'
+  if (!approve) { const out = rejectPending(s); persistSessions(true); return out.message }
+  if (s.busy) return '⏳ الوكيل شغّال…'
+  s.busy = true; s.cancel = false
+  const status = new ActivityStatus(conn, m.chat, m); await status.init()
+  try {
+    const out = await resumeApproved(s, m, conn, status, bot)
+    if (!out.ok) { await status.stop(); return out.message }
+    await runLoop(s, m, conn, status, bot, opts)
+    await status.stop()
+    return null
+  } catch (e) { await status.stop('❌ ' + e.message); return '❌ ' + e.message }
+  finally { s.busy = false; persistSessions(true) }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  🧾 ملاحظات الأدوات (بتترجع للوكيل زي أي أداة)
+// ═══════════════════════════════════════════════════════════════
+function toolErrorObservation(tool, e) {
+  const msg = String(e?.message || e || 'خطأ غير معروف').slice(0, 400)
+  return 'TOOL_ERROR [' + tool + ']: ⚠️ فشلت — ملاحظة قابلة لإعادة المحاولة: ' + msg
+}
+function isToolErrorResult(result) { return /^TOOL_ERROR \[/.test(String(result || '')) }
+// النتيجة اللي بترجع للموديل: اسم الأداة + نتيجتها الحقيقية (+ وسم واضح لو فشلت).
+function toolObservation(tool, result) {
+  const body = String(result ?? '').slice(0, 50000)
+  const failed = isToolErrorResult(result) || body.startsWith('❌')
+  if (!failed) return 'TOOL_RESULT [' + tool + ']:\n' + body
+  const tail = isToolErrorResult(result) ? '' : '\n⚠️ التنفيذ فشل — دي ملاحظة قابلة لإعادة المحاولة (جرّب مدخلات/أداة مختلفة).'
+  return 'TOOL_RESULT [' + tool + '] [فشل — قابل لإعادة المحاولة]:\n' + body + tail
+}
+
+async function runLoop(s, m, conn, status, bot, opts = {}) {
   trimHistory(s)
   const st = getSettings()
-  const maxIter = Number(st.maxIter) <= 0 ? SAFETY_HARD_ITER_LIMIT : Number(st.maxIter)
-  const maxTools = Number(st.maxTools) <= 0 ? Infinity : Number(st.maxTools)
+  const limits = resolveLimits(st)
+  const maxIter = limits.maxIter
+  const maxTools = limits.maxTools
+  const model = typeof opts.model === 'function' ? opts.model : callAI
   let formatRetries = 0; const MAX_FORMAT_RETRIES = 20; let iter = 0
   const ctx = { bot, conn }
 
@@ -2745,7 +2933,7 @@ async function runLoop(s, m, conn, status, bot) {
     if (s.cancel) return
     if (sessions.get(skey(m)) !== s) { console.log('[agent] ⚠️ الجلسة اتغيرت'); return }
     s.lastActive = Date.now()
-    const reply = await callAI(s.messages, (msg) => {
+    const reply = await model(s.messages, (msg) => {
       if (s.cancel) return
       if (msg.startsWith('🚀') || msg.startsWith('🧠')) status.setCurrent(msg)
       else if (msg.startsWith('✅')) status.add('✅', msg.replace(/^✅\s*/, ''))
@@ -2758,7 +2946,7 @@ async function runLoop(s, m, conn, status, bot) {
       formatRetries++
       status.add('⚠️', 'صيغة غلط (' + formatRetries + '/' + MAX_FORMAT_RETRIES + ')')
       s.messages.push({ role: 'assistant', content: reply })
-      s.messages.push({ role: 'user', content: 'TOOL_RESULT [format_error]: الصيغة: <tool>{"name":"read_file","args":{"path":"x.js"}}</tool>' })
+      s.messages.push({ role: 'user', content: 'TOOL_RESULT [format_error]: الصيغة: <tool>{"name":"read_file","args":{"path":"x.js"}}</tool> أو tool read_file {"path":"x.js"}' })
       if (formatRetries >= MAX_FORMAT_RETRIES) { await sendAgent(m, conn, '⚠️ مش قادر يستخدم الصيغة.', s); persistSessions(true); return }
       persistSessions(); continue
     }
@@ -2800,54 +2988,78 @@ async function runLoop(s, m, conn, status, bot) {
     for (const c of toolCalls) {
       const req = requiredArgs[c.tool] || []
       const missing = req.filter(k => !c.args || c.args[k] === undefined || c.args[k] === null || String(c.args[k]).trim() === '')
-      if (missing.length) { s.messages.push({ role: 'user', content: 'TOOL_RESULT [' + c.tool + ']: ❌ ناقص: ' + missing.join(', ') }); status.add('❌', 'رفض ' + c.tool); continue }
+      if (missing.length) { s.messages.push({ role: 'user', content: toolObservation(c.tool, '❌ ناقص: ' + missing.join(', ')) }); status.add('❌', 'رفض ' + c.tool); continue }
+      if (isSafetyGated(c.tool, st)) {
+        s.messages.push({ role: 'user', content: toolObservation(c.tool, '⛔ الأداة *' + c.tool + '* مقفولة و safetyEnabled شغّال — استخدم أداة تانية أو اقفل safetyEnabled من الإعدادات.') })
+        status.add('⛔', 'safetyEnabled رفض ' + c.tool)
+        continue
+      }
       const sig = c.tool + '|' + JSON.stringify(c.args || {}).slice(0, 500)
       if (seenSigs.has(sig)) continue
       seenSigs.add(sig); filteredCalls.push(c)
     }
     if (!filteredCalls.length) { status.add('⚠️', 'كل الأدوات مكررة'); persistSessions(); continue }
-    let runnable
-    if (maxTools === Infinity) runnable = filteredCalls
-    else { const remaining = Math.max(1, maxTools - s.toolCount); runnable = filteredCalls.slice(0, remaining) }
-    s.toolCount += runnable.length
+    const toolBudget = Math.max(0, maxTools - (Number(s.toolCount) || 0))
+    if (toolBudget <= 0) {
+      await sendAgent(m, conn, '⛔ *سقف الأدوات:* وصلت ' + maxTools + ' أداة — المهمة اتوقفت.', s)
+      persistSessions(true); return
+    }
+    const runnable = filteredCalls.slice(0, toolBudget)
+    s.toolCount = (Number(s.toolCount) || 0) + runnable.length
     runnable.forEach(c => { c._session = s; s.runTools.push(c.tool) })
-    const allReads = runnable.length > 1 && runnable.every(c => READ_TOOLS.has(c.tool) && !customTools.has(c.tool))
+    // 🛡️ بوابة الموافقة: أي كتابة/حذف بيتعلّق لحد ما المالك يقول "موافق" — والمرفوض بيتشال من التنفيذ.
+    const executable = []
+    for (const c of runnable) {
+      const kind = approvalKindFor(c.tool, st)
+      if (!kind) { executable.push(c); continue }
+      const ask = await requestApproval(s, m, conn, status, c, kind)
+      if (ask.state === 'pending') { persistSessions(true); return }
+    }
+    if (!executable.length) { status.add('⚠️', 'كل أدوات الدورة محتاجة موافقة'); persistSessions(); continue }
+    const allReads = executable.length > 1 && executable.every(c => READ_TOOLS.has(c.tool) && !customTools.has(c.tool))
     if (st.parallelToolsEnabled && allReads) {
-      if (st.verboseTools) status.setCurrent('⚡ بنفذ ' + runnable.length + ' بالتوازي…')
-      const results = await Promise.all(runnable.map(async (c) => { const t0 = Date.now(); const result = await executeTool(c, ctx); return { c, result, dur: Math.round((Date.now() - t0) / 1000) } }))
+      if (st.verboseTools) status.setCurrent('⚡ بنفذ ' + executable.length + ' بالتوازي…')
+      const results = await Promise.all(executable.map(async (c) => { const t0 = Date.now(); const result = await executeToolSafe(c, ctx); return { c, result, dur: Math.round((Date.now() - t0) / 1000) } }))
       for (const { c, result, dur } of results) {
         if (s.cancel) return
-        const label = toolLabel(c); const summary = String(result).split('\n')[0].slice(0, 120); const ok = !result.startsWith('❌')
-        if (st.verboseTools) status.add(ok ? '✅' : '⚠️', `${label} (${dur}ث) — ${summary}`)
+        const summary = String(result).split('\n')[0].slice(0, 120); const ok = !String(result).startsWith('❌') && !isToolErrorResult(result)
+        status.add(ok ? '✅' : '⚠️', c.tool + ' → ' + summary + ' (' + dur + 'ث)')
         const facts = extractFactsFromResult(c.tool, c.args, result)
         for (const f of facts) { s.facts = (s.facts || []).filter(x => x.key !== f.key); s.facts.push(f) }
-        s.messages.push({ role: 'user', content: 'TOOL_RESULT [' + c.tool + ']:\n' + String(result).slice(0, 50000) })
+        s.messages.push({ role: 'user', content: toolObservation(c.tool, result) })
       }
       persistSessions()
     } else {
-      for (const c of runnable) {
+      for (const c of executable) {
         if (s.cancel) return
         const label = toolLabel(c)
         if (st.verboseTools) status.setCurrent('🔧 ' + label + '…')
         const t0 = Date.now()
-        const result = await executeTool(c, ctx)
+        const result = await executeToolSafe(c, ctx)
         const dur = Math.round((Date.now() - t0) / 1000)
-        const summary = String(result).split('\n')[0].slice(0, 120); const ok = !result.startsWith('❌')
-        if (st.verboseTools) status.add(ok ? '✅' : '⚠️', `${label} (${dur}ث) — ${summary}`)
+        const summary = String(result).split('\n')[0].slice(0, 120); const ok = !String(result).startsWith('❌') && !isToolErrorResult(result)
+        status.add(ok ? '✅' : '⚠️', c.tool + ' → ' + summary + ' (' + dur + 'ث)')
         const facts = extractFactsFromResult(c.tool, c.args, result)
         for (const f of facts) { s.facts = (s.facts || []).filter(x => x.key !== f.key); s.facts.push(f) }
-        s.messages.push({ role: 'user', content: 'TOOL_RESULT [' + c.tool + ']:\n' + String(result).slice(0, 50000) })
+        s.messages.push({ role: 'user', content: toolObservation(c.tool, result) })
         persistSessions()
       }
     }
     if (paused) { persistSessions(true); return }
   }
-  await sendAgent(m, conn, '⚠️ وصلنا الحد.', s)
+  await sendAgent(m, conn, '⛔ *سقف الأمان:* وصلت ' + maxIter + ' دورة و' + maxTools + ' أداة — المهمة اتوقفت.\nالحد ده ثابت (مش بيتغير من الشات) — ابعت *جديد* لمهمة جديدة.', s)
   persistSessions(true)
 }
 
-async function processUserMessage(s, m, conn, userText, usedPrefix, bot) {
+async function processUserMessage(s, m, conn, userText, usedPrefix, bot, opts = {}) {
   if (s.busy) { try { await m.reply('⏳ الوكيل شغّال…') } catch {}; return }
+  // 🛡️ أي موافقة معلّقة فات وقتها أو المالك بدأ مهمة جديدة = تتلغي (ماتنفذش أي كتابة/حذف).
+  const droppedApproval = pendingApprovalKind(s)
+  if (droppedApproval) {
+    const expiredMsg = checkApprovalTimeout(s)
+    if (expiredMsg) s.messages.push({ role: 'user', content: 'APPROVAL [timeout]: ' + expiredMsg })
+    else { clearApproval(s); s.messages.push({ role: 'user', content: 'APPROVAL [cancelled]: المالك بدأ مهمة جديدة — ' + droppedApproval + ' المعلّقة اتلغت وماتنفذتش.' }) }
+  }
   s.busy = true; s.cancel = false
   s.prefix = usedPrefix || s.prefix || '.'
   s.lastActive = Date.now()
@@ -2858,7 +3070,7 @@ async function processUserMessage(s, m, conn, userText, usedPrefix, bot) {
   await status.init()
   try { await m.react('⏳') } catch {}
   try {
-    await runLoop(s, m, conn, status, bot)
+    await runLoop(s, m, conn, status, bot, opts)
     if (s.cancel) { await status.stop('⏹️ تم الإيقاف.'); try { await m.react('⏹️') } catch {} }
     else { await status.stop(); try { await m.react('✅') } catch {} }
   } catch (e) {
@@ -2875,7 +3087,7 @@ function buildHelp(p) {
   return [
     '🤖 *صانع البلاجينز — LIGHT Agent (v28.0)*',
     '',
-    '🎯 LIGHT BOT (meowsab) • 🔓 بلا حدود • ⏱️ مهلة 30ث على كل طلب',
+    '🎯 LIGHT BOT (meowsab) • 🔓 سقف ' + SAFETY_HARD_ITER_LIMIT + ' دورة • ⏱️ مهلة 30ث على كل طلب',
     '🎯 NVIDIA Key مضاف ✅',
     '',
     '*🚀:* ' + p + 'صانع <وصف>',
@@ -2906,11 +3118,12 @@ function providerStatus() {
   const afKey = process.env.AIRFORCE_KEY || cfg.airforceKey || st.airforceKey
   const cbKey = process.env.CEREBRAS_KEY || cfg.cerebrasKey || st.cerebrasKey
   const ghKey = process.env.GITHUB_TOKEN || cfg.githubToken || st.githubToken
-  return ['🌐 *المزودين:*','',(kiloKey ? '🥇 Kilo ✅' : '🥇 Kilo ⬜'),(gqKey ? '🥈 Groq ✅' : '🥈 Groq ⬜'),(llm7Key ? '🥉 LLM7 ✅' : '🥉 LLM7 ⚪'),(nvKey ? '🎯 NVIDIA ✅' : '🎯 NVIDIA ⬜'),(orKey ? '🔷 OpenRouter ✅' : '🔷 OpenRouter ⬜'),(ghKey ? '🐙 GitHub ✅' : '🐙 GitHub ⬜'),(cbKey ? '⚡ Cerebras ✅' : '⚡ Cerebras ⬜'),(afKey ? '✈️ Airforce ✅' : '✈️ Airforce ⬜'),'🎨 Pollinations ✅ (مجاني)','🤖 GPT-AI ✅ (مجاني)','💳 UncloseAI','','🎯 Framework: LIGHT BOT','⏱️ مهلة الطلبات: 30ث','🔓 بلا حدود: ✅','🧅 Tor: ' + (st.useTor ? '✅' : '⬜'),'💾 جلسات: ' + sessions.size,'🧰 أدوات: ' + customTools.size].join('\n')
+  return ['🌐 *المزودين:*','',(kiloKey ? '🥇 Kilo ✅' : '🥇 Kilo ⬜'),(gqKey ? '🥈 Groq ✅' : '🥈 Groq ⬜'),(llm7Key ? '🥉 LLM7 ✅' : '🥉 LLM7 ⚪'),(nvKey ? '🎯 NVIDIA ✅' : '🎯 NVIDIA ⬜'),(orKey ? '🔷 OpenRouter ✅' : '🔷 OpenRouter ⬜'),(ghKey ? '🐙 GitHub ✅' : '🐙 GitHub ⬜'),(cbKey ? '⚡ Cerebras ✅' : '⚡ Cerebras ⬜'),(afKey ? '✈️ Airforce ✅' : '✈️ Airforce ⬜'),'🎨 Pollinations ✅ (مجاني)','🤖 GPT-AI ✅ (مجاني)','💳 UncloseAI','','🎯 Framework: LIGHT BOT','⏱️ مهلة الطلبات: 30ث','🔓 سقف الدورات: ' + SAFETY_HARD_ITER_LIMIT,'🧅 Tor: ' + (st.useTor ? '✅' : '⬜'),'💾 جلسات: ' + sessions.size,'🧰 أدوات: ' + customTools.size].join('\n')
 }
 function settingsText() {
   const st = getSettings(); const cfg = getAgentCfg()
-  return ['⚙️ *الإعدادات:*','',`• Framework: LIGHT`,`• maxIter: ${Number(st.maxIter) <= 0 ? '🔓' : st.maxIter}`,`• maxTools: ${Number(st.maxTools) <= 0 ? '🔓' : st.maxTools}`,`• heartbeatMs: ${st.heartbeatMs}`,`• statusMode: ${st.statusMode}`,`• autoResume: ${st.autoResume}`,`• preferFreeModels: ${st.preferFreeModels}`,`• groqReasoningEffort: ${st.groqReasoningEffort}`,`• groqMaxTokens: ${st.groqMaxTokens}`,`• nvidiaKey: ${st.nvidiaKey ? '✅ ' + maskKey(st.nvidiaKey) : '⬜'}`,`• kiloKey: ${st.kiloKey ? '✅' : '⬜'}`,`• groqKey: ${st.groqKey ? '✅' : '⬜'}`,`• llm7Key: ${st.llm7Key ? '✅' : '⬜'}`,`• openrouterKey: ${st.openrouterKey ? '✅' : '⬜'}`,'',`🔒 مزود مجبور: ${cfg.forced || '(تلقائي)'}`].join('\n')
+  const lim = resolveLimits(st)
+  return ['⚙️ *الإعدادات:*','',`• Framework: LIGHT`,`• maxIter: ${Number(st.maxIter) <= 0 ? '🔓' : st.maxIter} (الفعلي: ${lim.maxIter})${lim.iterCapped ? ' ⛔️' : ''}`,`• maxTools: ${Number(st.maxTools) <= 0 ? '🔓' : st.maxTools} (الفعلي: ${lim.maxTools})${lim.toolsCapped ? ' ⛔️' : ''}`,`• موافقة الكتابة: ${st.askBeforeWrite ? '✅' : '⬜'} • موافقة الحذف: ${st.askBeforeDelete ? '✅' : '⬜'} • سقف الموافقات: ${Number(st.maxAskPerSession) > 0 ? st.maxAskPerSession : 'بلا حد'}`,`• safetyEnabled: ${st.safetyEnabled ? '✅' : '⬜'}`,`• heartbeatMs: ${st.heartbeatMs}`,`• statusMode: ${st.statusMode}`,`• autoResume: ${st.autoResume}`,`• preferFreeModels: ${st.preferFreeModels}`,`• groqReasoningEffort: ${st.groqReasoningEffort}`,`• groqMaxTokens: ${st.groqMaxTokens}`,`• nvidiaKey: ${st.nvidiaKey ? '✅ ' + maskKey(st.nvidiaKey) : '⬜'}`,`• kiloKey: ${st.kiloKey ? '✅' : '⬜'}`,`• groqKey: ${st.groqKey ? '✅' : '⬜'}`,`• llm7Key: ${st.llm7Key ? '✅' : '⬜'}`,`• openrouterKey: ${st.openrouterKey ? '✅' : '⬜'}`,'',`🔒 مزود مجبور: ${cfg.forced || '(تلقائي)'}`].join('\n')
 }
 function keysText() {
   const cfg = getAgentCfg(); const st = getSettings()
@@ -2932,7 +3145,7 @@ function infoText(bot) {
   const cfg = getBotConfig(bot)
   const mem = process.memoryUsage(); const uptime = Math.round(process.uptime())
   const totalModels = Object.values(modelsCache.providers).reduce((a, b) => a + b.length, 0)
-  return ['ℹ️ *معلومات:*','',`• Framework: LIGHT BOT (meowsab)`,`• Bot: ${cfg.name}`,`• Node: ${process.version}`,`• الرام: ${Math.round(mem.rss / 1024 / 1024)}MB`,`• Uptime: ${Math.floor(uptime / 3600)}س ${Math.floor((uptime % 3600) / 60)}د`,`• الجلسات: ${sessions.size}`,`• 🧰 أدوات: ${customTools.size}`,`• 🧠 موديلات: ${totalModels}`,`• 🔓 بلا حدود: ✅`,`• ⏱️ مهلة الطلبات: 30ث`,`• 🎯 NVIDIA: ✅ مضاف`].join('\n')
+  return ['ℹ️ *معلومات:*','',`• Framework: LIGHT BOT (meowsab)`,`• Bot: ${cfg.name}`,`• Node: ${process.version}`,`• الرام: ${Math.round(mem.rss / 1024 / 1024)}MB`,`• Uptime: ${Math.floor(uptime / 3600)}س ${Math.floor((uptime % 3600) / 60)}د`,`• الجلسات: ${sessions.size}`,`• 🧰 أدوات: ${customTools.size}`,`• 🧠 موديلات: ${totalModels}`,`• 🔓 سقف الدورات: ${SAFETY_HARD_ITER_LIMIT} • أدوات: ${SAFETY_HARD_TOOL_LIMIT}`,`• ⏱️ مهلة الطلبات: 30ث`,`• 🎯 NVIDIA: ✅ مضاف`].join('\n')
 }
 function factsText(s) { if (!s?.facts?.length) return '📊 مفيش حقائق.'; return '📊 *حقائق:*\n' + s.facts.map(f => `• ${f.key}: ${f.value}`).join('\n') }
 
@@ -2950,6 +3163,12 @@ const handler = async (m, ctx) => {
 
   if (['توقف', 'وقف', 'الغاء', 'إلغاء', 'cancel'].includes(a0)) {
     const s = sessions.get(k)
+    // ⏸️ لو فيه موافقة معلّقة، "توقف" يلغيها — مفيش تنفيذ بعد كده.
+    if (s && pendingApprovalKind(s)) {
+      const kind = pendingApprovalKind(s)
+      clearApproval(s); persistSessions(true)
+      return m.reply('⏹️ تم الإيقاف وإلغاء موافقة الـ' + (kind === 'delete' ? 'حذف' : 'كتابة') + ' المعلّقة — ماتفذتش.')
+    }
     if (!s || !s.busy) return m.reply('الوكيل مش شغال.')
     s.cancel = true; s.busy = false; persistSessions(true)
     return m.reply('⏹️ تم الإيقاف.')
@@ -2965,18 +3184,12 @@ const handler = async (m, ctx) => {
   }
   if (['موافق', 'اوافق', 'ok', 'yes'].includes(a0)) {
     const s = sessions.get(k); if (!s) return m.reply('مفيش جلسة.')
-    const pending = s.pendingDelete || s.pendingWrite; if (!pending) return m.reply('مفيش معلق.')
-    s.pendingDelete = null; s.pendingWrite = null; s.busy = true; s.cancel = false
-    const status = new ActivityStatus(conn, m.chat, m); await status.init()
-    try { const result = await executeTool(pending, { bot, conn }); s.messages.push({ role: 'user', content: 'TOOL_RESULT [' + pending.tool + ']:\n' + String(result).slice(0, 50000) }); await runLoop(s, m, conn, status, bot); await status.stop() }
-    catch (e) { await status.stop('❌ ' + e.message) } finally { s.busy = false; persistSessions(true) }
-    return
+    const out = await handleApprovalReply(s, m, conn, bot, a0)
+    return out ? m.reply(out) : undefined
   }
   if (['رفض', 'reject', 'no'].includes(a0)) {
     const s = sessions.get(k); if (!s) return m.reply('مفيش جلسة.')
-    if (s.pendingDelete) { s.pendingDelete = null; return m.reply('❌ رفض الحذف.') }
-    if (s.pendingWrite) { s.pendingWrite = null; return m.reply('❌ رفض الكتابة.') }
-    return m.reply('مفيش معلق.')
+    return m.reply(await handleApprovalReply(s, m, conn, bot, a0))
   }
 
   if (['الموديلز', 'models'].includes(a0)) {
@@ -3119,7 +3332,13 @@ const handler = async (m, ctx) => {
   }
   if (['تصفير-الصحة'].includes(a0)) { providerHealth.clear(); return m.reply('♻️') }
 
-  if (['بلا-حدود', 'unlimited'].includes(a0)) { setSetting('maxIter', 0); setSetting('maxTools', 0); setSetting('safetyEnabled', false); return m.reply('🔓 بلا حدود (مع مهلة على كل طلب شبكة).') }
+  if (['بلا-حدود', 'unlimited'].includes(a0)) {
+    // 🔓 "بلا-حدود" معناها "استخدم السقف الأقصى" — مش تعطيل للسقف ولا لمفتاح الأمان.
+    setSetting('maxIter', 0); setSetting('maxTools', 0)
+    const lim = resolveLimits(getSettings())
+    const st2 = getSettings()
+    return m.reply('🔓 *بلا-حدود* — السقف الأقصى: *' + lim.maxIter + '* دورة • *' + lim.maxTools + '* أداة (مش بيتعدّى).*\n🛡️ safetyEnabled: ' + (st2.safetyEnabled ? 'شغّال ✅' : 'مقفول ⬜') + ' • موافقة الكتابة: ' + (st2.askBeforeWrite ? '✅' : '⬜') + ' • موافقة الحذف: ' + (st2.askBeforeDelete ? '✅' : '⬜'))
+  }
   if (['وضع', 'mode'].includes(a0) && a1) { if (!['silent', 'normal', 'verbose'].includes(a1)) return m.reply('silent/normal/verbose'); setSetting('statusMode', a1); return m.reply('🎛️ ' + a1) }
   if (['توازي'].includes(a0) && args[1]) { const n = Number(args[1]); if (isNaN(n) || n < 1 || n > 20) return m.reply('1-20'); setSetting('maxConcurrentProviders', n); return m.reply('⚡ ' + n) }
   if (['استئناف-تلقائي'].includes(a0) && args[1]) { const v = ['on', 'تشغيل'].includes(a1.toLowerCase()) ? true : ['off', 'ايقاف'].includes(a1.toLowerCase()) ? false : null; if (v === null) return m.reply('on|off'); setSetting('autoResume', v); return m.reply('♻️ ' + (v ? '✅' : '⬜')) }
@@ -3218,6 +3437,14 @@ handler.before = async function (m, ctx) {
     const preRe = new RegExp('^[' + prefixes.map(p2 => p2.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('') + ']')
     if (!t || preRe.test(t)) return
     if (s.busy) { try { await m.reply('⏳ الوكيل شغّال…') } catch {}; return true }
+    // 🛡️ رد مباشر على طلب الموافقة (من غير prefix) — بيقفل دورة الموافقة في نفس الشات
+    const bareWord = String(m.text || '').trim().toLowerCase()
+    if (['موافق', 'اوافق', 'رفض', 'reject'].includes(bareWord) && pendingApprovalKind(s)) {
+      m._agentHandled = true
+      const approvalReply = await handleApprovalReply(s, m, conn, bot, bareWord)
+      if (approvalReply) { try { await m.reply(approvalReply) } catch {} }
+      return true
+    }
     m._agentHandled = true
     const currentPrefix = ctx?.usedPrefix || s.prefix || '.'
     await processUserMessage(s, m, conn, t, currentPrefix, bot)
@@ -3235,6 +3462,13 @@ handler.owner = true
 handler.usePrefix = true
 
 // 🧪 سطح اختبار — نفس دوال الحماية المستخدمة جوه البوت
-export { safetyCheckToolCode, toolExecutionGateAsync, toolNpm, toolCreateTool, buildToolContext, ActivityStatus, agentTimers, stopAgentTimers, TOOL_ALLOWED_GLOBALS, TOOL_CTX_PROPS, HTTP_TIMEOUT_MS }
+export { safetyCheckToolCode, toolExecutionGateAsync, toolNpm, toolCreateTool, buildToolContext, ActivityStatus, agentTimers, stopAgentTimers, TOOL_ALLOWED_GLOBALS, TOOL_CTX_PROPS, HTTP_TIMEOUT_MS,
+  // 🧪 سطح الاختبار: نفس الدوال اللي شغّالة جوه البوت (الموديل بيتحقن في runLoop)
+  runLoop, processUserMessage, getOrCreateSession, parseToolCalls, executeTool, resolveLimits,
+  approvalKindFor, isSafetyGated, askBudgetLeft, pendingApprovalKind, clearApproval, checkApprovalTimeout,
+  requestApproval, resumeApproved, rejectPending, toolObservation, toolErrorObservation, isToolErrorResult,
+  handleApprovalReply,
+  getSettings, setSetting, persistSessions, loadPersistedSessions, sessions, skey, DEFAULT_SETTINGS,
+  SAFETY_HARD_ITER_LIMIT, SAFETY_HARD_TOOL_LIMIT, APPROVAL_TTL_MS, SAFETY_GATED_TOOLS }
 
 export default handler
