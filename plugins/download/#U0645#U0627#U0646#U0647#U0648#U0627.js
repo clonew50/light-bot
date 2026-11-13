@@ -129,6 +129,9 @@ function errorText(e, fallback) {
     if (kind === 'protected') {
         return `${HEADER}\n❌ *المصدر محمي حالياً*\n🛡️ أمر المانهوا غير متاح مؤقتاً لأن المصدر يحمي نفسه، حاول لاحقاً.\n${HEADER}`;
     }
+    if (kind === 'image') {
+        return e?.message || '❌ تعذر تحميل الصورة';
+    }
     if (kind === 'timeout' || kind === 'network' || kind === 'http') {
         return `${HEADER}\n❌ *تعذر الاتصال بالمصدر*\n⏳ أمر المانهوا غير متاح مؤقتاً، حاول مرة أخرى.\n${HEADER}`;
     }
@@ -198,6 +201,35 @@ async function mdGet(path, params = {}) {
     throw lastError;
 }
 
+// فحص بصمة الصورة: هل البايتات الأولى فعلاً بصمة صورة معروفة؟ (todo 24 attempt 3)
+function looksLikeImage(buf) {
+    if (!Buffer.isBuffer(buf) || buf.length === 0) return false;
+    // JPEG: FF D8 FF
+    if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return true;
+    // PNG: 89 50 4E 47
+    if (buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return true;
+    // GIF: 47 49 46 38
+    if (buf.length >= 4 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return true;
+    // WebP: RIFF ???? WEBP
+    if (buf.length >= 12 && buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP') return true;
+    return false;
+}
+
+// سبب رفض استجابة صورة: يجب 200 + image/* (أو بلا Content-Type مع بصمة صالحة) + جسم غير فارغ بصورة حقيقية
+function imageRejectionReason(res, buffer) {
+    const status = Number(res?.status || 0);
+    if (status !== 200) return `HTTP ${status} ليس 200`;
+    const ctype = String(
+        (typeof res?.headers?.get === 'function' ? res.headers.get('content-type') : null) || ''
+    ).trim().toLowerCase();
+    if (ctype && !ctype.startsWith('image/')) return `نوع المحتوى ${ctype} ليس صورة`;
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) return 'الاستجابة فارغة';
+    if (!looksLikeImage(buffer)) return 'المحتوى ليس صورة (بصمة غير معروفة)';
+    return null;
+}
+
+// جلب صورة صفحة مع تحقق صارم: أي استجابة ليست صورة حقيقية (HTML / فارغة / بصمة غريبة / ليس 200)
+// ترمي خطأ عربي — الصورة المكسورة لا تدخل الـ ZIP أبداً (todo 24 attempt 3)
 async function fetchBuffer(url) {
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
@@ -208,27 +240,31 @@ async function fetchBuffer(url) {
             });
 
             const status = Number(res?.status || 0);
-            const ok = res?.ok === undefined ? status === 0 || status < 400 : !!res.ok;
-            if (!ok) {
-                if (status === 429 || status >= 500) {
-                    await sleep(1000 * (attempt + 1));
-                    continue;
-                }
-                return null;
+            if (status === 429 || status >= 500) {
+                await sleep(1000 * (attempt + 1));
+                continue;
+            }
+
+            const reason = imageRejectionReason(res, buffer);
+            if (reason) {
+                throw new UpstreamError('image', `❌ تعذر تحميل الصورة: ${reason}`);
             }
 
             return buffer;
         } catch (e) {
-            if (e?.kind === 'toolarge') return null;
+            if (e?.kind === 'image' || e?.kind === 'timeout' || e?.kind === 'network') throw e;
+            if (e?.kind === 'toolarge') {
+                throw new UpstreamError('image', '❌ تعذر تحميل الصورة: الحجم يتجاوز الحد المسموح');
+            }
             const status = e?.status;
             if (status === 429 || status >= 500) {
                 await sleep(1000 * (attempt + 1));
                 continue;
             }
-            return null;
+            throw new UpstreamError('image', `❌ تعذر تحميل الصورة: ${e?.message || 'خطأ غير معروف'}`);
         }
     }
-    return null;
+    throw new UpstreamError('image', '❌ تعذر تحميل الصورة: انتهت محاولات إعادة المحاولة');
 }
 
 function pickText(map) {
@@ -475,8 +511,12 @@ const handler = async (m, { conn, text, command, usedPrefix }) => {
 
             let useSaver = saverFiles.length > 0;
             if (useSaver) {
-                const probe = await fetchBuffer(`${baseUrl}/data-saver/${hash}/${saverFiles[0]}`);
-                if (!probe) useSaver = false;
+                try {
+                    const probe = await fetchBuffer(`${baseUrl}/data-saver/${hash}/${saverFiles[0]}`);
+                    if (!probe) useSaver = false;
+                } catch {
+                    useSaver = false;
+                }
             }
 
             const files = (useSaver ? saverFiles : dataFiles).slice(0, MAX_PAGES);
@@ -485,9 +525,17 @@ const handler = async (m, { conn, text, command, usedPrefix }) => {
             const zip = new JSZip();
             let pagesAdded = 0;
             let totalBytes = 0;
+            let lastPageError = null;
 
             for (let i = 0; i < files.length; i++) {
-                const buf = await fetchBuffer(`${baseUrl}/${folder}/${hash}/${files[i]}`);
+                let buf = null;
+                try {
+                    buf = await fetchBuffer(`${baseUrl}/${folder}/${hash}/${files[i]}`);
+                } catch (pageErr) {
+                    // الصفحة المكسورة (HTML / فارغة / ليست صورة / خطأ شبكة) لا تدخل الـ ZIP أبداً
+                    lastPageError = pageErr;
+                    console.log('Manhwa page skipped:', files[i], pageErr?.message || pageErr);
+                }
                 if (buf) {
                     totalBytes += buf.length;
                     if (totalBytes > MAX_ZIP_BYTES) {
@@ -501,7 +549,13 @@ const handler = async (m, { conn, text, command, usedPrefix }) => {
             }
 
             if (pagesAdded === 0) {
-                return m.reply(`${HEADER}\n❌ *فشل تحميل صفحات الفصل*\n${HEADER}`);
+                const kind = lastPageError?.kind;
+                if (kind === 'timeout' || kind === 'network' || kind === 'http' || kind === 'toolarge') {
+                    return m.reply(errorText(lastPageError, '❌ *تعذر تجهيز الفصل*'));
+                }
+                return m.reply(
+                    `${HEADER}\n❌ *الأمر غير متاح مؤقتاً*\n⏳ تعذر تحميل صفحات الفصل من المصدر، حاول مرة أخرى لاحقاً.\n${HEADER}`
+                );
             }
 
             const fileBuffer = await zip.generateAsync({ type: 'nodebuffer' });
@@ -525,5 +579,8 @@ const handler = async (m, { conn, text, command, usedPrefix }) => {
 handler.usage = ["مانهوا", "عرض_مانهوا", "تحميل_فصل"];
 handler.category = "downloads";
 handler.command = ["مانهوا", "manhwa", "عرض_مانهوا", "manga_info", "تحميل_فصل", "zip"];
+
+// مُصدَّر للاختبارات الوحدوية فقط (tests/unit.task-24.test.mjs)
+export { fetchBuffer };
 
 export default handler;
