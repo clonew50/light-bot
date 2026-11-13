@@ -21,6 +21,8 @@
   ═══════════════════════════════════════════
 */
 
+import { isAlive } from './liveness.js';
+
 const BAD_CLOSE = /bad.?session|session.?error|bad.?mac/i;
 const BAD_SESSION_STATUS = 500; // DisconnectReason.badSession في Baileys
 
@@ -151,13 +153,19 @@ export function attachHealer(client, opts = {}) {
     state.escalated = false;
     state.windowStart = 0;
     clearDeadlines();
-    if (had) log('✅ [HEALER] الاتصال رجع (open) — عدّاد العلاج اتصفّر');
+    if (had) {
+      log('✅ [HEALER] الاتصال رجع (open) — عدّاد العلاج اتصفّر');
+      publish('ok', 'تمت إعادة الاتصال');
+    }
   }
 
   /* سلّمنا الأمر لسلّم الريستارت المشترك — مرة واحدة بس لحد ما open يرجّع العدّاد. */
   function escalate(sock) {
     if (state.stopped || state.escalated) return false;
     if (sock && sock !== state.attached) return false;
+    // إشارة حياة حقيقية: لو السوكيت رجع شغّال (ws مفتوح + user + open قريب)
+    // من غير ما نسمع الحدث، منمن escalates على سوكيت عايش.
+    if (isAlive(client, now())) { markOpen(); return false; }
     if (shouldSkip()) { log('⏸️ [HEALER] تصعيد مؤجّل — فيه إيقاف/ربط شغّال'); return false; }
     state.escalated = true;
     if (state.heals > healCap) state.heals = healCap;
@@ -173,7 +181,9 @@ export function attachHealer(client, opts = {}) {
     const handle = setTimer(() => {
       state.deadlines.delete(handle);
       if (state.stopped || sock !== state.attached) return;
-      if (state.lastOpen >= state.lastHealAt) { state.consecutive = 0; return; }
+      // إشارة الحياة المشتركة (ws.readyState + user + open قريب) بتكفي برضه
+      // لو حدث open اتسرق منّا بسبب تبديل سوكيت في نفس اللحظة.
+      if (state.lastOpen >= state.lastHealAt || isAlive(client, now())) { state.consecutive = 0; return; }
       state.consecutive++;
       log(`⚠️ [HEALER] ${Math.round(openGraceMs / 1000)} ثانية من غير open بعد العلاج — فشل متتالي ${state.consecutive}`);
       if (state.consecutive >= healCap) escalate(sock);

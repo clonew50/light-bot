@@ -17,6 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPairingState } from './pairing.js';
 import { pushEvent as busPushEvent, getEvents } from './events.js';
+import { isAlive, livenessStatus } from './liveness.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_FILE = path.join(__dirname, 'panel-config.json');
@@ -207,30 +208,20 @@ function attachSock(client) {
   try { sock.ev.on('connection.update', handleConnectionUpdate); } catch (e) { pushEvent('تعذّر ربط السوكيت: ' + e.message); }
 }
 
-/* ============ حالة الاتصال — إشارة مؤقتة صادقة ============ */
-/* TODO(todo-35): استبدال الحساب ده بـ system/liveness.js (last packet /
-   last event). لحد ما ي落地 بنعتمد على أفضل إشارة متاحة دلوقتي:
-     • socket.ws.readyState === 1 (WebSocket.OPEN) — بيكشف السوكيت المقفول
-       اللي client.isConnected() بيقول إنه "متصل" (badSession cleanup بيسيب
-       sock/user ويقفل الـ ws).
-     • sock.user موجود.
-     • مفيش close اتسجّل بعد آخر open.
-   ملاحظة: client.isConnected() بتقرأ running/sock/sock.user بس وبتكدب
-   بعد badSession — فمش بنستخدمها هنا. */
-export function computeConnected(client) {
-  const sock = client?.sock;
-  let readyStateOpen = false;
-  try {
-    const ws = sock?.ws;
-    readyStateOpen = ws && typeof ws.readyState === 'number'
-      ? ws.readyState === 1
-      : !!sock; // سوكيت تجريبي/وهمي من غير ws: بنعتمد على وجوده
-  } catch { readyStateOpen = false; }
-  const hasUser = !!(sock && sock.user);
-  const lastOpen = Number.isFinite(state.lastConnected) ? state.lastConnected : 0;
-  const lastClose = Number.isFinite(state.lastCloseAt) ? state.lastCloseAt : 0;
-  const closedSinceOpen = lastClose > 0 && lastClose >= lastOpen;
-  return !!(readyStateOpen && hasUser && !closedSinceOpen);
+/* ============ حالة الاتصال — إشارة الحياة المشتركة (todo 35) ============ */
+/* الحساب القديم (كان محلي ومؤقت هنا) اتشال؛ دلوقتي بنقرأ من
+   system/liveness.js نفسها اللي بيقرا منها الـ watchdog والـ healer:
+     • socket.ws.readyState === 1 (WebSocket.OPEN)
+     • sock.user موجود
+     • آخر open خلال آخر 3 دقايق، ومفيش close بعده
+   بنحتفظ بس بتوقيع state.lastConnected/lastCloseAt المحلي عشان مستمع
+   connection.update بتاع اللوحة، وبناخد الأحدث بينه وبين نبضة الحياة. */
+export function computeConnected(client, now = Date.now()) {
+  const status = livenessStatus(client, now);
+  const lastOpen = Math.max(Number.isFinite(state.lastConnected) ? state.lastConnected : 0, status.lastOpenAt);
+  const lastClose = Math.max(state.lastCloseAt || 0, status.lastCloseAt);
+  // نفس الدالة اللي بيقرا منها الـ watchdog والـ healer — مفيش منطق مكرر.
+  return isAlive(client, now, { lastOpenAt: lastOpen, lastCloseAt: lastClose });
 }
 
 /* ============ أدوات مساعدة ============ */
@@ -700,7 +691,7 @@ async function handle(req, res, client) {
 
         case 'send': {
           // تحقق صارم: الرقم أرقام بس بطول منطقي، والنص محدود، ومفيش فيض سبام
-          if (!client.sock || !client.isConnected?.()) {
+          if (!computeConnected(client)) {
             return sendJson(res, 400, { ok: false, message: 'البوت غير متصل' });
           }
           const to = String(json?.to || '').replace(/[^0-9]/g, '');

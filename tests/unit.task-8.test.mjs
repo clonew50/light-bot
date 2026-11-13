@@ -213,7 +213,8 @@ test('webPanel payload uses the newest-errors + honest-connected helpers (source
   assert.match(src, /connected:\s*computeConnected\(client\)/);
   assert.match(src, /events:\s*getEvents\(\)/);
   assert.doesNotMatch(src, /errors:\s*errors\.slice\(-15\)/, 'oldest-15 slice must be gone');
-  assert.match(src, /TODO\(todo-35\)/, 'interim signal must be marked for the liveness helper');
+  assert.match(src, /from '\.\/liveness\.js'/, 'connected must come from the shared liveness module');
+  assert.doesNotMatch(src, /TODO\(todo-35\)/, 'the interim liveness marker must be gone');
 });
 
 test('webPanel no longer keeps a private events array (bus is the single store)', () => {

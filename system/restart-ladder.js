@@ -257,7 +257,9 @@ export function createRestartController(options = {}) {
 
     attachWatcher();
     beginTrial();
-    log('✅ [RESTART] تم تنفيذ إعادة التشغيل داخل نفس العملية — السيرفر متقفلش');
+    // لا ندّعي نجاح: client.restart() بيبلع أخطاءه، والنجاح الحقيقي هو
+    // connection === 'open' جوه نافذة الـ 90 ثانية (todo 35).
+    log('🔄 [RESTART] طُلب إعادة التشغيل داخل نفس العملية — بنستنى open حقيقي');
   }
 
   /**

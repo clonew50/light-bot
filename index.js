@@ -12,6 +12,7 @@ import { createRestartController, installGlobalRestart } from './system/restart-
 import { attachSessionBackup, installShutdownHandlers, restoreSessionFromBackup, warnSubBotSessionsNotCovered } from './system/sessionBackup.js';
 import { createPeriodicRestartScheduler, installPresenceCap } from './system/runtime-controls.js';
 import { pushEvent as pushRuntimeEvent } from './system/events.js';
+import { attachLiveness, isAlive, verifyRestartOutcome } from './system/liveness.js';
 
 // أحداث حارس الإقلاع (bootGuard) بتتبعت من هنا بنوع مستقل — نفس الدالة اللي
 // بتترحّل لناقل الأحداث، بس kind='boot' عشان تبان في اللوحة كـ"إقلاع".
@@ -72,6 +73,17 @@ global.presenceStats = () => presenceCap.stats();
 
 client.onGroupEvent(group);
 client.onCommandAccess(access);
+
+/* =========== Liveness — إشارة حياة حقيقية (todo 35) ===========
+   client.isConnected() بتقرأ running/sock/sock.user بس وبتكدب بعد badSession
+   (الإطار بيسيب السوكيت موجود ويقفل الـ ws). نبضة الحياة هنا بتعتمد على
+   ws.readyState === 1 + sock.user + آخر open خلال 3 دقايق، وبتضيف نبضة
+   حركة مرور كل 30 ثانية + حدث "degraded" بعد 10 دقايق صمت (من غير ريستارت).
+   كل المستهلكين (watchdog / panel / healer) بيقروا من نفس الوحدة. */
+const liveness = attachLiveness(client, {
+  emit: (kind, message) => pushRuntimeEvent(kind, message),
+});
+global.botLiveness = () => liveness.status();
 
 /* =========== Database ========== */
 if (!global.db) {
@@ -248,6 +260,7 @@ if (process.env.WATCHDOG !== '0') {
   const NEEDS_BOOT_MS = 5 * 60 * 1000;   // بعد التشغيل قبل ما يشتغل الحرس
   const COOLDOWN_MS = 5 * 60 * 1000;     // المسافة الدنيا بين ريستارتين من الحرس
   let lastWatchdogRestart = 0;
+  let outcomePending = false;
   setInterval(() => {
     try {
       if (Date.now() - BOOT_AT < NEEDS_BOOT_MS) return;
@@ -255,15 +268,27 @@ if (process.env.WATCHDOG !== '0') {
       const rt = panelRuntime();
       if (rt.stopped) return;   // المستخدم وقف البوت عمدًا من اللوحة — مش هنعمل حاجة
       if (pairingActive()) return;   // في وسط عملية ربط حقيقية شغالة — هنسيبها تكمل
-      if (client.isConnected?.()) return;
+      // إشارة الحياة الحقيقية (مش client.isConnected اللي بتكدب بعد badSession)
+      if (isAlive(client)) return;
       if (Date.now() - lastWatchdogRestart < COOLDOWN_MS) return;
+      if (outcomePending) return;   // تحقق جاري من نتيجة إعادة تشغيل سابقة
       // التصعيد (محاولتين متتاليتين من غير open ← خروج نظيف بكود 1) بقى
       // جوّه السلّم المشترك في system/restart-ladder.js — هنا بنطلب إعادة
       // تشغيل بس، والباقي (العدّاد والخروج) على السلّم.
       lastWatchdogRestart = Date.now();
+      outcomePending = true;
       console.log('⏱️ [WATCHDOG] الاتصال مقطوع من فترة طويلة — ريستارت تلقائي');
       pushRuntimeEvent('watchdog', 'الاتصال مقطوع من فترة طويلة — إعادة تشغيل تلقائية');
-      global.restartBot('watchdog');
+      // نتحقق من النتيجة بصدق: open حقيقي خلال المهلة → "تمت إعادة الاتصال"،
+      // غير كده → "فشلت إعادة الاتصال" + تسليم للسلّم المشترك (مش لوج نجاح
+      // كاذب، ومش process.exit على قطع عادي).
+      void verifyRestartOutcome(client, {
+        restart: () => global.restartBot('watchdog'),
+        restartBot: (reason) => global.restartBot(reason),
+        emit: (kind, message) => pushRuntimeEvent('watchdog', message),
+      }).catch((e) => {
+        console.error('⚠️ [WATCHDOG] تعذّر التحقق من إعادة التشغيل:', e?.message || e);
+      }).finally(() => { outcomePending = false; });
     } catch (e) {
       console.error('⚠️ [WATCHDOG] خطأ في فحص الحرس:', e?.message || e);
     }
