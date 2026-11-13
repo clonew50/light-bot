@@ -2,7 +2,7 @@ import { Client, Utils } from 'meowsab';
 import { group, access } from "./system/control.js";
 import UltraDB from "./system/UltraDB.js";
 import sub from './sub.js';
-import { readPanelConfig, startWebPanel, panelRuntime, pushEvent, pairingActive } from './system/webPanel.js';
+import { readPanelConfig, startWebPanel, panelRuntime, pushEvent as panelPushEvent, pairingActive } from './system/webPanel.js';
 import { attachHealer } from './system/healer.js';
 import { pullOnce } from './system/autoUpdate.mjs';
 import { buildConfig, buildInfo, lastClientError } from './system/config.js';
@@ -11,6 +11,11 @@ import { startClientBounded } from './system/bootGuard.js';
 import { createRestartController, installGlobalRestart } from './system/restart-ladder.js';
 import { attachSessionBackup, installShutdownHandlers, restoreSessionFromBackup, warnSubBotSessionsNotCovered } from './system/sessionBackup.js';
 import { createPeriodicRestartScheduler, installPresenceCap } from './system/runtime-controls.js';
+import { pushEvent as pushRuntimeEvent } from './system/events.js';
+
+// أحداث حارس الإقلاع (bootGuard) بتتبعت من هنا بنوع مستقل — نفس الدالة اللي
+// بتترحّل لناقل الأحداث، بس kind='boot' عشان تبان في اللوحة كـ"إقلاع".
+const pushEvent = (m) => pushRuntimeEvent('boot', m);
 
 /* =========== 🛡️ Shield — إلغاء الأسلحة الخفية في الإطار ========== */
 // فك تشفير ملف المكتبة نفسه (node_modules/meowsab/dist) أثبت وجود 3 حاجات خفية:
@@ -41,8 +46,10 @@ if (BOT_SHIELD) {
       return realEval(code);
     };
     console.log('🛡️ [SHIELD] الحماية من الكود الخفي شغالة (تقفيلها: BOT_SHIELD=0)');
+    pushRuntimeEvent('shield', 'الحماية من الكود الخفي شغالة');
   } catch (e) {
     console.error('⚠️ [SHIELD] تعذّر تركيب الشيلد:', e?.message || e);
+    pushRuntimeEvent('shield', 'تعذّر تركيب الشيلد: ' + (e?.message || e));
   }
 }
 
@@ -86,14 +93,17 @@ if (panelCfg.phone) config.phoneNumber = panelCfg.phone;
 // ما نعمل أي اتصال. لو مفيش نسخة → البوت يقلع من غير ربط (unpaired)
 // من غير ما نمسح أي حاجة ومن غير كراش.
 try {
-  restoreSessionFromBackup(client.config?.sessionPath || './session');
+  const restored = restoreSessionFromBackup(client.config?.sessionPath || './session');
+  if (restored?.restored) pushRuntimeEvent('restore', 'تم استرجاع نسخة الجلسة من النسخة الاحتياطية');
+  else pushRuntimeEvent('restore', 'الجلسة سليمة — مفيش استرجاع مطلوب (' + (restored?.reason || 'unknown') + ')');
 } catch (e) {
   console.error('⚠️ [SESSION] فشل فحص النسخة الاحتياطية للجلسة:', e?.message || e);
+  pushRuntimeEvent('restore', 'فشل فحص جلسة الاسترجاع: ' + (e?.message || e));
 }
 // نسخة احتياطية تلقائية كل ما الإطار يحدّث بيانات الاعتماد
 attachSessionBackup(client);
 // تحذير واضح: جلسات البوتات الفرعية (sub/) مش داخل في النسخة الاحتياطية
-warnSubBotSessionsNotCovered({ push: pushEvent });
+warnSubBotSessionsNotCovered({ push: panelPushEvent });
 
 /* =========== Start — تشغيل مقيّد بمهلة وإعادة محاولة (todo 4 / GAP-11) ===========
    client.start(); لا يرفق خطأ أبدًا: الإطار بيقبض على خطأه داخليًا، يسجّل
@@ -126,7 +136,10 @@ startClientBounded(client, {
 // اقفله: HEALER=0 npm start
 if (process.env.HEALER !== '0') {
   attachHealer(client, {
-    restart: (reason) => global.restartBot?.(reason),
+    restart: (reason) => {
+      pushRuntimeEvent('healer', 'مُصلح الجلسة: ' + reason);
+      return global.restartBot?.(reason);
+    },
     shouldSkip: () => {
       try {
         const rt = panelRuntime();
@@ -247,6 +260,7 @@ if (process.env.WATCHDOG !== '0') {
       // تشغيل بس، والباقي (العدّاد والخروج) على السلّم.
       lastWatchdogRestart = Date.now();
       console.log('⏱️ [WATCHDOG] الاتصال مقطوع من فترة طويلة — ريستارت تلقائي');
+      pushRuntimeEvent('watchdog', 'الاتصال مقطوع من فترة طويلة — إعادة تشغيل تلقائية');
       global.restartBot('watchdog');
     } catch (e) {
       console.error('⚠️ [WATCHDOG] خطأ في فحص الحرس:', e?.message || e);
@@ -267,6 +281,7 @@ if (MEMORY_RESTART_MB > 0) {
       const rss = process.memoryUsage().rss / 1024 / 1024;
       if (rss > MEMORY_RESTART_MB) {
         console.log(`🧠 [MEMORY] الذاكرة وصلت ${rss.toFixed(0)}MB (الحد ${MEMORY_RESTART_MB}MB) — ريستارت وقائي`);
+        pushRuntimeEvent('memory', `الذاكرة وصلت ${rss.toFixed(0)}MB — إعادة تشغيل وقائية`);
         global.restartBot?.('memory high');
       }
     } catch {}
@@ -280,13 +295,21 @@ if (process.env.AUTO_UPDATE !== '0') {
     try {
       console.log('⬇️ [UPDATE] فحص تحديثات الريبو...');
       const r = await pullOnce({ log: (s) => console.log('[UPDATE]', s) });
-      if (r.error) { console.log('⚠️ [UPDATE]', r.error); return; }
+      if (r.error) { console.log('⚠️ [UPDATE]', r.error); pushRuntimeEvent('update', 'فشل التحديث التلقائي: ' + r.error); return; }
+      const parts = [];
+      if (r.changes) parts.push('سحب ' + r.changes + ' ملف');
+      if (r.skipped) parts.push('تخطّي ' + r.skipped);
+      if (r.deleted && r.deleted.length) parts.push('حذف ' + r.deleted.length);
+      if (r.needsInstall) parts.push('محتاج تثبيت حزم');
+      pushRuntimeEvent('update', parts.length ? parts.join(' — ') : 'مفيش تحديثات جديدة');
       if (r.changes && r.needsRestart) {
         console.log('🔁 [UPDATE] فيه كود اتغيّر — ريستارت لتطبيق التحديث');
+        pushRuntimeEvent('update', 'كود اتغيّر — إعادة تشغيل لتطبيق التحديث');
         setTimeout(() => restartBot('تحديث تلقائي من الريبو'), 1000);
       }
     } catch (e) {
       console.error('⚠️ [UPDATE] فشل التحديث التلقائي:', e.message);
+      pushRuntimeEvent('update', 'فشل التحديث التلقائي: ' + e.message);
     }
   }, 8000);
 } else {
@@ -326,6 +349,7 @@ process.on('uncaughtException', (e) => {
   const msg = e && e.message ? e.message : String(e);
   console.error('💥 [UNCAUGHT] استثناء غير متوقع:', msg);
   if (e && e.stack) console.error(e.stack);
+  pushRuntimeEvent('uncaught', 'استثناء غير متوقع: ' + String(msg).slice(0, 160));
   if (BENIGN_ERRORS.test(msg)) return; // خطأ عابر من سوكت واتساب/الشبكة — نكمل الشغل
   console.error('💀 [UNCAUGHT] خطأ مجهول — ريستارت داخل العملية (اللوحة تبقى شغالة)');
   if (typeof global.restartBot === 'function') { global.restartBot('uncaught-exception'); return; }
@@ -339,6 +363,7 @@ process.on('unhandledRejection', (err) => {
   if (rejLogged <= 30 || rejLogged % 100 === 1) {
     console.error('⚠️ [UNHANDLED REJECTION]', err?.message || String(err));
   }
+  pushRuntimeEvent('rejection', 'رفض وعد غير معالَج: ' + String(err?.message || err).slice(0, 160));
 });
 
 /* =========== إشارات الإيقاف — حفظ الحالة قبل الخروج ========== */

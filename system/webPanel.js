@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPairingState } from './pairing.js';
+import { pushEvent as busPushEvent, getEvents } from './events.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_FILE = path.join(__dirname, 'panel-config.json');
@@ -95,8 +96,8 @@ const state = {
   qrDataUrl: null,
   qrCacheFor: null,
   pairingCode: null,
-  events: [],
   lastConnected: null,
+  lastCloseAt: 0,
   stopped: false // true لما المستخدم يوقف البوت عمدًا من اللوحة (بيستخدمه الـ watchdog)
 };
 
@@ -124,10 +125,11 @@ export function panelRuntime(now = Date.now()) {
   };
 }
 
-function pushEvent(msg) {
-  const line = `[${new Date().toLocaleTimeString('ar-EG')}] ${msg}`;
-  state.events.unshift(line);
-  if (state.events.length > 40) state.events.pop();
+function pushEvent(msg, kind = 'panel') {
+  // كل رسائل اللوحة (وأي subsystem بيستدعي pushEvent) بتترحّل لناقل
+  // الأحداث المشترك، فبتظهر في نفس قائمة "سجل الأحداث" مع timestamp.
+  // التوقيع القديم pushEvent('نص') شغّال زي ما هو.
+  busPushEvent(kind, String(msg));
   try { console.log('🌐 [WEB]', msg); } catch {}
 }
 
@@ -186,6 +188,7 @@ export function handleConnectionUpdate(update) {
       }
       if (connection === 'close') {
         const code = closeStatusCode(update);
+        state.lastCloseAt = Date.now();
         if (code === 401 || code === 403) pairingState.clear(); // اتقفل الحساب/الجهاز — اربط تاني
       }
     }
@@ -202,6 +205,32 @@ function attachSock(client) {
   }
   attachedSock = sock;
   try { sock.ev.on('connection.update', handleConnectionUpdate); } catch (e) { pushEvent('تعذّر ربط السوكيت: ' + e.message); }
+}
+
+/* ============ حالة الاتصال — إشارة مؤقتة صادقة ============ */
+/* TODO(todo-35): استبدال الحساب ده بـ system/liveness.js (last packet /
+   last event). لحد ما ي落地 بنعتمد على أفضل إشارة متاحة دلوقتي:
+     • socket.ws.readyState === 1 (WebSocket.OPEN) — بيكشف السوكيت المقفول
+       اللي client.isConnected() بيقول إنه "متصل" (badSession cleanup بيسيب
+       sock/user ويقفل الـ ws).
+     • sock.user موجود.
+     • مفيش close اتسجّل بعد آخر open.
+   ملاحظة: client.isConnected() بتقرأ running/sock/sock.user بس وبتكدب
+   بعد badSession — فمش بنستخدمها هنا. */
+export function computeConnected(client) {
+  const sock = client?.sock;
+  let readyStateOpen = false;
+  try {
+    const ws = sock?.ws;
+    readyStateOpen = ws && typeof ws.readyState === 'number'
+      ? ws.readyState === 1
+      : !!sock; // سوكيت تجريبي/وهمي من غير ws: بنعتمد على وجوده
+  } catch { readyStateOpen = false; }
+  const hasUser = !!(sock && sock.user);
+  const lastOpen = Number.isFinite(state.lastConnected) ? state.lastConnected : 0;
+  const lastClose = Number.isFinite(state.lastCloseAt) ? state.lastCloseAt : 0;
+  const closedSinceOpen = lastClose > 0 && lastClose >= lastOpen;
+  return !!(readyStateOpen && hasUser && !closedSinceOpen);
 }
 
 /* ============ أدوات مساعدة ============ */
@@ -227,17 +256,26 @@ function sessionRegistered(client) {
   } catch { return false; }
 }
 
-function getClientInfo(client) {
+function selectErrors(errors, limit = 15) {
+  // client.errors() بترجّع الأحدث أولًا (W.unshift في meowsab)، فالـ 15
+  // الأحدث هم أول 15 عنصر — مش آخرهم. (الكود القديم كان slice(-15).reverse()
+  // وبيعرض الأقدم 15.)
+  const list = Array.isArray(errors) ? errors : [];
+  const n = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 15;
+  return list.slice(0, n);
+}
+
+export function getClientInfo(client) {
   let commands = 0, errors = [];
   try { commands = client.getAllCommands?.().length || 0; } catch {}
   try { errors = client.errors?.() || []; } catch {}
   const mem = process.memoryUsage();
   return {
-    connected: (() => { try { return !!client.isConnected?.(); } catch { return false; } })(),
+    connected: computeConnected(client),
     phone: client?.config?.phoneNumber || '',
     name: client?.config?.info?.nameBot || 'البوت',
     commands,
-    errors: errors.slice(-15).reverse(),
+    errors: selectErrors(errors),
     memoryMB: Math.round(mem.rss / 1024 / 1024),
     uptimeSec: Math.round(process.uptime()),
     sessionRegistered: sessionRegistered(client),
@@ -246,7 +284,9 @@ function getClientInfo(client) {
     pairingCode: state.pairingCode,
     loginMode: panelCfg.loginMode,
     configuredPhone: panelCfg.phone || client?.config?.phoneNumber || '',
-    events: state.events.slice(0, 20)
+    // أحدث 100 حدث (ناقل الأحداث بيقصّ الأقدم) — نفس مفتاح `events` اللي
+    // الواجهة بتعتمد عليه، وكل عنصر {ts,kind,text,line}.
+    events: getEvents()
   };
 }
 
@@ -494,7 +534,7 @@ async function refresh(){
     document.getElementById('s-cmds').textContent=d.commands;
     document.getElementById('s-mem').textContent=d.memoryMB+' MB';
     document.getElementById('s-up').textContent=fmt(d.uptimeSec);
-    document.getElementById('log').textContent=(d.events||[]).join('\\n')||'—';
+    document.getElementById('log').textContent=(d.events||[]).map(e=>e&&e.line?e.line:(e&&e.text?e.text:String(e||''))).join('\\n')||'—';
     const eb=document.getElementById('errors');
     eb.innerHTML=(d.errors&&d.errors.length)?d.errors.map(e=>'<div class="err-item"><b>'+esc(e.command||'')+'</b><br>'+esc((e.error||'').slice(0,200))+'<br><small class="t">'+esc(e.time||'')+'</small></div>').join(''):'<small class="t">لا يوجد</small>';
     renderInstall(d);
@@ -558,7 +598,9 @@ refresh();setInterval(refresh,3000);
 </body></html>`;
 
 /* ============ معالجة الطلبات ============ */
-let panelCfg;
+// تهيئة مبدئية: getClientInfo ممكن يتنده قبل startWebPanel (اختبارات) —
+// startWebPanel بيستبدلها بالقيم المقروءة من القرص.
+let panelCfg = { ...fDEFAULT_CONFIG, secret: '' };
 
 async function handle(req, res, client) {
   const ip = req.socket.remoteAddress || 'x';
@@ -758,5 +800,6 @@ export function startWebPanel(client, options = {}) {
 export default startWebPanel;
 
 // pushEvent مُصدَّر من برة كمان: subsystems تانية (زي حماية الجلسة) تبعت
-// تحذيراتها للوحة كـ event حقيقي، مش مجرد سطر لوج.
-export { pushEvent };
+// تحذيراتها للوحة كـ event حقيقي، مش مجرد سطر لوج. كلها بتترحّل لناقل
+// الأحداث المشترك (system/events.js).
+export { pushEvent, selectErrors };
