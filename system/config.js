@@ -15,6 +15,34 @@
 /** البصمة الثابتة الافتراضية للجهاز */
 export const DEFAULT_BROWSER = 'LightBot';
 
+/* =========== onError — خطّاف أخطاء الإطار (todo 4 / GAP-11) ===========
+   الإطار (node_modules/meowsab/dist) بينادي this.config.onError?.(n)
+   في مسار فشل start() بعد ما يسجّل "Failed to start: ..." — فده هو
+   hook فشل الإقلاع الرسمي عندنا. المفتاح موجود في مخطط الإطارات
+   الصارم (z.object({...}).strict() فيه onError: z.custom().optional())
+   فتمريره هنا آمن — أي مفتاح غريب تاني كان هيرمي عند البناء.
+   بنسجّل آخر خطأ بس، وحارس التشغيل (system/bootGuard.js) بيقراه
+   عند فشل محاولة التشغيل عشان يعرض سبب واضح. */
+
+/** آخر خطأ اتسجّل من الإطار عبر config.onError. */
+let clientError = null;
+
+/** يسجّل آخر خطأ من الإطار (هي اللي تتباس كـ onError في buildConfig). */
+export function recordClientError(err) {
+  clientError = err || null;
+  if (clientError) {
+    try {
+      console.error('⚠️ [CONFIG] الإطار أبلغ عن خطأ (onError):', clientError.message || clientError);
+    } catch {}
+  }
+}
+
+/** آخر خطأ مسجّل من الإطار أو null (للقراءة — من غير مسح). */
+export function lastClientError() {
+  return clientError;
+}
+
+
 /**
  * يبني إعدادات الـ Client.
  * @param {NodeJS.ProcessEnv} env
@@ -37,7 +65,10 @@ export function buildConfig(env = process.env) {
     settings: { noWelcome: true },
     commandsPath: './plugins',
     // بصمة الجهاز الثابتة — بتتحوّل جوه واتساب لـ ['Ubuntu', <browser>, '22.04.4']
-    browser: env.BOT_BROWSER || DEFAULT_BROWSER
+    browser: env.BOT_BROWSER || DEFAULT_BROWSER,
+    // خطّاف أخطاء الإطار (فشل الإقلاع + أخطاء المعالجات) — مسموح به في
+    // المخطط الصارم: onError: z.custom().optional()
+    onError: recordClientError
   };
 }
 

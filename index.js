@@ -5,7 +5,8 @@ import sub from './sub.js';
 import { readPanelConfig, startWebPanel, panelRuntime, pushEvent, pairingActive } from './system/webPanel.js';
 import { attachHealer } from './system/healer.js';
 import { pullOnce } from './system/autoUpdate.mjs';
-import { buildConfig, buildInfo } from './system/config.js';
+import { buildConfig, buildInfo, lastClientError } from './system/config.js';
+import { startClientBounded } from './system/bootGuard.js';
 import { createRestartController, installGlobalRestart } from './system/restart-ladder.js';
 import { attachSessionBackup, installShutdownHandlers, restoreSessionFromBackup, warnSubBotSessionsNotCovered } from './system/sessionBackup.js';
 
@@ -80,8 +81,24 @@ attachSessionBackup(client);
 // تحذير واضح: جلسات البوتات الفرعية (sub/) مش داخل في النسخة الاحتياطية
 warnSubBotSessionsNotCovered({ push: pushEvent });
 
-/* =========== Start ========== */
-client.start();
+/* =========== Start — تشغيل مقيّد بمهلة وإعادة محاولة (todo 4 / GAP-11) ===========
+   client.start(); لا يرفق خطأ أبدًا: الإطار بيقبض على خطأه داخليًا، يسجّل
+   "Failed to start"، ينادي config.onError (شوف buildConfig في system/config.js)
+   ويعيد الجدولة بنفسه — يعني await وحده مش بيكتشف فشل الإقلاع.
+   و fetchLatestBaileysVersion() جوّه نفس try بتاعه ملهاش مهلة، فشبكة
+   معلّقة (host مش بييجي) هتخلي التشغيل معلّق للأبد من غير أي إشارة.
+   عشان كده بنستخدم system/bootGuard.js:
+     - مهلة 90 ثانية لكل محاولة: مفيش connection === 'open' خلالها = فشل
+     - 3 محاولات بفواصل 5 / 15 / 45 ثانية، وكل فشل بيدفع حدث عربي للوحة
+     - بعد آخر فشل بنسلّم الأمر للسلّم: global.restartBot('boot-failed')
+       (السلّم في system/restart-ladder.js هو اللي بيحدد كود الخروج)
+     - الجلسة (auth state) مش بنتمسح عند الفشل خالص.
+   التشغيل مش بيستنى هنا — باقي ترتيب الإقلاع (healer / SubBots / اللوحة)
+   بيكمل زي ما هو، والسوبرفايزر/السلّم بيديروا التشغيل من جديد. */
+startClientBounded(client, {
+  pushEvent,
+  lastFailureReason: lastClientError,
+}).catch((e) => console.error('❌ [BOOT] خطأ غير متوقع في حارس التشغيل:', e?.message || e));
 
 /* =========== Healer — علاج Bad session تلقائيًا ========== */
 // البروفوكول موجود في system/healer.js — شرحه الكامل there.
