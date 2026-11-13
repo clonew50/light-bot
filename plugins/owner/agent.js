@@ -782,7 +782,8 @@ function persistSessions(now = false) {
 }
 function loadPersistedSessions() {
   try {
-    if (!fs.existsSync(SESSIONS_FILE)) return
+    // مصدر الحقيقة هو اللقطة نفسها: بنقراها مباشرة من غير فحص existsSync — عشان
+    // استرجاع الجلسة مايفشلش بسبب سباق ملف أو فحص وجود قديم. ENOENT = مفيش حاجة محفوظة.
     const obj = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'))
     const now = Date.now()
     let loaded = 0
@@ -793,7 +794,10 @@ function loadPersistedSessions() {
       loaded++
     }
     if (loaded > 0) console.log('[agent] استرجعنا ' + loaded + ' جلسة')
-  } catch (e) { console.error('[agent load]', e?.message || e) }
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return
+    console.error('[agent load]', e?.message || e)
+  }
 }
 
 function skey(m) { return (m.chat || '') + '|' + (m.sender || '') }
