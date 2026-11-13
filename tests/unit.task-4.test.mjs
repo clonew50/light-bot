@@ -7,16 +7,27 @@
  *   resolves normally. Furthermore, `fetchLatestBaileysVersion()` inside `start()`
  *   has no timeout, so an unreachable version-lookup host hangs `start()` forever.
  *
+ * ATTEMPT 2 (verifier needs-fix): two defects are now pinned by real assertions:
+ *   (1) index.js must pass `isPairing: pairingActive` into `startClientBounded`,
+ *       otherwise bootGuard's `() => false` default declares a legitimate pairing
+ *       older than 90s as failed and retries it.
+ *   (2) `RETRY_DELAYS_MS[2] = 45_000` must actually take effect. The full schedule
+ *       is 90_000 + 5_000 + 90_000 + 15_000 + 90_000 + 45_000 = 335_000 ms, and
+ *       `global.restartBot('boot-failed')` must fire at that elapsed fake time —
+ *       not merely have the constant asserted.
+ *
  * These cases assert STATE VALUES and RECORDED CALLS (never just log strings):
  *   - BOOT_TIMEOUT_MS === 90_000 and RETRY_DELAYS_MS === [5_000, 15_000, 45_000]
  *   - fake client whose start() never resolves within the 90s timeout:
- *       * attempts start() 3 times (1/3, 2/3, 3/3)
- *       * waits the exact retry delays [5000, 15000] between the 3 attempts
+ *       * attempts start() 3 times at [0, 95_000, 200_000]
+ *       * waits the exact retry delays [5000, 15000, 45000] — the 45s is the
+ *         pre-handoff delay and is asserted via the ACTUAL restart elapsed time
  *       * pushes 3 Arabic panel events ("تعذر تشغيل البوت: ...")
- *       * hands off to global.restartBot('boot-failed') on final failure
+ *       * hands off to global.restartBot('boot-failed') at 335_000 ms
  *       * never calls process.exit directly and never removes auth/session
  *   - fake client whose start() resolves and connects (isConnected() === true):
  *       * succeeds on the first attempt without retrying or restarting
+ *   - a pairing in progress older than 90s does NOT trigger a retry
  *   - config.onError is present in meowsab's .strict() zod schema and wired
  *     in system/config.js so boot failure reasons are captured and reported
  */
@@ -101,15 +112,18 @@ test('bootGuard: timeout is 90s and retry delays are [5000, 15000, 45000]', () =
 
 /* ------------------------------------------------------------------ *
  * 2. failed boot where start() never resolves within the 90s timeout
+ *    — asserts the ACTUAL elapsed time to restartBot (335_000 ms),
+ *      which is what proves RETRY_DELAYS_MS[2] = 45_000 is not dead.
  * ------------------------------------------------------------------ */
 
-test('boot retry: hung start() attempts 3 times with [5000, 15000] delays, pushes 3 Arabic events, and calls global.restartBot', async (t) => {
+test('boot retry: hung start() attempts 3 times with [5000, 15000, 45000] delays and calls global.restartBot at 335000 ms', async (t) => {
   const clock = makeFakeClock();
   const startCalls = [];
   const pushedEvents = [];
   const logLines = [];
   const errorLines = [];
   const restartReasons = [];
+  const restartAt = [];
 
   const fakeClient = {
     authRemovals: 0,
@@ -128,6 +142,7 @@ test('boot retry: hung start() attempts 3 times with [5000, 15000] delays, pushe
   const prevRestart = global.restartBot;
   global.restartBot = (reason) => {
     restartReasons.push(reason);
+    restartAt.push(clock.now());
     return Promise.resolve();
   };
   t.after(() => {
@@ -145,7 +160,7 @@ test('boot retry: hung start() attempts 3 times with [5000, 15000] delays, pushe
     pushEvent: (m) => pushedEvents.push(String(m)),
   });
 
-  // Drive the clock through all 3 * 90s timeouts + 5s + 15s retry delays
+  // Drive the clock through 3 * 90s timeouts + 5s + 15s + 45s
   for (let step = 0; step < 6; step++) {
     await tick();
     await clock.advance(95_000);
@@ -161,12 +176,14 @@ test('boot retry: hung start() attempts 3 times with [5000, 15000] delays, pushe
 
   // Attempt 1 -> fail at 90s -> sleep 5000ms -> Attempt 2 starts at 95,000ms
   // Attempt 2 -> fail at 185s -> sleep 15000ms -> Attempt 3 starts at 200,000ms
-  const retryDelaysUsed = [
+  // Attempt 3 -> fail at 290s -> sleep 45000ms -> restartBot at 335,000ms
+  const delaysUsed = [
     startCalls[1] - (startCalls[0] + BOOT_TIMEOUT_MS),
     startCalls[2] - (startCalls[1] + BOOT_TIMEOUT_MS),
+    restartAt[0] - (startCalls[2] + BOOT_TIMEOUT_MS),
   ];
-  assert.deepEqual(retryDelaysUsed, [5_000, 15_000]);
-  assert.deepEqual(RETRY_DELAYS_MS, [5_000, 15_000, 45_000]);
+  assert.deepEqual(delaysUsed, [5_000, 15_000, 45_000], 'the 45s third delay must actually elapse');
+  assert.equal(restartAt[0], 335_000, 'global.restartBot fires at 90000+5000+90000+15000+90000+45000');
 
   const attemptLogs = logLines.filter((l) => l.includes('محاولة بدء التشغيل'));
   assert.equal(attemptLogs.length, 3, 'each of the 3 attempts logs an Arabic attempt message');
@@ -184,6 +201,51 @@ test('boot retry: hung start() attempts 3 times with [5000, 15000] delays, pushe
   assert.equal(result.attempts, 3);
   assert.equal(result.handedOff, true);
   assert.equal(fakeClient.authRemovals, 0, 'auth.remove must never be called on boot failure');
+});
+
+/* ------------------------------------------------------------------ *
+ * 2b. the third delay is not dead: measured against the constant schedule
+ * ------------------------------------------------------------------ */
+
+test('boot retry: the 45000 ms third delay takes effect (restartBot elapsed === 335000 ms)', async (t) => {
+  const clock = makeFakeClock();
+  const restartAt = [];
+  let startCalls = 0;
+
+  const fakeClient = {
+    start() { startCalls += 1; return new Promise(() => {}); },
+    isConnected() { return false; },
+  };
+
+  const prevRestart = global.restartBot;
+  global.restartBot = () => { restartAt.push(clock.now()); return Promise.resolve(); };
+  t.after(() => {
+    if (prevRestart === undefined) delete global.restartBot;
+    else global.restartBot = prevRestart;
+  });
+
+  const runPromise = startClientBounded(fakeClient, {
+    now: clock.now,
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+    sleep: clock.sleep,
+    log: () => {},
+    logError: () => {},
+    pushEvent: () => {},
+  });
+
+  for (let step = 0; step < 6; step++) {
+    await tick();
+    await clock.advance(95_000);
+    await tick();
+  }
+  const result = await runPromise;
+
+  assert.equal(startCalls, 3);
+  assert.equal(result.attempts, 3);
+  const expected = BOOT_TIMEOUT_MS * 3 + RETRY_DELAYS_MS[0] + RETRY_DELAYS_MS[1] + RETRY_DELAYS_MS[2];
+  assert.equal(expected, 335_000);
+  assert.equal(restartAt[0], expected, 'restartBot must fire only after the third delay elapses');
 });
 
 /* ------------------------------------------------------------------ *
@@ -233,6 +295,67 @@ test('boot success: start() resolves and connects on attempt 1 without retrying 
   assert.equal(startCalls, 1, 'a successful boot only calls client.start() once');
   assert.equal(pushedEvents.length, 0, 'a successful boot pushes no error events');
   assert.equal(restartReasons.length, 0, 'a successful boot never calls restartBot');
+});
+
+/* ------------------------------------------------------------------ *
+ * 3b. defect 1 (behaviour): a pairing older than 90s does NOT retry
+ * ------------------------------------------------------------------ */
+
+test('boot pairing pause: a pairing in progress older than 90s does NOT trigger a retry', async (t) => {
+  const clock = makeFakeClock();
+  let startCalls = 0;
+  let connected = false;
+  let pairing = true;
+  const pushedEvents = [];
+  const restartReasons = [];
+
+  const fakeClient = {
+    start() { startCalls += 1; return Promise.resolve(); },
+    isConnected() { return connected; },
+  };
+
+  const prevRestart = global.restartBot;
+  global.restartBot = (reason) => { restartReasons.push(reason); return Promise.resolve(); };
+  t.after(() => {
+    if (prevRestart === undefined) delete global.restartBot;
+    else global.restartBot = prevRestart;
+  });
+
+  const runPromise = startClientBounded(fakeClient, {
+    timeoutMs: BOOT_TIMEOUT_MS,
+    pollMs: 1_000,
+    now: clock.now,
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+    sleep: clock.sleep,
+    isPairing: () => pairing,
+    log: () => {},
+    logError: () => {},
+    pushEvent: (m) => pushedEvents.push(String(m)),
+  });
+
+  let settled = false;
+  runPromise.then(() => { settled = true; }, () => { settled = true; });
+
+  // Advance 200s of fake time — well past the 90s per-attempt timeout.
+  await tick();
+  await clock.advance(200_000);
+  await tick();
+
+  assert.equal(startCalls, 1, 'an active pairing must not be restarted');
+  assert.equal(settled, false, 'the boot guard is still waiting for the pairing to finish');
+  assert.equal(pushedEvents.length, 0, 'no failure event while pairing is active');
+  assert.deepEqual(restartReasons, [], 'no hand-off to restartBot while pairing is active');
+
+  // Pairing completes -> the wait ends successfully on the same attempt.
+  pairing = false;
+  connected = true;
+  await clock.advance(1_000);
+  await tick();
+  const result = await runPromise;
+  assert.equal(result.ok, true);
+  assert.equal(result.attempts, 1);
+  assert.equal(startCalls, 1);
 });
 
 test('boot timeout reason: uses config.onError failure reason when reported before timeout', async (t) => {
@@ -286,6 +409,47 @@ test('boot timeout reason: uses config.onError failure reason when reported befo
   assert.equal(pushedEvents.length, 3);
   for (const ev of pushedEvents) {
     assert.ok(ev.includes('ENOTFOUND raw.githubusercontent.com'));
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ * 3c. malformed_input: bad timing options fall back, never hang
+ * ------------------------------------------------------------------ */
+
+test('malformed_input: non-finite timeout/poll/retryDelays fall back instead of hanging', async () => {
+  const clock = makeFakeClock();
+  const restartAt = [];
+  const fakeClient = {
+    start() { return Promise.resolve(); },
+    isConnected() { return false; },
+  };
+  const prevRestart = global.restartBot;
+  global.restartBot = () => { restartAt.push(clock.now()); return Promise.resolve(); };
+
+  try {
+    const runPromise = startClientBounded(fakeClient, {
+      timeoutMs: NaN,
+      pollMs: -1,
+      retryDelays: null,
+      now: clock.now,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+      sleep: clock.sleep,
+      log: () => {},
+      logError: () => {},
+      pushEvent: () => {},
+    });
+    for (let i = 0; i < 6; i++) {
+      await tick();
+      await clock.advance(95_000);
+      await tick();
+    }
+    const result = await runPromise;
+    assert.equal(result.attempts, 3);
+    assert.equal(restartAt[0], 335_000, 'fallback schedule is the documented one');
+  } finally {
+    if (prevRestart === undefined) delete global.restartBot;
+    else global.restartBot = prevRestart;
   }
 });
 
@@ -356,4 +520,21 @@ test('index.js wires startClientBounded with lastClientError and preserves start
   assert.ok(idxBootCall > -1 && idxBootCall < idxHealer, 'boot guard runs before Healer');
   assert.ok(idxHealer < idxSub && idxSub < idxPanel, 'Healer -> SubBots -> Web Panel order preserved');
   assert.ok(idxPanel < idxWatchdog, 'Watchdog comes after Web Panel');
+});
+
+/* ------------------------------------------------------------------ *
+ * 5. defect 1 (wiring): index.js passes isPairing: pairingActive
+ * ------------------------------------------------------------------ */
+
+test('index.js passes isPairing: pairingActive into startClientBounded', () => {
+  const src = readFileSync(path.join(repoRoot, 'index.js'), 'utf8');
+
+  assert.ok(
+    /import[^;]*\bpairingActive\b[^;]*from\s*'\.\/system\/webPanel\.js'/.test(src),
+    'index.js must import pairingActive from system/webPanel.js (the shared pairing state accessor)'
+  );
+  assert.ok(
+    /startClientBounded\(client,\s*\{[\s\S]*?isPairing:\s*pairingActive,?\s*\}\)/.test(src),
+    'index.js must pass isPairing: pairingActive into startClientBounded'
+  );
 });

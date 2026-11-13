@@ -98,6 +98,10 @@ warnSubBotSessionsNotCovered({ push: pushEvent });
 startClientBounded(client, {
   pushEvent,
   lastFailureReason: lastClientError,
+  // إيقاف عدّاد المهلة أثناء عملية ربط حقيقية (QR/كود) — نفس الدالة اللي
+  // بيستخدمها الـ watchdog والـ healer. بدونها: bootGuard بيستخدم
+  // () => false افتراضيًا، فربط شرعي أقدم من 90 ثانية بيتحسب فشل ويتكرر.
+  isPairing: pairingActive,
 }).catch((e) => console.error('❌ [BOOT] خطأ غير متوقع في حارس التشغيل:', e?.message || e));
 
 /* =========== Healer — علاج Bad session تلقائيًا ========== */

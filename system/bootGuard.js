@@ -29,7 +29,11 @@
 /** مهلة المحاولة الواحدة بالمللي ثانية (90 ثانية). */
 export const BOOT_TIMEOUT_MS = 90_000;
 
-/** فواصل إعادة المحاولة (5 / 15 / 45 ثانية). */
+/** فواصل إعادة المحاولة (5 / 15 / 45 ثانية).
+ *  [0] و [1] فاصلان بين المحاولات 1→2 و 2→3.
+ *  [2] فاصل التسليم: بعد فشل المحاولة الثالثة (قبل استدعاء السلّم
+ *      global.restartBot) — مش رقم ميّت، بنستناه فعلًا (tests/unit.task-4).
+ *  الجدول الزمني الكامل: 90 + 5 + 90 + 15 + 90 + 45 = 335 ثانية. */
 export const RETRY_DELAYS_MS = [5_000, 15_000, 45_000];
 
 /**
@@ -94,6 +98,11 @@ export async function startClientBounded(client, options = {}) {
   } = options;
 
   const totalAttempts = 3;
+  // مدخلات غير صالحة (NaN / سالبة / مصفوفة) ما تعلّقش الحرس: بنرجع للقيم
+  // الافتراضية الآمنة بدل ما نلفّ في لوب لا نهائي أو ننام مدة سالبة.
+  const effectiveTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : BOOT_TIMEOUT_MS;
+  const effectivePollMs = Number.isFinite(pollMs) && pollMs > 0 ? pollMs : 1_000;
+  const delays = Array.isArray(retryDelays) ? retryDelays : RETRY_DELAYS_MS;
   let lastReason = null;
 
   for (let attempt = 1; attempt <= totalAttempts; attempt++) {
@@ -111,8 +120,8 @@ export async function startClientBounded(client, options = {}) {
       isConnected,
       isPairing,
       lastFailureReason,
-      timeoutMs,
-      pollMs,
+      timeoutMs: effectiveTimeoutMs,
+      pollMs: effectivePollMs,
       sleep,
       now,
     });
@@ -128,9 +137,17 @@ export async function startClientBounded(client, options = {}) {
     try { pushEvent(msg); } catch {}
 
     if (attempt < totalAttempts) {
-      const delay = retryDelays[attempt - 1];
+      const delay = delays[attempt - 1];
       log(`⏳ [BOOT] إعادة المحاولة بعد ${Math.round(delay / 1000)} ثانية`);
       await sleep(delay);
+    } else {
+      // فاصل التسليم: آخر تأخير في الجدول (45 ثانية) بياخد مفعوله فعلًا
+      // قبل ما نطلب من السلّم يعيد التشغيل — مش رقم ميّت في المصفوفة.
+      const delay = delays[attempt - 1];
+      if (Number.isFinite(delay) && delay > 0) {
+        log(`⏳ [BOOT] تسليم للسلّم بعد ${Math.round(delay / 1000)} ثانية`);
+        await sleep(delay);
+      }
     }
   }
 
