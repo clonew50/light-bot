@@ -1419,6 +1419,487 @@ function toolStructuralCheck(raw) {
   if (!toolCodeParses(tokens)) return 'غير مسموح: صياغة الكود غير صالحة'
   return null
 }
+// ═══════════════════════════════════════════════════════════════════════════
+//  🔒 VM execution gate — the allowlist is enforced by an isolated realm
+// ═══════════════════════════════════════════════════════════════════════════
+// The structural checks above are useful, but they cannot follow a value through
+// a local alias (for example: const f = ctx.readText; f[args.key]).  The gate
+// below therefore executes the candidate in node:vm with a contextified global
+// Proxy.  Dangerous globals are absent/behind throwing accessors and every
+// host value crossing the boundary is wrapped in a member-checking Proxy.
+const TOOL_VM_DENIED_GLOBALS = new Set([
+  'constructor', 'getBuiltinModule', 'require', 'import', 'process', 'fs', 'child_process', 'net', 'http',
+  'Function', 'eval', 'globalThis', '__proto__', 'global', 'module', 'exports', '__dirname', '__filename',
+  'WebAssembly', 'Worker', 'SharedWorker', 'SharedArrayBuffer', 'Atomics', 'setTimeout', 'clearTimeout',
+  'setInterval', 'clearInterval', 'queueMicrotask', 'Proxy', 'Reflect'
+])
+const TOOL_VM_DENIED_MEMBERS = new Set([
+  'constructor', 'prototype', '__proto__', 'caller', 'callee', 'getBuiltinModule', 'require', 'import',
+  'process', 'fs', 'child_process', 'net', 'http', 'Function', 'eval', 'globalThis', 'getOwnPropertyDescriptor',
+  'getOwnPropertyDescriptors', 'getOwnPropertyNames', 'getOwnPropertySymbols', 'getPrototypeOf', 'setPrototypeOf',
+  'defineProperty', 'defineProperties', 'call', 'apply', 'bind', 'defaults', 'interceptors',
+  '__lookupGetter__', '__lookupSetter__', '__defineGetter__', '__defineSetter__'
+])
+const TOOL_VM_ALLOWED_GLOBALS = new Set(TOOL_ALLOWED_GLOBALS)
+// fs is available only as ctx.fs (the restricted facade), never as a host global.
+TOOL_VM_ALLOWED_GLOBALS.delete('fs')
+const TOOL_VM_RUNTIME_AXIOS = new Set([...TOOL_ALLOWED_AXIOS].filter((name) => name !== 'defaults' && name !== 'interceptors'))
+
+function toolSandboxDenied(message) {
+  const err = new Error(message)
+  err.code = 'TOOL_SANDBOX_DENIED'
+  return err
+}
+
+function toolTransformModuleSource(raw, internalName) {
+  let src = String(raw || '')
+  // ESM exports are rewritten to lexical declarations so vm.Script can run the
+  // same source without enabling dynamic import/require in the sandbox.
+  src = src.replace(/\bexport\s+default\b/g, 'const ' + internalName + ' =')
+  src = src.replace(/\bexport\s+(?=(?:async\s+)?(?:const|let|var|function|class)\b)/g, '')
+  return src
+}
+
+function toolMakeCallbackProxy(callback, options = {}) {
+  if (typeof callback !== 'function') return callback
+  const cache = options.cache || new WeakMap()
+  const onDenied = options.onDenied || (() => {})
+  const wrap = (item) => toolMakeHostProxy(item, { cache, onDenied })
+  return function toolSandboxCallback(...args) {
+    try {
+      const safeThis = wrap(this)
+      const safeArgs = args.map((item) => wrap(item))
+      return wrap(callback.apply(safeThis, safeArgs))
+    } catch (error) {
+      // A host exception must never cross the vm boundary as a raw host Error:
+      // its constructor chain would be a direct vm-escape primitive.
+      if (typeof error === 'string') throw error
+      throw wrap(error)
+    }
+  }
+}
+
+function toolIsPlainRecord(value) {
+  if (!value || typeof value !== 'object') return false
+  // Object#toString works across vm realms, unlike identity checks against the
+  // host realm's Object.prototype.
+  return Object.prototype.toString.call(value) === '[object Object]'
+}
+
+// Axios accepts callbacks in nested config fields (transformResponse,
+// validateStatus, adapter, progress handlers, ...).  Those callbacks are invoked
+// by host code and would otherwise receive raw host objects.  Clone plain config
+// records and replace every nested function with a boundary-safe callback.
+function toolSanitizeAxiosValue(value, options = {}, seen = new WeakMap()) {
+  if (typeof value === 'function') return toolMakeCallbackProxy(value, options)
+  if (!value || typeof value !== 'object') return value
+  if (seen.has(value)) return seen.get(value)
+  if (Array.isArray(value)) {
+    const out = []
+    seen.set(value, out)
+    for (const item of value) out.push(toolSanitizeAxiosValue(item, options, seen))
+    return out
+  }
+  if (!toolIsPlainRecord(value)) return value
+  const out = Object.create(null)
+  seen.set(value, out)
+  for (const key of Object.keys(value)) {
+    if (key === '__proto__' || key === 'prototype' || key === 'constructor') continue
+    out[key] = toolSanitizeAxiosValue(value[key], options, seen)
+  }
+  return out
+}
+
+function toolSanitizeAxiosArgs(args, method, options = {}) {
+  const configIndex = { request: 0, create: 0, get: 1, delete: 1, head: 1, post: 2, put: 2, patch: 2 }[method]
+  return args.map((arg, index) => {
+    if (typeof arg === 'function') return toolMakeCallbackProxy(arg, options)
+    if (configIndex === index) return toolSanitizeAxiosValue(arg, options)
+    if ((method === 'post' || method === 'put' || method === 'patch') && index === 1) {
+      return toolSanitizeAxiosValue(arg, options)
+    }
+    return arg
+  })
+}
+
+function toolMakeHostProxy(value, options = {}) {
+  if (value == null || (typeof value !== 'object' && typeof value !== 'function')) return value
+  const isPromise = options.kind !== 'promise' && (value instanceof Promise || Object.prototype.toString.call(value) === '[object Promise]')
+  if (isPromise) return toolMakePromiseProxy(value, options)
+  const cache = options.cache || new WeakMap()
+  if (cache.has(value)) return cache.get(value)
+  const allowed = options.allowed || null
+  const kind = options.kind || 'generic'
+  const onDenied = options.onDenied || (() => {})
+  const deny = (prop) => {
+    const reason = 'غير مسموح: الوصول إلى "' + String(prop) + '" ممنوع داخل بيئة الأدوات'
+    onDenied(reason)
+    // Throw a primitive, not a host Error.  If candidate code catches this
+    // failure, a raw Error would expose its host constructor chain.
+    throw reason
+  }
+  const wrap = (item, nextOptions = {}) => toolMakeHostProxy(item, {
+    cache,
+    onDenied,
+    ...nextOptions
+  })
+  const rethrowSafe = (error) => {
+    if (typeof error === 'string') throw error
+    throw wrap(error)
+  }
+  const proxy = new Proxy(value, {
+    get(target, prop) {
+      try {
+        if (typeof prop !== 'string') return wrap(Reflect.get(target, prop, target))
+        if (allowed && !allowed.has(prop)) deny(prop)
+        if (TOOL_VM_DENIED_MEMBERS.has(prop) && !(kind === 'ctx' && prop === 'fs')) deny(prop)
+        const current = Reflect.get(target, prop, target)
+        if (kind === 'ctx' && prop === 'fs') return wrap(current, { allowed: TOOL_ALLOWED_FS, kind: 'fs' })
+        if (kind === 'ctx' && prop === 'path') return wrap(current, { allowed: TOOL_ALLOWED_PATH, kind: 'path' })
+        if (kind === 'ctx' && prop === 'axios') return wrap(current, { allowed: TOOL_VM_RUNTIME_AXIOS, kind: 'axios' })
+        if (kind === 'axios') return wrap(current, { allowed: TOOL_VM_RUNTIME_AXIOS, kind: 'axios', method: prop })
+        return wrap(current)
+      } catch (error) {
+        return rethrowSafe(error)
+      }
+    },
+    set(target, prop) {
+      deny(prop)
+      return false
+    },
+    deleteProperty(target, prop) {
+      deny(prop)
+      return false
+    },
+    defineProperty(target, prop) {
+      deny(prop)
+      return false
+    },
+    has(target, prop) {
+      if (typeof prop === 'string' && TOOL_VM_DENIED_MEMBERS.has(prop)) deny(prop)
+      return Reflect.has(target, prop)
+    },
+    apply(target, _thisArg, args) {
+      try {
+        const safeArgs = kind === 'axios'
+          ? toolSanitizeAxiosArgs(args, options.method, { cache, onDenied })
+          : args.map((item) => typeof item === 'function' ? toolMakeCallbackProxy(item, { cache, onDenied }) : item)
+        return wrap(Reflect.apply(target, target, safeArgs))
+      } catch (error) {
+        return rethrowSafe(error)
+      }
+    },
+    construct(target, args) {
+      try {
+        return wrap(Reflect.construct(target, args, target))
+      } catch (error) {
+        return rethrowSafe(error)
+      }
+    }
+  })
+  cache.set(value, proxy)
+  return proxy
+}
+
+function toolMakePromiseProxy(value, options = {}) {
+  const cache = options.cache || new WeakMap()
+  const onDenied = options.onDenied || (() => {})
+  const wrap = (item) => toolMakeHostProxy(item, { cache, onDenied })
+  const thenHost = (onFulfilled, onRejected) => {
+    const next = value.then(
+      (item) => { if (typeof onFulfilled === 'function') onFulfilled(wrap(item)) },
+      (error) => { if (typeof onRejected === 'function') onRejected(wrap(error)) }
+    )
+    return toolMakePromiseProxy(next, { cache, onDenied })
+  }
+  const target = {
+    then: thenHost,
+    catch: (onRejected) => thenHost(null, onRejected),
+    finally: (onFinally) => value.finally((item) => { if (typeof onFinally === 'function') onFinally(wrap(item)) })
+  }
+  return toolMakeHostProxy(target, { cache, onDenied, kind: 'promise' })
+}
+
+function toolCreateVmSandbox(axiosClient) {
+  const seed = vm.createContext(Object.create(null))
+  const rawGlobal = vm.runInContext('globalThis', seed)
+  const state = { denied: false, reason: '' }
+  const internalNames = new Set()
+  const markDenied = (reason) => {
+    if (!state.denied) state.reason = String(reason || 'غير مسموح: عملية محظورة داخل بيئة الأدوات')
+    state.denied = true
+  }
+  const markName = '__agentMarkDenied_' + Math.random().toString(36).slice(2)
+  internalNames.add(markName)
+  rawGlobal[markName] = markDenied
+  const deny = (prop) => {
+    const reason = 'غير مسموح: "' + String(prop) + '" غير متاح داخل بيئة الأدوات'
+    markDenied(reason)
+    // Keep the rejection value primitive so a caught denial cannot expose a
+    // host Error constructor chain.
+    throw reason
+  }
+  const globalProxy = new Proxy(rawGlobal, {
+    get(target, prop) {
+      if (typeof prop !== 'string') return Reflect.get(target, prop, target)
+      if (internalNames.has(prop)) return Reflect.get(target, prop, target)
+      if (TOOL_VM_DENIED_GLOBALS.has(prop)) deny(prop)
+      if (!TOOL_VM_ALLOWED_GLOBALS.has(prop)) deny(prop)
+      return Reflect.get(target, prop, target)
+    },
+    has(target, prop) {
+      if (typeof prop === 'string') {
+        if (internalNames.has(prop)) return Reflect.has(target, prop)
+        if (TOOL_VM_DENIED_GLOBALS.has(prop) || !TOOL_VM_ALLOWED_GLOBALS.has(prop)) deny(prop)
+      }
+      return Reflect.has(target, prop)
+    },
+    set(target, prop, value) {
+      if (typeof prop === 'string' && TOOL_VM_DENIED_GLOBALS.has(prop)) deny(prop)
+      return Reflect.set(target, prop, value, target)
+    }
+  })
+  const context = vm.createContext(globalProxy, {
+    name: 'agent-tool-sandbox',
+    codeGeneration: { strings: false, wasm: false }
+  })
+
+  // Poison the built-in prototypes in this realm.  This closes local-object
+  // paths such as ({}).constructor and fn.prototype.constructor even when the
+  // key was assembled at runtime.
+  const hardenScript = `(() => {
+    const mark = ${markName}
+    const denied = (name) => {
+      mark('غير مسموح: الوصول إلى "' + name + '" ممنوع داخل بيئة الأدوات')
+      throw new Error('غير مسموح: الوصول إلى "' + name + '" ممنوع داخل بيئة الأدوات')
+    }
+    const patch = (proto, keys = ['constructor', '__proto__', 'caller', 'callee']) => {
+      if (!proto || (typeof proto !== 'object' && typeof proto !== 'function')) return
+      for (const key of keys) {
+        try {
+          const old = Object.getOwnPropertyDescriptor(proto, key)
+          Object.defineProperty(proto, key, {
+            configurable: false,
+            enumerable: old ? old.enumerable : false,
+            get() { return denied(key) },
+            set() { return denied(key) }
+          })
+        } catch {}
+      }
+      try { Object.freeze(proto) } catch {}
+    }
+    const roots = [Object, Function, Array, String, Number, Boolean, RegExp, Date, Error, TypeError,
+      RangeError, SyntaxError, Map, Set, WeakMap, WeakSet, Promise, ArrayBuffer,
+      Uint8Array, Int16Array, Int32Array, Float32Array, Float64Array]
+    for (const root of roots) {
+      const keys = root === Promise ? ['__proto__', 'caller', 'callee'] : undefined
+      try { patch(root.prototype, keys) } catch {}
+      try { patch(Object.getPrototypeOf(root.prototype), keys) } catch {}
+    }
+  })()`
+  // The hardening script itself needs the realm's Function constructor; that
+  // single setup lookup is removed before any candidate code is evaluated.
+  internalNames.add('Function')
+  vm.runInContext(hardenScript, context, { timeout: 1000 })
+  internalNames.delete('Function')
+
+  const hostCache = new WeakMap()
+  const wrapGlobal = (name, value, options = {}) => {
+    rawGlobal[name] = toolMakeHostProxy(value, { cache: hostCache, onDenied: markDenied, ...options })
+  }
+  const contextBuiltins = [
+    'Object', 'Array', 'JSON', 'Math', 'Date', 'String', 'Number', 'Boolean', 'RegExp', 'Error', 'TypeError',
+    'RangeError', 'SyntaxError', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Symbol', 'Intl', 'ArrayBuffer',
+    'Uint8Array', 'Int16Array', 'Int32Array', 'Float32Array', 'Float64Array',
+    'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'encodeURIComponent', 'decodeURIComponent',
+    'encodeURI', 'decodeURI'
+  ]
+  for (const name of contextBuiltins) {
+    if (rawGlobal[name] !== undefined) wrapGlobal(name, rawGlobal[name])
+  }
+  const hostGlobals = {
+    Buffer,
+    URL,
+    URLSearchParams,
+    TextEncoder,
+    TextDecoder,
+    structuredClone
+  }
+  for (const [name, value] of Object.entries(hostGlobals)) {
+    if (value !== undefined) wrapGlobal(name, value)
+  }
+  const quietConsole = { log() {}, info() {}, warn() {}, error() {}, debug() {} }
+  wrapGlobal('console', quietConsole)
+  wrapGlobal('path', path, { allowed: TOOL_ALLOWED_PATH, kind: 'path' })
+  wrapGlobal('axios', axiosClient || { get() { return {} }, post() { return {} } }, { allowed: TOOL_VM_RUNTIME_AXIOS, kind: 'axios' })
+
+  const setInternal = (name, value) => {
+    internalNames.add(name)
+    rawGlobal[name] = value
+  }
+  const clearInternal = (name) => {
+    internalNames.delete(name)
+    try { delete rawGlobal[name] } catch {}
+  }
+  return { context, rawGlobal, state, markDenied, setInternal, clearInternal }
+}
+
+function toolMakeFakeToolContext() {
+  const fakeStat = { size: 1, isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false }
+  const fakeFs = {
+    readFileSync: (p) => {
+      if (String(p || '').includes('__missing_host_error__')) throw new Error('ENOENT: probe host error')
+      return 'probe-file'
+    },
+    writeFileSync: () => undefined, appendFileSync: () => undefined,
+    readdirSync: () => ['package.json'], existsSync: () => true, statSync: () => fakeStat,
+    lstatSync: () => fakeStat, mkdirSync: () => undefined, unlinkSync: () => undefined,
+    copyFileSync: () => undefined, renameSync: () => undefined, readFile: async () => 'probe-file',
+    writeFile: async () => undefined, readdir: async () => ['package.json'], stat: async () => fakeStat,
+    mkdir: async () => undefined, unlink: async () => undefined, copyFile: async () => undefined,
+    rename: async () => undefined, appendFile: async () => undefined,
+    promises: {
+      readFile: async () => 'probe-file', writeFile: async () => undefined, readdir: async () => ['package.json'],
+      stat: async () => fakeStat, mkdir: async () => undefined, unlink: async () => undefined,
+      copyFile: async () => undefined, rename: async () => undefined, appendFile: async () => undefined
+    }
+  }
+  const fakeHeaders = { get: () => null, set: () => undefined, has: () => false }
+  const fakeResponse = (config) => {
+    const response = { data: 'probe', status: 200, headers: fakeHeaders, config: config || {} }
+    let transforms = config?.transformResponse
+    if (typeof transforms === 'function') transforms = [transforms]
+    if (Array.isArray(transforms)) {
+      for (const transform of transforms) {
+        if (typeof transform === 'function') response.data = transform(response.data, response.headers, response)
+      }
+    }
+    return response
+  }
+  const fakeAxios = {
+    get: (_url, config) => fakeResponse(config),
+    post: (_url, _data, config) => fakeResponse(config),
+    put: (_url, _data, config) => fakeResponse(config),
+    patch: (_url, _data, config) => fakeResponse(config),
+    delete: (_url, config) => fakeResponse(config),
+    head: (_url, config) => fakeResponse(config),
+    request: (config) => fakeResponse(config),
+    create: () => fakeAxios
+  }
+  return {
+    ROOT: '/probe-root', safePath: (p) => String(p), relPath: (p) => String(p), fs: fakeFs, path,
+    now: () => 0, log: () => {}, readText: (p) => 'probe:' + String(p), listDir: () => ['package.json'],
+    exists: () => true, axios: fakeAxios
+  }
+}
+
+function toolCompileSandboxedSource(raw, axiosClient) {
+  const sandbox = toolCreateVmSandbox(axiosClient)
+  const internalName = '__agentToolDefault_' + Math.random().toString(36).slice(2)
+  const source = toolTransformModuleSource(raw, internalName)
+  try {
+    const script = new vm.Script(source, { filename: 'agent-tool-sandbox.js', produceCachedData: false })
+    script.runInContext(sandbox.context, { timeout: 1000 })
+    const fn = vm.runInContext(internalName, sandbox.context)
+    if (typeof fn !== 'function') throw new Error('default export is not a function')
+    const metadata = {}
+    for (const name of ['description', 'args_schema', 'example']) {
+      if (!new RegExp('\\bexport\\s+const\\s+' + name + '\\b').test(String(raw || ''))) continue
+      try {
+        const value = vm.runInContext(name, sandbox.context)
+        if (name === 'args_schema') {
+          try { metadata[name] = JSON.parse(JSON.stringify(value)) } catch { metadata[name] = {} }
+        } else metadata[name] = String(value == null ? '' : value)
+      } catch {}
+    }
+    return { ...sandbox, fn, internalName, metadata }
+  } catch (e) {
+    if (sandbox.state.denied) return { ...sandbox, error: sandbox.state.reason }
+    return { ...sandbox, error: 'صياغة الكود غير صالحة داخل بيئة الفحص' }
+  }
+}
+
+async function toolExecutionGateAsync(raw) {
+  const fakeCtx = toolMakeFakeToolContext()
+  const fakeAxios = fakeCtx.axios
+  const compiled = toolCompileSandboxedSource(raw, fakeAxios)
+  if (compiled.error) return 'غير مسموح: ' + compiled.error
+  const argsName = '__agentProbeArgs_' + Math.random().toString(36).slice(2)
+  const ctxName = '__agentProbeCtx_' + Math.random().toString(36).slice(2)
+  const cache = new WeakMap()
+  const wrappedArgs = toolMakeHostProxy({ k: 'constructor', n: 2, list: [1, 2, 3] }, { cache, onDenied: compiled.markDenied })
+  const wrappedCtx = toolMakeHostProxy(fakeCtx, {
+    cache, onDenied: compiled.markDenied, allowed: TOOL_CTX_PROPS, kind: 'ctx'
+  })
+  compiled.setInternal(argsName, wrappedArgs)
+  compiled.setInternal(ctxName, wrappedCtx)
+  let result
+  try {
+    result = vm.runInContext(compiled.internalName + '(' + argsName + ',' + ctxName + ')', compiled.context, { timeout: 250 })
+  } catch (e) {
+    compiled.clearInternal(argsName)
+    compiled.clearInternal(ctxName)
+    if (compiled.state.denied) return 'غير مسموح: ' + compiled.state.reason
+    return 'غير مسموح: فشل تنفيذ الكود داخل بيئة الفحص المعزولة'
+  }
+  compiled.clearInternal(argsName)
+  compiled.clearInternal(ctxName)
+  if (compiled.state.denied) return 'غير مسموح: ' + compiled.state.reason
+  if (result && typeof result.then === 'function') {
+    let timer = null
+    // Bridge the vm-realm promise explicitly.  Passing it directly to a host
+    // Promise would call the foreign Promise.prototype.then with the wrong
+    // receiver and turn a pending tool into a misleading receiver error.
+    const bridged = new Promise((resolve, reject) => {
+      try { result.then(resolve, reject) } catch (error) { reject(error) }
+    })
+    const outcome = await Promise.race([
+      bridged.then(
+        () => ({ ok: true }),
+        (error) => ({ ok: false, error })
+      ),
+      new Promise((resolve) => { timer = setTimeout(() => resolve({ timeout: true }), 1000) })
+    ])
+    if (timer) clearTimeout(timer)
+    if (outcome.timeout) return 'غير مسموح: لم تكتمل نتيجة الكود داخل بيئة الفحص المعزولة'
+    if (!outcome.ok) return 'غير مسموح: ' + (outcome.error?.message || 'فشل تنفيذ الكود داخل بيئة الفحص المعزولة')
+  }
+  if (compiled.state.denied) return 'غير مسموح: ' + compiled.state.reason
+  return null
+}
+
+// safetyCheckToolCode predates async/await and is a synchronous public API.
+// Run the async vm gate in a short-lived, shell-free Node child so the parent
+// can preserve that contract without overlooking a rejection after `await`.
+const TOOL_VM_CHILD_BOOTSTRAP = `
+import fs from 'node:fs'
+const mod = await import(process.env.T27_VM_AGENT_URL)
+const raw = fs.readFileSync(0, 'utf8')
+const verdict = await mod.toolExecutionGateAsync(raw)
+process.stdout.write('\\n__T27_VM_VERDICT__' + JSON.stringify(verdict))
+process.exit(0)
+`
+function toolExecutionGate(raw) {
+  try {
+    const input = String(raw || '')
+    const output = execFileSync(process.execPath, ['--input-type=module', '-e', TOOL_VM_CHILD_BOOTSTRAP], {
+      input,
+      encoding: 'utf8',
+      timeout: 15000,
+      maxBuffer: 2 * 1024 * 1024,
+      env: { ...process.env, T27_VM_AGENT_URL: new URL(import.meta.url).href },
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+    const marker = '__T27_VM_VERDICT__'
+    const at = output.lastIndexOf(marker)
+    if (at < 0) return 'غير مسموح: لم ترجع بيئة الفحص المعزولة بنتيجة'
+    const verdict = JSON.parse(output.slice(at + marker.length))
+    return typeof verdict === 'string' ? verdict : null
+  } catch (e) {
+    return 'غير مسموح: تعذر إكمال فحص الكود داخل البيئة المعزولة'
+  }
+}
+
 function safetyCheckToolCode(code) {
   const raw = String(code || '')
   if (!raw.trim()) return 'غير مسموح: الكود فاضي'
@@ -1449,6 +1930,11 @@ function safetyCheckToolCode(code) {
     if (root === 'axios' && chain.length > 1 && !TOOL_ALLOWED_AXIOS.has(chain[1])) return 'غير مسموح: axios.' + chain[1] + ' ممنوعة'
     if (root === 'ctx' && chain.length > 1 && !TOOL_CTX_PROPS.has(chain[1])) return 'غير مسموح: ctx.' + chain[1] + ' مش متاحة'
   }
+  // 4) gate terakhir: the candidate must also run successfully in the locked
+  // vm realm.  This catches dynamic aliases that the structural pass cannot
+  // connect back to a forbidden global.
+  const vmErr = toolExecutionGate(raw)
+  if (vmErr) return vmErr
   return null
 }
 async function loadCustomTool(name) {
@@ -1460,7 +1946,30 @@ async function loadCustomTool(name) {
     try { code = fs.readFileSync(fp, 'utf8') } catch {}
     const secErr = safetyCheckToolCode(code)
     if (secErr) { console.error('[agent-tool load] مرفوض أمنيًا:', name, secErr); return null }
-    const url = 'file://' + fp.replace(/\\/g, '/') + '?t=' + Date.now(); const mod = await import(url); const def = mod.default || mod.handler; if (typeof def !== 'function') return null; const tool = { name, description: mod.description || '(بدون وصف)', argsSchema: mod.args_schema || {}, example: mod.example || '', file: name + '.js', run: def }; customTools.set(name, tool); return tool
+    // Do not import custom tools into the host realm.  The approved module is
+    // evaluated and executed in the same isolated vm realm used by the gate.
+    const compiled = toolCompileSandboxedSource(code, toolAxios)
+    if (compiled.error) { console.error('[agent-tool load] مرفوض أمنيًا:', name, compiled.error); return null }
+    const run = async (args, ctx) => {
+      const cache = new WeakMap()
+      const wrappedArgs = toolMakeHostProxy(args || {}, { cache, onDenied: compiled.markDenied })
+      const wrappedCtx = toolMakeHostProxy(ctx || {}, {
+        cache, onDenied: compiled.markDenied, allowed: TOOL_CTX_PROPS, kind: 'ctx'
+      })
+      const result = await compiled.fn(wrappedArgs, wrappedCtx)
+      if (compiled.state.denied) throw toolSandboxDenied(compiled.state.reason)
+      return result
+    }
+    const tool = {
+      name,
+      description: compiled.metadata.description || '(بدون وصف)',
+      argsSchema: compiled.metadata.args_schema || {},
+      example: compiled.metadata.example || '',
+      file: name + '.js',
+      run
+    }
+    customTools.set(name, tool)
+    return tool
   } catch (e) { console.error('[agent-tool load]', name, e?.message); return null }
 }
 async function loadAllCustomTools() {
@@ -2726,6 +3235,6 @@ handler.owner = true
 handler.usePrefix = true
 
 // 🧪 سطح اختبار — نفس دوال الحماية المستخدمة جوه البوت
-export { safetyCheckToolCode, toolNpm, toolCreateTool, buildToolContext, ActivityStatus, agentTimers, stopAgentTimers, TOOL_ALLOWED_GLOBALS, TOOL_CTX_PROPS, HTTP_TIMEOUT_MS }
+export { safetyCheckToolCode, toolExecutionGateAsync, toolNpm, toolCreateTool, buildToolContext, ActivityStatus, agentTimers, stopAgentTimers, TOOL_ALLOWED_GLOBALS, TOOL_CTX_PROPS, HTTP_TIMEOUT_MS }
 
 export default handler
