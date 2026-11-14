@@ -7,7 +7,7 @@
  *   - تشوف الحالة والأخطاء وترسل رسالة
  *
  * الدخول بكلمة سر: أول تشغيل بتتولّد كلمة سر عشوائية (16 حرف) وتتحفظ في
- * panel-config.json وبتتطبع مرة واحدة في اللوج — أو حطها في WEB_PASSWORD.
+ * panel-config.json (ومش بتتطبع في اللوج) — أو حطها في WEB_PASSWORD.
  */
 
 import http from 'node:http';
@@ -43,14 +43,21 @@ function generatePassword(len = 16) {
   return out;
 }
 
-// flag بمستوى الموديول: كلمة السر اللي نزلتها بنفس الجلسة (عشان تطبع مرة واحدة)
-let passwordJustGenerated = false;
-
 export function readPanelConfig() {
   let cfg = { ...fDEFAULT_CONFIG };
+  // بصمة كلمة السر كما حفظناها آخر مرة — بنقارن بيها عند الإقلاع عشان نكتشف
+  // أي تغيير (env مختلف / توليد جديد / تعديل يدوي في الملف) ونرفع عدّاد rev
+  // فسحب كل الكوكيز القديمة فورًا.
+  let diskPwHash = null;
   try {
     if (fs.existsSync(CONFIG_FILE)) {
-      cfg = { ...cfg, ...JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) };
+      const disk = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      cfg = { ...cfg, ...disk };
+      if (disk && typeof disk.pwHash === 'string') diskPwHash = disk.pwHash;
+      // ملف موجود من قبل لازم يفضل بصلاحية 0600 (إصلاح أي ملف قديم أوسع من كده)
+      try {
+        if ((fs.statSync(CONFIG_FILE).mode & 0o777) !== 0o600) fs.chmodSync(CONFIG_FILE, 0o600);
+      } catch {}
     }
   } catch (e) {
     console.error('⚠️ [WEB] تعذّر قراءة panel-config.json:', e.message);
@@ -62,23 +69,36 @@ export function readPanelConfig() {
     } catch {}
   }
   // الأولوية لـ WEB_PASSWORD — وكلمة السر الافتراضية 'winner' مش مسموح بيها:
-  // بنتولّد واحدة عشوائية ونحفظها فورًا (بتطبع مرة واحدة في اللوج من startWebPanel)
+  // بنتولّد واحدة عشوائية ونحفظها فورًا (مش بتتطبع في اللوج — المسار في الملف فقط)
   if (process.env.WEB_PASSWORD) {
     cfg.password = process.env.WEB_PASSWORD;
   } else if (!cfg.password || cfg.password === DEFAULT_PASSWORD) {
     cfg.password = generatePassword(16);
-    passwordJustGenerated = true;
     // علامة غير منطبقة في JSON.stringify — مش بتنحفظ في الملف
     Object.defineProperty(cfg, '__generated', { value: true, configurable: true });
-    savePanelConfig(cfg);
   } else if (cfg.__generated) {
     // نشيل العلامة من كائن مقروء من القرص (احتياطي) عشان ما تتنحفظش
     delete cfg.__generated;
   }
+  // عدّاد rev — بيروح مع كل كوكي، وأي كوكي بـ rev قديم بيترفض.
+  if (!Number.isInteger(cfg.rev) || cfg.rev < 0) cfg.rev = 0;
+  // بصمة الكلمة النهائية (بعد env/التوليد) — ملاحظة: الملف أصلاً بيحفظ كلمة
+  // السر نصًّا، فالبصمة دي لأجل اكتشاف التغيير مش للحماية.
+  const pwHash = crypto.createHash('sha256').update(String(cfg.password)).digest('hex');
+  let needSave = false;
+  if (pwHash !== diskPwHash) {
+    if (diskPwHash !== null) {
+      // كلمة السر اتغيّرت فعليًا عن آخر حفظ → كل كوكي اتصدر قبل كده ميت.
+      cfg.rev = (Number(cfg.rev) || 0) + 1;
+    }
+    needSave = true;
+  }
+  cfg.pwHash = pwHash;
   if (!cfg.secret) {
     cfg.secret = crypto.randomBytes(32).toString('hex');
-    savePanelConfig(cfg);
+    needSave = true;
   }
+  if (needSave) savePanelConfig(cfg);
   return cfg;
 }
 
@@ -86,6 +106,8 @@ export function savePanelConfig(cfg) {
   const tmp = `${CONFIG_FILE}.tmp-${process.pid}-${Date.now()}`;
   try {
     fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+    // الملف فيه كلمة سر اللوحة ومفتاح توقيع الكوكيز — صلاحية 0600 إجبارية
+    fs.chmodSync(tmp, 0o600);
     fs.renameSync(tmp, CONFIG_FILE);
   } catch (e) {
     try { fs.rmSync(tmp, { force: true }); } catch {}
@@ -334,19 +356,24 @@ export async function requestCleanRestart(reason) {
 function sign(value) {
   return crypto.createHmac('sha256', panelCfg.secret).update(value).digest('hex');
 }
+/* الكوكي = exp.rev.signature — rev بيتصاعد مع كل تغيير كلمة سر أو خروج من
+   كل الأجهزة، فأي كوكي اتصدر قبل التغيير بيرفض فورًا (حتى لو التوقيع سليم). */
 function makeCookie(days = 30) {
   const exp = Date.now() + days * 86400000;
-  const payload = String(exp);
+  const payload = `${exp}.${Number(panelCfg.rev) || 0}`;
   return `${payload}.${sign(payload)}`;
 }
 function verifyCookie(cookie) {
   if (!cookie) return false;
-  const [payload, sig] = cookie.split('.');
-  if (!payload || !sig) return false;
-  const expect = sign(payload);
+  const parts = cookie.split('.');
+  if (parts.length !== 3) return false; // كوكي قديم بدون rev → مرفوض
+  const [expStr, revStr, sig] = parts;
+  if (!expStr || !revStr || !sig) return false;
+  const expect = sign(`${expStr}.${revStr}`);
   if (sig.length !== expect.length) return false;
   if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return false;
-  return Number(payload) > Date.now();
+  if (Number(revStr) !== (Number(panelCfg.rev) || 0)) return false; // rev قديم = منسوخ
+  return Number(expStr) > Date.now();
 }
 function parseCookies(req) {
   const out = {};
@@ -360,6 +387,14 @@ function parseCookies(req) {
 
 const attempts = new Map(); // ip -> {count, until}
 const MAX_ATTEMPTS = 8;
+
+/* عنوان العميل الفعلي: أول hop من X-Forwarded-For لما فيه reverse proxy —
+   من غير كده الحد بيتحسب على IP البروكسي الواحد وبيبقى حد عام على كل الزوار. */
+function clientIp(req) {
+  const xff = String(req.headers['x-forwarded-for'] || '');
+  const first = xff.split(',')[0].trim();
+  return first || req.socket.remoteAddress || 'x';
+}
 
 // تنظيف دوري بسيط عشان خريطة المحاولات ما تزيدش في الذاكرة للأبد
 function pruneAttempts() {
@@ -460,7 +495,7 @@ border-radius:10px;font-size:13px;text-align:center}
   <input type="password" name="password" placeholder="كلمة السر" autofocus required>
   <button type="submit">دخول</button>
   ${err ? `<div class="err">${err}</div>` : ''}
-  <div class="note">كلمة السر محفوظة في panel-config.json (أول تشغيل بتتطبع مرة واحدة في اللوج)</div>
+  <div class="note">كلمة السر محفوظة في panel-config.json (مش بتتطبع في أي لوج)</div>
 </form>
 </body></html>`;
 
@@ -646,7 +681,7 @@ refresh();setInterval(refresh,3000);
 let panelCfg = { ...fDEFAULT_CONFIG, secret: '' };
 
 async function handle(req, res, client) {
-  const ip = req.socket.remoteAddress || 'x';
+  const ip = clientIp(req);
   const url = new URL(req.url, 'http://localhost');
   const cookies = parseCookies(req);
   const authed = verifyCookie(cookies.pw);
@@ -669,7 +704,11 @@ async function handle(req, res, client) {
       return sendHtml(res, 401, LOGIN_HTML('كلمة السر غلط'));
     }
     resetFail(ip);
-    res.writeHead(302, { 'Set-Cookie': `pw=${makeCookie()}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Lax`, Location: '/' });
+    // SameSite=Strict بدل Lax — والكوكي Secure بس لما الطلب جه على TLS
+    // (ورا reverse proxy: X-Forwarded-Proto: https).
+    const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+    const secure = proto === 'https' ? '; Secure' : '';
+    res.writeHead(302, { 'Set-Cookie': `pw=${makeCookie()}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Strict${secure}`, Location: '/' });
     return res.end();
   }
 
@@ -700,8 +739,13 @@ async function handle(req, res, client) {
     try {
       switch (action) {
         case 'logout':
+          // خروج من كل الأجهزة: نرفع عدّاد rev — أي كوكي اتصدر قبل كده بيرفض
+          // فورًا حتى لو لسه صالح في الوقت. كوكي المتصفح الحالي بيتصفّر كمان.
+          panelCfg.rev = (Number(panelCfg.rev) || 0) + 1;
+          savePanelConfig(panelCfg);
+          pushEvent('خروج من كل الجلسات — عدّاد rev بقا ' + panelCfg.rev);
           res.writeHead(200, { 'Set-Cookie': 'pw=; HttpOnly; Path=/; Max-Age=0', 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: true, message: 'تم الخروج' }));
+          return res.end(JSON.stringify({ ok: true, message: 'تم الخروج — كل الجلسات اتلغت' }));
 
         case 'restart':
           pushEvent('طلب إعادة تشغيل من اللوحة');
@@ -828,16 +872,10 @@ export function startWebPanel(client, options = {}) {
 
   server.listen(port, host, () => {
     console.log(`\n🌐 [WEB] لوحة التحكم شغالة على: http://${host}:${port}`);
-    if (passwordJustGenerated) {
-      // بنطبع كلمة السر المولّدة مرة واحدة هنا — وهي محفوظة كذلك في panel-config.json
-      console.log(`   🔑 كلمة السر اتولّدت تلقائيًا واتحفظت في panel-config.json:`);
-      console.log(`      ${panelCfg.password}`);
-      console.log(`   (غيّرها من WEB_PASSWORD أو من الملف نفسه)`);
-    } else if (process.env.WEB_PASSWORD) {
-      console.log(`   كلمة السر: من متغير البيئة WEB_PASSWORD`);
-    } else {
-      console.log(`   كلمة السر: محفوظة في panel-config.json`);
-    }
+    // ممنوع نطبع كلمة السر في stdout — اللوج بيتخزن وبيتشارك. بنكتفى بمسار
+    // الملف (نفس الصيغة المطلوبة: 🔑 كلمة السر محفوظة في system/panel-config.json)
+    const cfgRel = path.isAbsolute(CONFIG_FILE) ? path.relative(process.cwd(), CONFIG_FILE) : CONFIG_FILE;
+    console.log(`   🔑 كلمة السر محفوظة في ${cfgRel || CONFIG_FILE} (مش بتتطبع في اللوج لأسباب أمنية)`);
     console.log(`   طريقة الربط الحالية: ${panelCfg.loginMode}\n`);
     pushEvent('تم تشغيل لوحة التحكم على المنفذ ' + port);
   });
