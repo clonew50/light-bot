@@ -20,19 +20,19 @@
     "file-type": "^18.0.0",
     "form-data": "^4.0.5",
     "jszip": "^3.10.1",
-    "meowsab": "https://github.com/deveni0/ws/tarball/main",
+    "meowsab": "https://github.com/deveni0/ws/archive/446bc68b8a0bade128bfbea224e33dc552ebc10b.tar.gz",
     "node-fetch": "^3.3.2",
     "qrcode": "^1.5.4",
     "qs": "*",
     "ruhend-scraper": "^10.0.3",
-    "sharp": "https://github.com/deveni0/sharp-tmx/tarball/main",
+    "sharp": "https://github.com/deveni0/sharp-tmx/archive/67f11b2c6176c50cd9beb821f10c7fd50dc8459e.tar.gz",
     "wa-sticker-formatter": "^4.3.2",
     "youtube-dl-exec": "^3.1.17"
   },
   "overrides": {
-    "sharp": "https://github.com/deveni0/sharp-tmx/tarball/main",
+    "sharp": "https://github.com/deveni0/sharp-tmx/archive/67f11b2c6176c50cd9beb821f10c7fd50dc8459e.tar.gz",
     "*": {
-      "sharp": "https://github.com/deveni0/sharp-tmx/tarball/main"
+      "sharp": "https://github.com/deveni0/sharp-tmx/archive/67f11b2c6176c50cd9beb821f10c7fd50dc8459e.tar.gz"
     }
   }
 }
