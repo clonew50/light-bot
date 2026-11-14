@@ -2,7 +2,7 @@ import { Client, Utils } from 'meowsab';
 import { group, access } from "./system/control.js";
 import UltraDB from "./system/UltraDB.js";
 import sub from './sub.js';
-import { readPanelConfig, startWebPanel, panelRuntime, pushEvent as panelPushEvent, pairingActive } from './system/webPanel.js';
+import { readPanelConfig, startWebPanel, panelRuntime, pushEvent as panelPushEvent, pairingActive, setCleanRestart } from './system/webPanel.js';
 import { attachHealer } from './system/healer.js';
 import { pullOnce } from './system/autoUpdate.mjs';
 import { buildConfig, buildInfo, lastClientError } from './system/config.js';
@@ -258,6 +258,14 @@ function restartBot(reason = 'scheduled', opts = {}) {
 
 // نعرّضها عامًّا عشان تقدر تستخدمها في أي مكان لو حبيت
 installGlobalRestart(restartController);
+
+/* الخروج النظيف الكامل (نفس خطوة السلّم: تفريغ الداتابيز + process.exit(1))
+   لأزرار اللوحة اللي لازم إقلاع جديد يقرا الإعدادات من القرص
+   (تنصيب set-login / تصفير الجلسة). global.restartBot (الإعادة الداخلية)
+   مش بيحمّل الإس كي موديولز من تاني ولا بيصحّي حالة الذاكرة — فمش كافي
+   لتغييرات اللي بتعتمد على الإقلاع الجديد (config.printQR / الجلسة الجديدة). */
+global.restartBotClean = (reason = 'clean-restart') => restartController.fatal(reason);
+setCleanRestart(global.restartBotClean);
 
 /* =========== Watchdog — حرس الاتصال ========== */
 // كل دقيقة: لو السوكيت مش متصل + عدّى 5 دقايق من التشغيل + مفيش عملية ربط

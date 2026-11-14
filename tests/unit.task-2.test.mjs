@@ -413,8 +413,13 @@ test('wiring: every restart call site goes through the shared ladder', () => {
   assert.match(index, /global\.restartBot\?\.\('memory high'\)/);
   assert.match(index, /global\.restartBot\('uncaught-exception'\)/);
   assert.match(panel, /global\.restartBot\('لوحة التحكم'\)/);
-  assert.match(panel, /global\.restartBot\('تغيير إعدادات الربط'\)/);
-  assert.match(panel, /global\.restartBot\('تصفير الجلسة'\)/);
+  // todo 9: the install (set-login) and reset-session actions must NOT use the
+  // in-process restart (it cannot re-import ES modules) — they exit via the
+  // shared ladder's clean full-restart step instead.
+  assert.doesNotMatch(panel, /global\.restartBot\('تغيير إعدادات الربط'\)/);
+  assert.doesNotMatch(panel, /global\.restartBot\('تصفير الجلسة'\)/);
+  assert.match(panel, /requestCleanRestart\('تغيير إعدادات الربط'\)/);
+  assert.match(panel, /requestCleanRestart\('تصفير الجلسة'\)/);
   assert.match(owner, /global\.restartBot\('أمر رستارت من المالك'\)/);
 });
 

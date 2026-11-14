@@ -20,7 +20,10 @@ import { pushEvent as busPushEvent, getEvents } from './events.js';
 import { isAlive, livenessStatus } from './liveness.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CONFIG_FILE = path.join(__dirname, 'panel-config.json');
+// hook للاختبارات/التشغيل المعزول: ملف الإعدادات في مكان تاني (افتراضيًا نفس الملف)
+const CONFIG_FILE = process.env.PANEL_CONFIG_FILE
+  ? path.resolve(process.env.PANEL_CONFIG_FILE)
+  : path.join(__dirname, 'panel-config.json');
 
 /* ============ إعدادات محفوظة ============ */
 const DEFAULT_PASSWORD = 'winner'; // كلمة السر القديمة — مش مسموح بيها ككلمة سر فعلية بعد دلوقتي
@@ -99,7 +102,8 @@ const state = {
   pairingCode: null,
   lastConnected: null,
   lastCloseAt: 0,
-  stopped: false // true لما المستخدم يوقف البوت عمدًا من اللوحة (بيستخدمه الـ watchdog)
+  stopped: false, // true لما المستخدم يوقف البوت عمدًا من اللوحة (بيستخدمه الـ watchdog)
+  pendingRestart: null // {reason, at} — فيه خروج نظيف كامل جارٍ بعد أمر من اللوحة
 };
 
 /* حالة الربط — المصدر الوحيد للحقيقة:
@@ -275,10 +279,55 @@ export function getClientInfo(client) {
     pairingCode: state.pairingCode,
     loginMode: panelCfg.loginMode,
     configuredPhone: panelCfg.phone || client?.config?.phoneNumber || '',
+    // فيه إعادة تشغيل كاملة (خروج نظيف) جارٍ بعد أمر تنصيب/تصفير من اللوحة؟
+    // الواجهة بتعرض شريط "أعد التشغيل جارٍ..." بدل الرد الصامت.
+    pendingRestart: state.pendingRestart,
     // أحدث 100 حدث (ناقل الأحداث بيقصّ الأقدم) — نفس مفتاح `events` اللي
     // الواجهة بتعتمد عليه، وكل عنصر {ts,kind,text,line}.
     events: getEvents()
   };
+}
+
+/* ============ الخروج النظيف الكامل (خطوة السلّم المشتركة) ============ */
+/* أزرار "تنصيب" (set-login) و"تصفير الجلسة" ما يكمّلوش بإعادة تشغيل داخلية:
+   إس كي موديولز مش بتتحمّل من تاني والحالة في الذاكرة بتفضل قديمة — الفايدة
+   الحقيقية إن عملية جديدة تقلع وتقرا panel-config.json من الأول (index.js
+   بيعمل readPanelConfig عند الإقلاع ويطبّق config.printQR/phone).
+   فالمسار الصح: خروج نظيف بكود 1 (تفريغ الداتابيز + process.exit(1)) عشان
+   مدير العمليات يرجّع البوت. الخطوة دي بتقدّمها من السلّم المشترك
+   (system/restart-ladder.js) عبر setCleanRestart / global.restartBotClean
+   اللي index.js بيركّبهم — مش global.restartBot (الإعادة الداخلية). */
+let cleanRestartFn = null;
+
+/** يحقن مسار الخروج النظيف (index.js بيمرّر خطوة السلّم — والاختبارات بتحقن نسختها). */
+export function setCleanRestart(fn) {
+  cleanRestartFn = typeof fn === 'function' ? fn : null;
+}
+
+/** يعلّم اللوحة إن فيه إعادة تشغيل كاملة قيد التنفيذ (بدل الرد الصامت). */
+function markPendingRestart(reason) {
+  state.pendingRestart = { reason: String(reason || ''), at: Date.now() };
+}
+
+/**
+ * يطلب الخروج النظيف الكامل (كود 1) — نفس خطوة السلّم المشترك.
+ * @returns {Promise<boolean>} true لو المسار اشتغل فعلًا
+ */
+export async function requestCleanRestart(reason) {
+  markPendingRestart(reason);
+  pushEvent('أعد التشغيل جارٍ: ' + reason + ' — خروج نظيف كامل بكود 1');
+  if (typeof cleanRestartFn === 'function') {
+    try { await cleanRestartFn(reason); return true; }
+    catch (e) { pushEvent('تعذّر الخروج النظيف: ' + (e?.message || e)); return false; }
+  }
+  if (typeof global.restartBotClean === 'function') {
+    try { await global.restartBotClean(reason); return true; }
+    catch (e) { pushEvent('تعذّر الخروج النظيف: ' + (e?.message || e)); return false; }
+  }
+  // مش بنرجع لـ global.restartBot (إعادة تشغيل داخلية) هنا — دي كانت
+  // المشكلة الأصلية: بيرجع من غير ما يقرا الإعدادات الجديدة خالص.
+  pushEvent('تعذّر إعادة التشغيل النظيفة: المسار المركزي غير متاح');
+  return false;
 }
 
 /* ============ الحماية ============ */
@@ -457,6 +506,7 @@ small.t{color:#475569}
 </style></head>
 <body>
 <div class="wrap">
+  <div id="pendingRestart" style="display:none;background:#3b2f05;border:1px solid #f59e0b;color:#fde68a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:14px">♻️ أعد التشغيل جارٍ... الإعداد الجديد بيتطبق لما البوت يرجع يقلع</div>
   <header>
     <h1>🩸 لوحة تحكم البوت</h1>
     <div style="display:flex;gap:8px;align-items:center">
@@ -528,6 +578,8 @@ async function refresh(){
     document.getElementById('log').textContent=(d.events||[]).map(e=>e&&e.line?e.line:(e&&e.text?e.text:String(e||''))).join('\\n')||'—';
     const eb=document.getElementById('errors');
     eb.innerHTML=(d.errors&&d.errors.length)?d.errors.map(e=>'<div class="err-item"><b>'+esc(e.command||'')+'</b><br>'+esc((e.error||'').slice(0,200))+'<br><small class="t">'+esc(e.time||'')+'</small></div>').join(''):'<small class="t">لا يوجد</small>';
+    const pr=document.getElementById('pendingRestart');
+    if(pr)pr.style.display=d.pendingRestart?'':'none';
     renderInstall(d);
   }catch(e){}
 }
@@ -573,7 +625,7 @@ async function doAction(a){
   setTimeout(refresh,1500);
 }
 async function resetSession(){
-  if(!confirm('سيتم حذف الجلسة وإعادة التنصيب من جديد. متأكد؟'))return;
+  if(!confirm('سيتم نقل الجلسة الحالية لنسخة احتياطية (session.bak-*) والخروج لإقلاع جديد غير مُقرن. متأكد؟'))return;
   const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'reset-session'})});
   const d=await r.json();toast(d.message||'تم');setTimeout(refresh,2500);
 }
@@ -679,13 +731,32 @@ async function handle(req, res, client) {
           if (!isSafeSessionPath(sp)) {
             return sendJson(res, 400, { ok: false, message: 'مسار الجلسة غير آمن — تم إلغاء التصغير' });
           }
-          sendJson(res, 200, { ok: true, message: 'تم تصفير الجلسة، جاري إعادة التشغيل...' });
-          setTimeout(async () => {
-            try { await client.stop?.(); } catch {}
-            try { fs.rmSync(sp, { recursive: true, force: true }); } catch (e) { pushEvent('تعذّر حذف الجلسة: ' + e.message); }
-            state.stopped = false;
-            if (typeof global.restartBot === 'function') global.restartBot('تصفير الجلسة');
-          }, 600);
+          // مفيش جلسة أصلًا → مفيش حاجة تتنقل ولا إعادة تشغيل (ومفيش unlink أبدًا)
+          if (!fs.existsSync(sp)) {
+            pushEvent('مفيش جلسة موجودة — مفيش حاجة تتصفّر');
+            return sendJson(res, 200, { ok: false, message: 'لا توجد جلسة لحذفها' });
+          }
+          markPendingRestart('تصفير الجلسة');
+          sendJson(res, 200, { ok: true, message: 'تم نقل الجلسة. أعد التشغيل جارٍ...', pendingRestart: true });
+          setTimeout(() => {
+            void (async () => {
+              try { await client.stop?.(); } catch {}
+              // نقل (rename) مش حذف: الجلسة القديمة بتتحفظ كنسخة احتياطية
+              // session.bak-<timestamp> — ممنوع unlink وممنوع مسح النسخة.
+              let bak = `${sp}.bak-${Date.now()}`;
+              let n = 0;
+              while (fs.existsSync(bak)) { n += 1; bak = `${sp}.bak-${Date.now()}-${n}`; }
+              try {
+                fs.renameSync(sp, bak);
+                pushEvent('تم نقل الجلسة القديمة إلى ' + path.basename(bak) + ' — مفيش حاجة اتحذفت');
+              } catch (e) {
+                pushEvent('تعذّر نقل الجلسة — تم إلغاء التصفير: ' + (e?.message || e));
+                return; // من غير نقل مفيش تصفير — وما نخرجش والجلسة القديمة مكانها
+              }
+              state.stopped = false;
+              await requestCleanRestart('تصفير الجلسة');
+            })().catch((e) => pushEvent('خطأ في تصفير الجلسة: ' + (e?.message || e)));
+          }, 500);
           return;
         }
 
@@ -712,11 +783,12 @@ async function handle(req, res, client) {
           panelCfg.phone = phone;
           savePanelConfig(panelCfg);
           pushEvent('تغيير طريقة الربط إلى: ' + loginMode + (phone ? ' — رقم ' + phone : ''));
-          sendJson(res, 200, { ok: true, message: 'تم الحفظ، جاري إعادة التشغيل...' });
-          setTimeout(() => {
-            if (typeof global.restartBot === 'function') global.restartBot('تغيير إعدادات الربط');
-            else pushEvent('تعذّر إعادة التشغيل: المسار المركزي غير متاح');
-          }, 700);
+          // الإعداد اتكتب في panel-config.json — والإقلاع الجديد هو اللي بيقراه
+          // وبيطبّقه (config.printQR / phoneNumber). global.restartBot مش كافي:
+          // إعادة تشغيل داخلية مش بتحمّل الإس كي موديولز من تاني.
+          markPendingRestart('تغيير إعدادات الربط');
+          sendJson(res, 200, { ok: true, message: 'تم الحفظ. أعد التشغيل جارٍ...', pendingRestart: true });
+          setTimeout(() => { void requestCleanRestart('تغيير إعدادات الربط'); }, 500);
           return;
         }
 
