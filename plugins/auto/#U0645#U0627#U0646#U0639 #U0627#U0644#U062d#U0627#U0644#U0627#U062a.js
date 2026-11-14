@@ -1,3 +1,5 @@
+import { addWarning, resetWarnings, WARNING_LIMIT } from '../../system/warnings.js';
+
 // ╔══════════════════════════════════════════════╗
 // ║     📸 مانع الحالات — 𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻        ║
 // ║  يحذف أي رسالة منقولة من حالة واتساب       ║
@@ -34,15 +36,12 @@ export default async function before(m, { conn, isBotAdmin, isAdmin }) {
             // حذف الرسالة مباشرة
             await conn.sendMessage(m.chat, { delete: m.key }).catch(() => {});
 
-            // تهيئة نظام الإنذارات داخل قاعدة البيانات للعضو
-            chatData.warnings ||= {};
-            chatData.warnings[m.sender] ||= 0;
-            chatData.warnings[m.sender] += 1;
-            const currentWarnings = chatData.warnings[m.sender];
+            // العدّاد الموحّد (نفس مصدر admins/warning و anti-badword)
+            const currentWarnings = addWarning(m.chat, m.sender, { by: 'status-blocker', reason: 'status' });
 
-            if (currentWarnings >= 3) {
+            if (currentWarnings >= WARNING_LIMIT) {
                 // تصفير الإنذارات بعد الوصول للحد الأقصى والطرد
-                chatData.warnings[m.sender] = 0;
+                resetWarnings(m.chat, m.sender);
 
                 await conn.sendMessage(m.chat, {
                     text:

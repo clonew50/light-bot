@@ -1,10 +1,12 @@
+import { getWarnings } from '../../system/warnings.js';
+
 async function handler(m, { conn, bot }) {
     const user = global.db?.users[m.sender] || {};
     const xp = Number(user.xp) || 0;
     const level = Number(user.level) || 0;
     const nameLevel = user.nameLevel || 'مواطن🏙️';
     const cookies = Number(user.cookies) || 0;
-    const warnings = Number(user.warnings) || 0;
+    const warnings = Math.max(Number(user.warnings) || 0, getWarnings(m.chat, m.sender));
     const banned = Boolean(user.banned);
     const premium = Boolean(user.premium);
     const name = user.name || 'غير مسجل';

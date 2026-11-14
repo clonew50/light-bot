@@ -1,3 +1,5 @@
+import { getWarnings, addWarning, resetWarnings, WARNING_LIMIT } from '../../system/warnings.js';
+
 const handler = async (m, { conn }) => {
   if (!m.isGroup) return m.reply('❌ الأمر ده داخل الجروبات بس');
   let targetLid = m.mentionedJid?.[0] || m.quoted?.sender;
@@ -11,14 +13,12 @@ const handler = async (m, { conn }) => {
 
   if (!user) return m.reply("*❌ المستخدم غير موجود في المجموعة*");
 
-  global.db.groups[m.chat] ??= {};
-  global.db.groups[m.chat].warnings ??= {};
-
   const id = user.phoneNumber;
   const jid = targetLid;
 
-  const warnCount = global.db.groups[m.chat].warnings[id] =
-    (global.db.groups[m.chat].warnings[id] || 0) + 1;
+  // العدّاد الموحّد: نفس المصدر اللي بيقرا منه anti-badword ومانع الحالات
+  const warnCount = addWarning(m.chat, targetLid, { by: m.sender, reason: 'warn' });
+  if (!warnCount) return m.reply('⚠️ *تعذر تسجيل الإنذار — معرّف الشات غير صالح*');
 
   await conn.sendMessage(m.chat, {
     text: `⚠️ تم إعطاء إنذار
@@ -30,22 +30,18 @@ const handler = async (m, { conn }) => {
 };
 
 handler.before = async (m, { conn }) => {
-  const g = global.db?.groups?.[m.chat];
-  if (!g?.warnings) return false;
-
   const user = m.sender;
+  const count = getWarnings(m.chat, user);
 
-  if (!g.warnings[user]) return false;
+  if (count < WARNING_LIMIT) return false;
 
-  if (g.warnings[user] >= 3) {
-    await conn.sendMessage(m.chat, {
-      text: `*🚫 @${user.split("@")[0]} لقد خالفت القوانين والان سوف يتم طردك*`,
-      mentions: [user]
-    }, { quoted: global.reply_status });
+  await conn.sendMessage(m.chat, {
+    text: `*🚫 @${user.split("@")[0]} لقد خالفت القوانين والان سوف يتم طردك*`,
+    mentions: [user]
+  }, { quoted: global.reply_status });
 
-    await conn.groupParticipantsUpdate(m.chat, [user], "remove");
-    delete g.warnings[user];
-  }
+  await conn.groupParticipantsUpdate(m.chat, [user], "remove");
+  resetWarnings(m.chat, user);
 
   return false;
 };

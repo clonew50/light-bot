@@ -1,3 +1,5 @@
+import { addWarning, resetWarnings, WARNING_LIMIT } from '../../system/warnings.js';
+
 const DEFAULT_BADWORDS = [
     "عرص", "كسمك", "متناك", "لبوه", "قحبه", "شرموط",
     "منيوك", "كس امك", "كسم", "يا بن الـ", "خول", "ديوث",
@@ -71,15 +73,12 @@ export default async function before(m, { conn, isAdmin, bot }) {
         }
 
         if (deleted) {
-            // تهيئة نظام الإنذارات داخل قاعدة البيانات للعضو
-            chatData.warnings ||= {};
-            chatData.warnings[m.sender] ||= 0;
-            chatData.warnings[m.sender] += 1;
-            const currentWarnings = chatData.warnings[m.sender];
+            // العدّاد الموحّد (نفس مصدر admins/warning) — مفتاحه = معرّف المستخدم
+            const currentWarnings = addWarning(m.chat, m.sender, { by: 'anti-badword', reason: 'badword' });
 
-            if (currentWarnings >= 3) {
+            if (currentWarnings >= WARNING_LIMIT) {
                 // تصفير الإنذارات بعد الوصول للحد الأقصى والطرد
-                chatData.warnings[m.sender] = 0;
+                resetWarnings(m.chat, m.sender);
 
                 await conn.sendMessage(m.chat, {
                     text:

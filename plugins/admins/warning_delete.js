@@ -1,3 +1,5 @@
+import { getWarnings, removeWarning } from '../../system/warnings.js';
+
 const handler = async (m, { conn }) => {
   if (!m.isGroup) return m.reply('❌ الأمر ده داخل الجروبات بس');
   let targetLid = m.mentionedJid?.[0] || m.quoted?.sender;
@@ -11,12 +13,9 @@ const handler = async (m, { conn }) => {
 
   if (!user) return m.reply("*❌ المستخدم غير موجود في المجموعة*");
 
-  global.db.groups[m.chat] ??= {};
-  global.db.groups[m.chat].warnings ??= {};
-
   const id = user.phoneNumber;
   const jid = targetLid;
-  const currentWarn = global.db.groups[m.chat].warnings[id] || 0;
+  const currentWarn = getWarnings(m.chat, targetLid);
 
   if (currentWarn === 0) {
     return await conn.sendMessage(m.chat, {
@@ -25,13 +24,7 @@ const handler = async (m, { conn }) => {
     }, { quoted: m });
   }
 
-  const newWarn = currentWarn - 1;
-  
-  if (newWarn === 0) {
-    delete global.db.groups[m.chat].warnings[id];
-  } else {
-    global.db.groups[m.chat].warnings[id] = newWarn;
-  }
+  const newWarn = removeWarning(m.chat, targetLid);
 
   await conn.sendMessage(m.chat, {
     text: `✅ *تم حذف إنذار واحد*

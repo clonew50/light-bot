@@ -1,5 +1,5 @@
 const handler = async (m, { conn, command, text }) => {
-    if (!global.db?.users[m.sender]) {
+    if (!global.db?.users?.exists?.(m.sender)) {
         global.db.users[m.sender] = {};
     }
     

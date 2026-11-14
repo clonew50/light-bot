@@ -1,10 +1,10 @@
-const handler = async (m, { conn }) => {
-  const g = global.db.groups?.[m.chat] || {};
-  const w = g.warnings || {};
-  const id = m.sender;
-  const count = w[id] || 0;
+import { getWarnings } from '../../system/warnings.js';
 
-  if (!w[id]) {
+const handler = async (m, { conn }) => {
+  const id = m.sender;
+  const count = getWarnings(m.chat, id);
+
+  if (!count) {
     return conn.sendMessage(m.chat, {
       text: `*📊 @${id.split("@")[0]} معندكش أي إنذارات*`,
       mentions: [id]

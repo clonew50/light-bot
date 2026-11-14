@@ -27,7 +27,7 @@ const handler = async (m, { conn, command }) => {
     const type = command === 'يومي' ? 'daily' : command === 'اسبوعي' ? 'weekly' : 'monthly';
     const reward = rewards[type];
     
-    if (!global.db?.users[m.sender]) {
+    if (!global.db?.users?.exists?.(m.sender)) {
         global.db.users[m.sender] = {};
     }
     

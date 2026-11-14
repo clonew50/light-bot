@@ -57,6 +57,27 @@ const sendMenu = async (conn, m, bot, resultText) => {
     }
 };
 
+const SETTING_SAVE_FAILED = '❐═━━━═╊⊰🩸⊱╉═━━━═❐\n ❌ *تعذر حفظ الإعداد — معرّف المجموعة غير صالح*\n❐═━━━═╊⊰🩸⊱╉═━━━═❐';
+
+/**
+ * كتابة إعداد محمية (GAP-7):
+ *  - `global.db.groups[chatId]` للمعرّف غير الصالح بيرمي الخطأ العربي من UltraDB
+ *    (بدل ما كان بيرجّع undefined/false ويفشل صامت) — فبنمسكه هنا.
+ *  - الكتابة نفسها بتتسجل في الداتابيز (set trap بتاع السجل بيعمل حفظ).
+ * بنرجّع true بس لما الكتابة تثبت فعلًا من غير استثناء.
+ */
+export function setGroupFlag(chatId, key, value) {
+    try {
+        const rec = global.db?.groups?.[chatId];
+        if (!rec || typeof rec !== 'object') return false;
+        rec[key] = value;
+        return true;
+    } catch (e) {
+        console.error('⚠️ [SETTING] فشل حفظ الإعداد:', e?.message || e);
+        return false;
+    }
+}
+
 async function handler(m, { conn, bot, command, args }) {
     const chatId = m.chat;
     const subCmd = args[0]?.toLowerCase();
@@ -73,7 +94,10 @@ async function handler(m, { conn, bot, command, args }) {
                 result = '*❌ هذا الأمر للمشرفين فقط*';
                 break;
             }
-            global.db.groups[chatId].antiLink = true;
+            if (!setGroupFlag(chatId, 'antiLink', true)) {
+                result = SETTING_SAVE_FAILED;
+                break;
+            }
             result = '❐═━━━═╊⊰🩸⊱╉═━━━═❐\n ✅ *تم تفعيل مضاد الروابط*\n> البوت هيحذف أي رابط\n❐═━━━═╊⊰🩸⊱╉═━━━═❐';
             break;
 
@@ -82,7 +106,10 @@ async function handler(m, { conn, bot, command, args }) {
                 result = '*❌ هذا الأمر للمشرفين فقط*';
                 break;
             }
-            global.db.groups[chatId].antiLink = false;
+            if (!setGroupFlag(chatId, 'antiLink', false)) {
+                result = SETTING_SAVE_FAILED;
+                break;
+            }
             result = '❐═━━━═╊⊰🩸⊱╉═━━━═❐\n ✅ *تم ايقاف مضاد الروابط*\n> البوت مايحذفش الروابط\n❐═━━━═╊⊰🩸⊱╉═━━━═❐';
             break;
 
@@ -91,7 +118,10 @@ async function handler(m, { conn, bot, command, args }) {
                 result = '*❌ هذا الأمر للمشرفين فقط*';
                 break;
             }
-            global.db.groups[chatId].statusBlocker = true;
+            if (!setGroupFlag(chatId, 'statusBlocker', true)) {
+                result = SETTING_SAVE_FAILED;
+                break;
+            }
             result = '❐═━━━═╊⊰🩸⊱╉═━━━═❐\n ✅ *تم تفعيل مانع الحالات*\n> البوت هيحذف أي رسالة منقولة من حالة واتساب\n❐═━━━═╊⊰🩸⊱╉═━━━═❐';
             break;
 
@@ -100,7 +130,10 @@ async function handler(m, { conn, bot, command, args }) {
                 result = '*❌ هذا الأمر للمشرفين فقط*';
                 break;
             }
-            global.db.groups[chatId].statusBlocker = false;
+            if (!setGroupFlag(chatId, 'statusBlocker', false)) {
+                result = SETTING_SAVE_FAILED;
+                break;
+            }
             result = '❐═━━━═╊⊰🩸⊱╉═━━━═❐\n ✅ *تم ايقاف مانع الحالات*\n> السماح بنشر الحالات في الجروب\n❐═━━━═╊⊰🩸⊱╉═━━━═❐';
             break;
 
@@ -109,7 +142,10 @@ async function handler(m, { conn, bot, command, args }) {
                 result = '*❌ هذا الأمر للمشرفين فقط*';
                 break;
             }
-            global.db.groups[chatId].antiBadWords = true;
+            if (!setGroupFlag(chatId, 'antiBadWords', true)) {
+                result = SETTING_SAVE_FAILED;
+                break;
+            }
             result = '❐═━━━═╊⊰🩸⊱╉═━━━═❐\n ✅ *تم تفعيل مانع السب والألفاظ*\n> البوت هيحذف الرسائل المسيئة ويعطي إنذارات\n❐═━━━═╊⊰🩸⊱╉═━━━═❐';
             break;
 
@@ -118,7 +154,10 @@ async function handler(m, { conn, bot, command, args }) {
                 result = '*❌ هذا الأمر للمشرفين فقط*';
                 break;
             }
-            global.db.groups[chatId].antiBadWords = false;
+            if (!setGroupFlag(chatId, 'antiBadWords', false)) {
+                result = SETTING_SAVE_FAILED;
+                break;
+            }
             result = '❐═━━━═╊⊰🩸⊱╉═━━━═❐\n ✅ *تم ايقاف مانع السب والألفاظ*\n❐═━━━═╊⊰🩸⊱╉═━━━═❐';
             break;
 
@@ -127,7 +166,10 @@ async function handler(m, { conn, bot, command, args }) {
                 result = '*❌ هذا الأمر للمشرفين فقط*';
                 break;
             }
-            global.db.groups[chatId].adminOnly = true;
+            if (!setGroupFlag(chatId, 'adminOnly', true)) {
+                result = SETTING_SAVE_FAILED;
+                break;
+            }
             result = '❐═━━━═╊⊰🩸⊱╉═━━━═❐\n ✅ *تم تفعيل وضع الادمن*\n> البوت سيتفاعل مع المشرفين فقط\n❐═━━━═╊⊰🩸⊱╉═━━━═❐';
             break;
 
@@ -136,7 +178,10 @@ async function handler(m, { conn, bot, command, args }) {
                 result = '*❌ هذا الأمر للمشرفين فقط*';
                 break;
             }
-            global.db.groups[chatId].adminOnly = false;
+            if (!setGroupFlag(chatId, 'adminOnly', false)) {
+                result = SETTING_SAVE_FAILED;
+                break;
+            }
             result = '❐═━━━═╊⊰🩸⊱╉═━━━═❐\n ✅ *تم فك وضع الادمن*\n> البوت سيتفاعل مع جميع الأعضاء\n❐═━━━═╊⊰🩸⊱╉═━━━═❐';
             break;
 

@@ -1,6 +1,8 @@
 export default async function before(m, { conn }) {
-    if (!global.db?.users[m.sender]) return false;
-    
+    // `global.db.users[x]` بيرجّع بروكسي فاضي لأي معرّف (مش undefined) — الفحص
+    // الحقيقي هو وجود سجل فعلي، عشان الـ before ما يشتغلش على كل رسالة.
+    if (!global.db?.users?.exists?.(m.sender)) return false;
+
     const user = global.db.users[m.sender];
     let xp = user.xp || 0;
     let level = user.level || 0;

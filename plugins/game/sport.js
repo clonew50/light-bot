@@ -125,9 +125,16 @@ handler.before = async (m, { conn }) => {
     clearTimeout(cur.timer);
     global.gameKora[m.chat] = null; 
 
-    if (global.db?.data?.users?.[m.sender]) {
-      global.db.data.users[m.sender].xp = (global.db.data.users[m.sender].xp || 0) + 500;
-      global.db.data.users[m.sender].cookies = (global.db.data.users[m.sender].cookies || 0) + 10;
+    // المسار القانوني: global.db.users. كان db.data.users = undefined فالجايزة
+    // بتضيع صامتة (والـ data root بقى موجود دلوقتي للتوافق القديم بس).
+    try {
+      if (global.db?.users) {
+        const u = global.db.users[m.sender] || (global.db.users[m.sender] = {});
+        u.xp = (u.xp || 0) + 500;
+        u.cookies = (u.cookies || 0) + 10;
+      }
+    } catch (e) {
+      console.error('[game] فشل حفظ الجايزة:', e?.message || e);
     }
     
     await conn.sendMessage(m.chat, {

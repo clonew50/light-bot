@@ -72,8 +72,9 @@ function idOf(m) {
 
 function isSafeOff(m) {
     const db = global.db;
-    if (!db || !db.data) return false;
-    const box = m.isGroup ? db.data.groups : db.data.users;
+    if (!db || !db.users || !db.groups) return false;
+    // المسار القانوني: كان db.data.groups/users = undefined فكانت always false
+    const box = m.isGroup ? db.groups : db.users;
     const rec = box ? box[idOf(m)] : null;
     return !!(rec && rec.nosafe);
 }
