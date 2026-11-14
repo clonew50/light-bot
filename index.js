@@ -4,7 +4,7 @@ import UltraDB from "./system/UltraDB.js";
 import sub from './sub.js';
 import { readPanelConfig, startWebPanel, panelRuntime, pushEvent as panelPushEvent, pairingActive, setCleanRestart } from './system/webPanel.js';
 import { attachHealer } from './system/healer.js';
-import { pullOnce } from './system/autoUpdate.mjs';
+import { applyUpdate } from './system/autoUpdate.mjs';
 import { buildConfig, buildInfo, lastClientError } from './system/config.js';
 import { parseNumEnv } from './system/config.js';
 import { startClientBounded } from './system/bootGuard.js';
@@ -335,23 +335,34 @@ if (MEMORY_RESTART_MB > 0) {
 
 /* =========== Auto Update from GitHub (سحب فقط) ========== */
 // البوت بينزّل تحديثات الريبو لوحده عند التشغيل. عشان تقفله: AUTO_UPDATE=0
+/* إعادة تشغيل التحديث: الخروج النظيف الكامل (عملية جديدة) هو الوحيد اللي بيحمّل ES modules جديدة من القرص */
+/* — إعادة التشغيل الداخلية بتفضل بنفس الموديولات. fallback: لو الخطاف مش متركّب نروح للمسار المحروس. */
+function updateRestart(reason = 'تحديث تلقائي من الريبو') {
+  if (typeof global.restartBotClean === 'function') return global.restartBotClean(reason);
+  return restartBot('تحديث تلقائي من الريبو');
+}
+
 if (process.env.AUTO_UPDATE !== '0') {
   setTimeout(async () => {
     try {
       console.log('⬇️ [UPDATE] فحص تحديثات الريبو...');
-      const r = await pullOnce({ log: (s) => console.log('[UPDATE]', s) });
-      if (r.error) { console.log('⚠️ [UPDATE]', r.error); pushRuntimeEvent('update', 'فشل التحديث التلقائي: ' + r.error); return; }
+      // applyUpdate: سحب ← (تثبيت حزم لو package.json اتغيّر) ← نشر الملخص ← إعادة تشغيل نظيفة.
+      const r = await applyUpdate({
+        log: (s) => console.log('[UPDATE]', s),
+        event: (m) => pushRuntimeEvent('update', m),
+        restart: updateRestart
+      });
       const parts = [];
       if (r.changes) parts.push('سحب ' + r.changes + ' ملف');
       if (r.skipped) parts.push('تخطّي ' + r.skipped);
-      if (r.deleted && r.deleted.length) parts.push('حذف ' + r.deleted.length);
+      if (r.deleted && r.deleted.length) parts.push('إزالة ' + r.deleted.length);
+      if (r.skippedLocal && r.skippedLocal.length) parts.push('محلي - تم التجاوز ' + r.skippedLocal.length);
       if (r.needsInstall) parts.push('محتاج تثبيت حزم');
-      pushRuntimeEvent('update', parts.length ? parts.join(' — ') : 'مفيش تحديثات جديدة');
-      if (r.changes && r.needsRestart) {
-        console.log('🔁 [UPDATE] فيه كود اتغيّر — ريستارت لتطبيق التحديث');
-        pushRuntimeEvent('update', 'كود اتغيّر — إعادة تشغيل لتطبيق التحديث');
-        setTimeout(() => restartBot('تحديث تلقائي من الريبو'), 1000);
-      }
+      console.log(parts.length ? '• [UPDATE] ' + parts.join(' — ') : '• [UPDATE] ' + (r.summary || 'مفيش تغييرات'));
+      if (r.error) console.log('⚠️ [UPDATE]', r.error);
+      else if (r.installed && !r.installed.ok) console.log('⚠️ [UPDATE] فشل تثبيت الحزم — البوت شغال بالنسخة الحالية:', r.installed.error);
+      else if (r.restarted) console.log('🔁 [UPDATE] إعادة تشغيل كاملة نظيفة لتطبيق التحديث');
+      else if (r.upToDate) console.log('✅ [UPDATE] لا يوجد تحديث');
     } catch (e) {
       console.error('⚠️ [UPDATE] فشل التحديث التلقائي:', e.message);
       pushRuntimeEvent('update', 'فشل التحديث التلقائي: ' + e.message);
