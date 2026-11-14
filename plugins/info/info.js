@@ -66,7 +66,7 @@ const handler = async (m, { conn, bot }) => {
     mentions: [m.sender],
     newsletter: {
       name: botInfo.nameChannel || '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-      jid: botInfo.idChannel || '120363405545946827@newsletter'
+      jid: botInfo.idChannel || (process.env.BOT_NEWSLETTER_JID || '')
     }
   }, { quoted: m });
 };

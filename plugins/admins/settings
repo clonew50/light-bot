@@ -37,9 +37,11 @@ async function handler(m, { conn, command, args }) {
 ╰─┈─┈─┈─┇🩸📖┇─┈─┈─┈─╯
 `;
     if (!subCmd) {
-        await conn.sendButton(m.chat, {
-            bodyText:  menu,
-            footerText: "𝑳𝑰𝑮𝑯𝑻 𝒀𝑨𝑮𝑨𝑴𝑰 𝑺𝑪𝑼𝑹𝑬𝑻𝒀 𝑺𝒀𝑺𝑻𝑬𝑴 🩸📖",
+        await conn.sendButtonNormal(m.chat, {
+            media: { url: "https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/0b22c6a0-3522-4e3d-b1b8-120642cb25b2.jpg" },
+            mediaType: 'image',
+            caption: menu,
+            footer: "𝑳𝑰𝑮𝑯𝑻 𝒀𝑨𝑮𝑨𝑴𝑰 𝑺𝑪𝑼𝑹𝑬𝑻𝒀 𝑺𝒀𝑺𝑻𝑬𝑴 🩸📖",
             buttons: [
     { name: "quick_reply", params: { display_text: "🪐 ايقاف التنصيب (البوتات الفرعي)", id: ".تفعيل ايقاف_الفرعي" } },
     { name: "quick_reply", params: { display_text: "🚀 تشغيل التنصيب", id: ".تفعيل تشغيل_الفرعي" } },
@@ -54,17 +56,7 @@ async function handler(m, { conn, command, args }) {
     { name: "quick_reply", params: { display_text: "🌟 تشغيل خاص لـ المطورين فقط", id: ".تفعيل ايقاف_خاص" } },
     { name: "quick_reply", params: { display_text: "💔 ايقاف التشغيل خاص لـ المطورين فقط", id: ".تفعيل تشغيل_خاص" } }
 ],
-          mentions: [m.sender],
-  newsletter: {
-      name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-      jid: '120363405545946827@newsletter'
-    },
-  interactiveConfig: {
-    buttons_limits: 1, // لازم تبقي واحد
-    list_title: "Available Options",
-    button_title: "اختار الخيار الذي تريد تفعيله",
-    canonical_url: "https://example.com"
-  }
+          mentions: [m.sender]
         }, m);
         return;
     }

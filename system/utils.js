@@ -115,12 +115,21 @@ const uploadToQuax = async (buffer) => {
 /* =========== Termai.cc Upload =========== */
 
 async function uploadTmpfiles(buffer) {
+    // المفتاح بيتظبط من البيئة (TERMAI_KEY) — المفتاح القديم اللي كان هنا اتسرّب
+    // في مستودع عام فاتعتبر مُعرَّض ومش بيتستخدم خالص (شوف BOTS-NOTES.md).
+    const key = (process.env.TERMAI_KEY || '').trim();
+    if (!key) {
+        throw new Error("مفتاح رفع الملفات غير مضبوط — اضبط TERMAI_KEY في البيئة");
+    }
+
     const { ext, mime } = await fileTypeFromBuffer(buffer);
     const form = new FormData();
     form.append('file', buffer, { filename: `file.${ext}`, contentType: mime });
 
-    const res = await axios.post("https://c.termai.cc/api/upload?key=AIzaBj7z2z3xBjsk", form, {
+    // المفتاح بيتخان كمَعلمة استعلام منفصلة عشان نص المفتاح مش بيتخزن في مصدر الكود
+    const res = await axios.post("https://c.termai.cc/api/upload", form, {
         headers: form.getHeaders(),
+        params: { key },
         timeout: 30000
     });
 

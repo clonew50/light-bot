@@ -88,9 +88,10 @@ export default run;
 
 const Func = {
   pair: async (conn, code, num, m, reply_status) => {
-    await conn.sendButton(m.chat, {
-      imageUrl: "https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/df4a4068-978a-4f77-afa8-bb5dd22968e1.jpg",
-      bodyText: `🔐⤿ نـظـام الـبـوتـات الـفـرعـيـه 
+    await conn.sendButtonNormal(m.chat, {
+      media: { url: "https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/df4a4068-978a-4f77-afa8-bb5dd22968e1.jpg" },
+      mediaType: 'image',
+      caption: `🔐⤿ نـظـام الـبـوتـات الـفـرعـيـه 
 ❐═━━━═╊⊰🩸⊱╉═━━━═❐
 📱 — الرقم: ${num}
 🔑 — الكود: ${code}
@@ -100,21 +101,11 @@ const Func = {
 2️⃣ اذهب إلى الإعدادات ثم الأجهزة المرتبطة.
 3️⃣ اضغط على ربط جهاز ثم اختر (ربط برقم الهاتف بدلاً من ذلك).
 4️⃣ أدخل الكود الظاهر أعلاه في هاتفك.`,
-      footerText: "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻",
+      footer: "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻",
       buttons: [
         { name: "cta_copy", params: { display_text: "🩸┇انسخ الكود┇📖", copy_code: code } }
       ],
-      mentions: [m.sender],
-      newsletter: {
-        name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-        jid: '120363405545946827@newsletter'
-      },
-      interactiveConfig: {
-        buttons_limits: 10,
-        list_title: "𝑳𝑰𝑮𝑯𝑻 𝑺𝑼𝑩 𝑩𝑶𝑻",
-        button_title: "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻",
-        canonical_url: `https://code.com/${code}`
-      }
+      mentions: [m.sender]
     }, global.reply_status);
   },
 

@@ -1,7 +1,7 @@
 const run = async (m, { conn, bot, args, text }) => {
   const sub = global.subBots;
   if (!sub) return m.reply("❌ نـظـام الـبـوتـات الـفـرعـيـه غير متاح");
-  if (!text) return m.reply(`~ اعمل ايموجي مع رابط الرسالة مثال: \n- .رياكت https://whatsapp.com/channel/0029Vb7dTmNJENy9sp5yqi3T/1050 | 🌹`);
+  if (!text) return m.reply(`~ اعمل ايموجي مع رابط الرسالة مثال: \n- .رياكت <رابط رسالة القناة> | 🌹`);
 
   const [rawUrl, emoji] = text.split("|").map(s => s.trim());
   if (!emoji) return m.reply("❌~ حط الإيموجي بعد الرابط بعلامة |");

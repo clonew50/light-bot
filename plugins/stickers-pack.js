@@ -272,7 +272,7 @@ async function sendStickerPack(conn, m, bot, pack, query) {
     isForwarded: true,
     forwardingScore: 999,
     forwardedNewsletterMessageInfo: {
-      newsletterJid: info.idChannel || '120363405545946827@newsletter',
+      newsletterJid: info.idChannel || (process.env.BOT_NEWSLETTER_JID || ''),
       newsletterName: info.nameChannel || '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
       serverMessageId: '-1'
     }
@@ -281,7 +281,8 @@ async function sendStickerPack(conn, m, bot, pack, query) {
   await conn.relayMessage(
     m.chat,
     {
-      messageContextInfo: { messageSecret: crypto.randomBytes(32) },
+      // مفيش messageSecret وافد هنا — الإطار نفسه (meowsab) ما بيحطش messageSecret
+      // في أي رسالة بيبعتها، وباقات الستيكر بتتبعت بدونها.
       stickerPackMessage: {
         stickerPackId: 'Pack_' + crypto.randomBytes(8).toString('hex'),
         name: '🕷️ ' + query,

@@ -41,7 +41,7 @@ const context = (jid, img) => ({
     isForwarded: true,
     forwardingScore: 1,
     forwardedNewsletterMessageInfo: {
-        newsletterJid: '120363405545946827@newsletter',
+        newsletterJid: (process.env.BOT_NEWSLETTER_JID || ''),
         newsletterName: '𝑷𝑶𝑴𝑵𝑰 ┇🎭┇ 𝑨𝑰',
         serverMessageId: 0
     },

@@ -54,7 +54,7 @@ async function handler(m, { conn, bot }) {
             isForwarded: true,
             forwardingScore: 1,
             forwardedNewsletterMessageInfo: {
-                newsletterJid: cfg.idChannel || '120363405545946827@newsletter',
+                newsletterJid: cfg.idChannel || (process.env.BOT_NEWSLETTER_JID || ''),
                 newsletterName: cfg.nameChannel || cfg.nameBot || 'LIGHT BOT',
                 serverMessageId: 0
             }

@@ -24,17 +24,16 @@ const handler = async (m, { conn, text }) => {
             image = oembed.data?.thumbnail_url || image;
         } catch {}
 
-        await conn.sendButton(m.chat, {
-            imageUrl: image,
-            bodyText: `${title}`,
-            footerText: "𝒀𝑶𝑼𝑻𝑼𝑩𝑬 𝑩𝑶𝑾𝑵𝑳𝑶𝑨𝑫",
+        await conn.sendButtonNormal(m.chat, {
+            media: { url: image },
+            mediaType: 'image',
+            caption: `${title}`,
+            footer: "𝒀𝑶𝑼𝑻𝑼𝑩𝑬 𝑩𝑶𝑾𝑵𝑳𝑶𝑨𝑫",
             buttons: [
                 { name: "quick_reply", params: { display_text: "🎼 ╎ تـحـمـيـل صـوت", id: `.يوت_اغنيه ${videoUrl}` } },
                 { name: "quick_reply", params: { display_text: "🎬 ╎ تـحـمـيـل فـيـديـو", id: `.يوتيوب ${videoUrl}` } }
             ],
-            mentions: [m.sender],
-            newsletter: { name: "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳", jid: "120363405545946827@newsletter" },
-            interactiveConfig: { buttons_limits: 10, list_title: "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻", button_title: "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻", canonical_url: videoUrl }
+            mentions: [m.sender]
         }, m);
     } catch (e) {
         console.error(e?.message || e);

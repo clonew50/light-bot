@@ -99,9 +99,8 @@ export function buildConfig(env = process.env) {
       { name: "𝑮𝑶𝑲𝑶", lid: "12 972 3211@lid", jid: "218930171336@s.whatsapp.net" },
     // Owner 2
       { name: "GOKO", lid: "218945778513@lid", jid: "218930171336@s.whatsapp.net" },
-    // Owner 3
-      { name: "GOKO", jid: "120363411398644841@g.us", lid: "79006443503783@lid" },
-    // Owner 4 
+    // جروب المطور الصلب (owner بجروب @g.us) اتشال — ملاك البوت أرقام/معرّفات المشغّل بس.
+    // Owner 3 
      { name: "GOKO", jid: "201212446299@s.whatsapp.net", lid: "959666432747@lid" }
     ],
     settings: { noWelcome: true },
@@ -123,14 +122,16 @@ export function buildInfo(env = process.env) {
 
     nameBot: "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻", 
     nameChannel: "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳", 
-    idChannel: "120363405545946827@newsletter",
+    // قناة البوت (newsletter) — بيانات المشغّل، مش قناة المطور الأصلي.
+    // بتتظبط من البيئة: BOT_NEWSLETTER_JID (لو فاضية مفيش أي رسالة هتتحوّل لقناة).
+    idChannel: (env.BOT_NEWSLETTER_JID || '').trim(),
     urls: {
-      repo: "https://github.com/deveni0/Pomni-AI",
+      repo: "https://github.com/clonew50/light-bot",
       // المزود الافتراضي للذكاء الاصطناعي: Pollinations النصي المجاني (بدون مفتاح).
       // المزود القديم كان بيرد 402 على كل طلب فالأمر .اوبن كان مكسور.
       // المشغّل يقدر يغيّر العنوان من البيئة: AI_API_URL
       api: (env.AI_API_URL || '').trim().replace(/\/+$/, '') || "https://text.pollinations.ai",
-      channel: "https://whatsapp.com/channel/0029Vb7dTmNJENy9sp5yqi3T"
+      channel: "https://github.com/clonew50/light-bot"
     },
     copyright: { 
       pack: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻', 

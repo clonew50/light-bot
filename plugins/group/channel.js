@@ -35,14 +35,14 @@ const handler = async (m, { conn, text }) => {
 ` +
       `📝 الوصف:\n${desc}`;
 
-    const img = meta.preview?.direct_path
-      ? `https://mmg.whatsapp.net${meta.preview.direct_path}`
-      : 'https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/0b22c6a0-3522-4e3d-b1b8-120642cb25b2.jpg';
+    // مفيش أي رابط CDN وافد (mmg.whatsapp.net) في المصدر — الصورة دي بتاعة المشغّل.
+    const img = 'https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/0b22c6a0-3522-4e3d-b1b8-120642cb25b2.jpg';
 
-    await conn.sendButton(m.chat, {
-      imageUrl: img,
-      bodyText: msg,
-      footerText: '𝑳𝑰𝑮𝑯𝑻 ¦🩸¦ 𝑩𝑶𝑻',
+    await conn.sendButtonNormal(m.chat, {
+      media: { url: img },
+      mediaType: 'image',
+      caption: msg,
+      footer: '𝑳𝑰𝑮𝑯𝑻 ¦🩸¦ 𝑩𝑶𝑻',
       buttons: [{
         name: 'cta_copy',
         params: {
@@ -50,14 +50,7 @@ const handler = async (m, { conn, text }) => {
           copy_code: jid
         }
       }],
-      mentions: [m.sender],
-      newsletter: { name, jid },
-      interactiveConfig: {
-        buttons_limits: 1,
-        list_title: name,
-        button_title: 'Options',
-        canonical_url: 'https://x.com'
-      }
+      mentions: [m.sender]
     }, { quoted: m });
   } catch (error) {
     console.error(error);

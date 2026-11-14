@@ -71,7 +71,7 @@ const handler = async (m, { conn, command }) => {
             isForwarded: true,
             forwardingScore: 1,
             forwardedNewsletterMessageInfo: {
-                newsletterJid: '120363405545946827@newsletter',
+                newsletterJid: (process.env.BOT_NEWSLETTER_JID || ''),
                 newsletterName: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
                 serverMessageId: 0
             }

@@ -18,10 +18,8 @@ const DEFAULT_BADWORDS = [
 
 export default async function before(m, { conn, isAdmin, bot }) {
     // ─── مانع البوتات الفرعية للجروبات المحددة ───
-    const groups = [
-        "12468323841-1619736833@g.us",
-        "12468323841-1619736833@g.us"
-    ]; /* حط الجروبات الي عايز البوتات الفرعي متشتغلش فيها */
+    // الجروبات بتاعة المشغّل — مش جروبات المطور. حط جروباتك هنا (أو خلّيها فاضية).
+    const groups = [];
 
     if (bot && bot.isSubBot && groups.includes(m.chat)) {
         return true;
@@ -30,8 +28,9 @@ export default async function before(m, { conn, isAdmin, bot }) {
     if (!m.text || m.key?.fromMe || !m.isGroup) return false;
     
     // 1. تعريف المطورين
-    const developers = ['201128290021', '201551798379'];
-    const isDeveloper = developers.some(v => m.sender.includes(v)) || m.isOwner;
+    // المطورين = ملاك البوت من الإعدادات (config.owners) — مفيش أرقام صلبة هنا.
+    // الأرقام القديمة كانت بتاعة المطور الأصلي فاتشالت.
+    const isDeveloper = m.isOwner;
     
     // إذا كان المرسل مطور أو أدمن، يتجاهل البوت الفحص تماماً
     if (isDeveloper || isAdmin) return false;

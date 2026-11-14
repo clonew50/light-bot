@@ -9,7 +9,7 @@ const FOOTER = '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻';
 
 const NEWSLETTER = {
     name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-    jid: '120363405545946827@newsletter'
+    jid: (process.env.BOT_NEWSLETTER_JID || '')
 };
 
 const MAX_IMAGES = 10;

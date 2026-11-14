@@ -49,7 +49,7 @@ const sendMenu = async (conn, m, bot, resultText) => {
             mentions: [m.sender],
             newsletter: {
                 name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-                jid: '120363405545946827@newsletter'
+                jid: (process.env.BOT_NEWSLETTER_JID || '')
             }
         });
     } catch (e) {

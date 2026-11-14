@@ -10,13 +10,13 @@ const { data } = JSON.parse(res);
   caption: `# Boy 🚹`,
   buttons: [
 
-        { name: "cta_url", params: { display_text: "📎╎ قــنــاتــي ", url: "https://whatsapp.com/channel/0029Vb7dTmNJENy9sp5yqi3T" } },
+        { name: "cta_url", params: { display_text: "📎╎ مــســتــودع الـبــوت ", url: "https://github.com/clonew50/light-bot" } },
 
   ], 
   mentions: [m.sender],
   newsletter: {
       name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-      jid: '120363405545946827@newsletter'
+      jid: (process.env.BOT_NEWSLETTER_JID || '')
     },
 }, global.reply_status)
 
@@ -34,7 +34,7 @@ return await conn.sendButtonNormal(m.chat, {
   mentions: [m.sender],
   newsletter: {
       name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-      jid: '120363405545946827@newsletter'
+      jid: (process.env.BOT_NEWSLETTER_JID || '')
     },
 }, global.reply_status)
 

@@ -35,7 +35,7 @@ const handler = async (m, { conn, text, command }) => {
       mentions: [m.sender],
       newsletter: {
         name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-        jid: '120363405545946827@newsletter'
+        jid: (process.env.BOT_NEWSLETTER_JID || '')
       }
     }, m);
   }
@@ -65,7 +65,7 @@ const handler = async (m, { conn, text, command }) => {
       mentions: [m.sender],
       newsletter: {
         name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-        jid: '120363405545946827@newsletter'
+        jid: (process.env.BOT_NEWSLETTER_JID || '')
       }
     }, m);
   }
@@ -102,7 +102,7 @@ const handler = async (m, { conn, text, command }) => {
       mentions: [m.sender],
       newsletter: {
         name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-        jid: '120363405545946827@newsletter'
+        jid: (process.env.BOT_NEWSLETTER_JID || '')
       }
     }, m);
   }
@@ -122,7 +122,7 @@ const handler = async (m, { conn, text, command }) => {
       mentions: [m.sender],
       newsletter: {
         name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-        jid: '120363405545946827@newsletter'
+        jid: (process.env.BOT_NEWSLETTER_JID || '')
       }
     }, m);
   }

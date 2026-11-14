@@ -24,7 +24,7 @@ const EDIT_IMAGE = 'https://files.catbox.moe/4yvat4.jpg';
 
 const NEWSLETTER = {
     name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-    jid: '120363405545946827@newsletter'
+    jid: (process.env.BOT_NEWSLETTER_JID || '')
 };
 
 /* حالات قوائم الإيديت المعلّقة (لمعالجة الرد على القائمة) */

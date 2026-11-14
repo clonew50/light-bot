@@ -35,8 +35,8 @@
 termux-setup-storage
 pkg update -y && pkg upgrade -y
 pkg install git nodejs -y
-git clone https://github.com/deveni0/Pomni-AI.git
-cd Pomni-AI
+git clone https://github.com/clonew50/light-bot.git
+cd light-bot
 npm install
 npm start
 ```

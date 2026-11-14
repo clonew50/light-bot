@@ -124,9 +124,9 @@ test('config: the other Client keys are unchanged', () => {
   assert.equal(config.phoneNumber, '201505362172');
   assert.deepEqual(config.prefix, ['.', '/', '!']);
   assert.equal(config.fromMe, false);
-  assert.equal(config.owners.length, 4);
+  assert.equal(config.owners.length, 3);
   assert.deepEqual(config.owners[0].jid, '218930171336@s.whatsapp.net');
-  assert.deepEqual(config.owners[3].jid, '201212446299@s.whatsapp.net');
+  assert.deepEqual(config.owners[2].jid, '201212446299@s.whatsapp.net');
   assert.deepEqual(config.settings, { noWelcome: true });
   assert.equal(config.commandsPath, './plugins');
   // sessionPath / printQR are not part of the Client literal — they stay framework-owned
@@ -136,12 +136,15 @@ test('config: the other Client keys are unchanged', () => {
   assert.equal(buildConfig({ BOT_PHONE: '201111111111' }).phoneNumber, '201111111111');
 });
 
-test('config: buildInfo() returns the unchanged bot info', () => {
+test('config: buildInfo() returns the bot info without foreign identifiers', () => {
   const info = buildInfo();
-  assert.equal(info.idChannel, '120363405545946827@newsletter');
-  assert.equal(info.urls.repo, 'https://github.com/deveni0/Pomni-AI');
+  // the dev newsletter / Pomni-AI repo / dev channel were removed in todo 12 —
+  // idChannel is env-driven (BOT_NEWSLETTER_JID), repo/channel point at the operator's repo
+  assert.equal(info.idChannel, '');
+  assert.equal(buildInfo({ BOT_NEWSLETTER_JID: '123@newsletter' }).idChannel, '123@newsletter');
+  assert.equal(info.urls.repo, 'https://github.com/clonew50/light-bot');
   assert.equal(info.urls.api, 'https://text.pollinations.ai');
-  assert.equal(info.urls.channel, 'https://whatsapp.com/channel/0029Vb7dTmNJENy9sp5yqi3T');
+  assert.equal(info.urls.channel, 'https://github.com/clonew50/light-bot');
   assert.equal(info.copyright.author, info.nameBot);
   assert.equal(info.images.length, 3);
 });

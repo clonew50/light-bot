@@ -36,10 +36,11 @@ const handler = async (m, { conn, text }) => {
 ` +
       `🔗 رابط الدعوة:\n${invite}`;
 
-    await conn.sendButton(m.chat, {
-      imageUrl: 'https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/0b22c6a0-3522-4e3d-b1b8-120642cb25b2.jpg',
-      bodyText: msg,
-      footerText: '𝑳𝑰𝑮𝑯𝑻 ¦🩸¦ 𝑩𝑶𝑻',
+    await conn.sendButtonNormal(m.chat, {
+      media: { url: 'https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/0b22c6a0-3522-4e3d-b1b8-120642cb25b2.jpg' },
+      mediaType: 'image',
+      caption: msg,
+      footer: '𝑳𝑰𝑮𝑯𝑻 ¦🩸¦ 𝑩𝑶𝑻',
       buttons: [
         {
           name: 'cta_copy',
@@ -50,13 +51,7 @@ const handler = async (m, { conn, text }) => {
           params: { display_text: '🔗 انسخ رابط المجموعة', copy_code: invite }
         }
       ],
-      mentions: [m.sender],
-      interactiveConfig: {
-        buttons_limits: 2,
-        list_title: name,
-        button_title: 'Group Info',
-        canonical_url: 'https://x.com'
-      }
+      mentions: [m.sender]
     }, { quoted: m });
   } catch (error) {
     console.error(error);
