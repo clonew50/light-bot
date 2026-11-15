@@ -27,6 +27,7 @@ const CAT_META = {
     voices:    ['الأصوات', '🎙️'],
     islamic:   ['الإسلاميات', '🕌'],
     guild:     ['النقابات', '🏰'],
+    native:    ['الأوامر التفاعلية', '🧩'],
     other:     ['أخرى', '🔮']
 };
 const CAT_ORDER = Object.keys(CAT_META);
@@ -373,7 +374,8 @@ const CATEGORIES = [
     [15, 'الـالــقــاب', 'nicknames', '🏷️'],
     [16, 'الـلـوجـوهــات', 'logos', '🎨'],
     [17, 'تـغـيـر الاصـوات', 'voices', '🎙️'],
-    [18, 'أخــرى', 'other', '🔮']
+    [18, 'أخــرى', 'other', '🔮'],
+    [19, 'الأوامـر الـتـفـاعـلـيـة', 'native', '🧩']
 ];
 
 const getCat = n => CATEGORIES.find(c => c[0] === n);
@@ -423,6 +425,23 @@ const menuV1 = async (m, { conn, bot }) => {
         if (!cats[cat]) cats[cat] = [];
         cats[cat].push(c);
     });
+
+    // ── native surface (todo 22): also send the interactive quick-reply menu.
+    // Single-sourced through plugins/native/quickmenu.js; zero-arg only, so it
+    // never hijacks a numbered category reply or the `.قائمة` command.
+    try {
+        const img = getImg(bot);
+        const native = await import('./native/quickmenu.js');
+        const { sent } = await native.sendNativeMenu(conn, m.chat, {
+            bot,
+            info: (bot && bot.config && bot.config.info) || {},
+            images: img ? [img] : [],
+            quoted: m
+        });
+        if (sent) return;
+    } catch (error) {
+        console.error('[menu/native]', error && error.message);
+    }
 
     const txt = `
 📖 *حـان وقـت تـطـهـيـر الـعـالـم..* ⚔️
@@ -483,5 +502,7 @@ ${cmdsList}
 };
 
 menuV1.command = ['اوامر1'];
+menuV1.usage = ['اوامر1'];
+menuV1.category = 'info';
 
 export default [menuV1, menuV2];

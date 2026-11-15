@@ -136,6 +136,7 @@ metaText.category = 'ai';
 metaText.cooldown = 4;
 
 metaThinking.command = ['ميتا_يفكر', 'ميتايفكر'];
+metaThinking.usage = ['.ميتا_يفكر <نص>'];
 metaThinking.category = 'ai';
 metaThinking.cooldown = 4;
 

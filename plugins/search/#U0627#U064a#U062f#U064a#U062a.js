@@ -1172,6 +1172,10 @@ handler.help = [
     'ايديت <نص>'
 ];
 
+handler.usage = [
+    'ايديت <نص>'
+];
+
 handler.category = 'search';
 
 export default handler;

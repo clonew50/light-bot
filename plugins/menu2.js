@@ -1,3 +1,5 @@
+import { sendNativeMenu } from './native/quickmenu.js';
+
 const CATEGORIES = [
     [1, 'التـحـمـيـل', 'downloads', '📂'],
     [2, 'الـمـجـمـوعـات', 'group', '🛡️'],
@@ -16,7 +18,8 @@ const CATEGORIES = [
     [15, 'الـنقابـــــات', 'nicknames', '🏷️'],
     [16, 'الـلـوجـوهــات', 'logos', '🎨'],
     [17, 'تـغـيـر الاصـوات', 'voices', '🎙️'],
-    [18, 'الاسلاميات', 'islamic', '🕌']
+    [18, 'الاسلاميات', 'islamic', '🕌'],
+    [19, 'الأوامـر الـتـفـاعـلـيـة', 'native', '🧩']
 ];
 
 const getCat = n => CATEGORIES.find(c => c[0] === n);
@@ -59,6 +62,19 @@ async function handler(m, { conn, bot, command, args }) {
         }))
     }];
 
+    // ── .menu native (todo 22): native interactive surface, single-sourced ──
+    if (String(args[0] || '').trim().toLowerCase() === 'native') {
+        const info = (bot && bot.config && bot.config.info) || {};
+        const img = getImg(bot);
+        await sendNativeMenu(conn, m.chat, {
+            bot,
+            info,
+            images: img ? [img] : [],
+            quoted: m
+        });
+        return;
+    }
+
     // 1️⃣ القائمة الرئيسية بالأزرار عند كتابة الأمر بدون أرقام
     if (!selected && !args[0]) {
         const menuText = `*لايت في الخدمة 📜*\n\n❐═━━━═╊⊰🩸⊱╉═━━━═❐\n┇ 👤  الـمـسـتـخـدم: @${m.sender.split("@")[0]}\n┇ ⚙️  الـتـشـغـيـل: ${uptimeFormatted}\n┇ 📜  الـوقـت: ${date} ⁝ ${time}\n❐═━━━═╊⊰🩸⊱╉═━━━═❐
@@ -90,6 +106,14 @@ async function handler(m, { conn, bot, command, args }) {
                     params: {
                         display_text: "⚡ تنصيب البوت",
                         id: ".تنصيب"
+                    }
+                },
+                // Native quick-reply surface (todo 22): one tap -> .قائمة
+                {
+                    name: "quick_reply",
+                    params: {
+                        display_text: "🧩 الأوامر التفاعلية",
+                        id: ".قائمة"
                     }
                 }
             ],
@@ -153,4 +177,6 @@ async function handler(m, { conn, bot, command, args }) {
 }
 
 handler.command = ['اوامر','menu'];
+handler.usage = ['menu', 'menu <رقم القسم>', 'menu native'];
+handler.category = 'info';
 export default handler;

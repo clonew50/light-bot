@@ -1,11 +1,15 @@
 // ─── plugins/native/quickmenu.js ───
-// Native quick-reply menu (todo 16).
+// Native quick-reply menu (todo 16, reused by todo 22).
 //   .قائمة / .القائمة  -> categories as quick_reply buttons
 //   .قسم <category>    -> that category's commands as quick_reply buttons
 //
 // Uses conn.sendButtonNormal (never conn.sendButton, which injects a third
 // party's promo). Every button id is a REAL command string with the bot prefix,
 // so tapping it runs the command.
+//
+// `sendNativeMenu` (named export) is the shared renderer the two text menu
+// files (`plugins/menu.js`, `plugins/menu2.js`) call so the native surface is
+// single-sourced. It is a named export only, so the loader still ignores it.
 
 import {
   collectCategories,
@@ -40,6 +44,25 @@ async function sendChunks(conn, chat, images, caption, footer, buttons, quoted) 
     }, quoted);
   }
   return chunks.length;
+}
+
+/**
+ * Reusable native-menu renderer (todo 22).
+ * Builds the category quick_reply surface for the live registry and sends it
+ * through conn.sendButtonNormal (never the legacy conn.sendButton).
+ * Both text menu renderers call this so the native surface stays single-sourced.
+ * Returns { sent, categories }.
+ */
+export async function sendNativeMenu(conn, chat, { bot, images = [], info = {}, quoted } = {}) {
+  if (!conn?.sendButtonNormal) return { sent: 0, categories: 0 };
+  const cats = await collectCategories(bot);
+  if (!cats.length) return { sent: 0, categories: 0 };
+
+  const prefix = resolvePrefix({}, info);
+  const footer = nonEmpty(info?.nameChannel || info?.nameBot, '');
+  const buttons = cats.map((c) => quickReply(`قسم ${c.key}`, `${c.emoji} ${c.label}`, prefix));
+  const sent = await sendChunks(conn, chat, images, captionFor(info, cats), footer, buttons, quoted);
+  return { sent, categories: cats.length };
 }
 
 const handler = async (m, ctx = {}) => {

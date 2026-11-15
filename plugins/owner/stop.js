@@ -15,5 +15,6 @@ const test = async (m, { conn, bot }) => {
 
 test.category = "owner";
 test.command = ["ايقاف", "stop"];
+test.usage = ['ايقاف', 'stop'];
 test.owner = true;
 export default test;

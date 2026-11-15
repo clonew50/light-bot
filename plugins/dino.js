@@ -604,8 +604,8 @@ requestAnimationFrame(loop);
 
 }
 
-handler.help = ['dino', 'ديناصور']
-handler.tags = ['games']
+handler.usage = ['dino', 'ديناصور']
+handler.category = 'games'
 handler.command = /^(dino|dinogame|dinorunner|ديناصور)$/i
 
 export default handler
