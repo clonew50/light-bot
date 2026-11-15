@@ -3,8 +3,10 @@
   🧮 معادلات لاتيكس — بروتوكول LaTeX الخاص برسايل ميتا AI
   مستوحى من بروتوكولات wb-protocols-pix (GenAILatexItem) — بناء نظيف:
   بنرسم المعادلة عبر latex.codecogs.com (مجاني بدون مفتاح) وبنقيس أبعاد
-  الصورة من هيدر PNG نفسه، وبنعرضها inline جوه كارت ميتا AI.
-  لو البروتوكول فشل → بيبعت الصورة كصورة عادية (بديل مضمون).
+  الصورة من هيدر PNG نفسه، وبنعرضها:
+    1) كصورة معادلة مُصيّرة (البديل المضمون دايمًا)،
+    2) وكـ LaTeX-native section جوه كارت ميتا AI لما السوكيت بيدعم
+       relayMessage (GenAILatexItem)، وإلا نسقط لكارت نص عبر sendAiMessage.
 
   الأمر:
     .لاتكس e^{i\\pi} = -1
@@ -30,21 +32,91 @@ function codecogsUrl(formula) {
     encodeURIComponent(formula);
 }
 
-async function relayRaw(conn, chat, content) {
-  const relay =
+function relayOf(conn) {
+  return (
     conn?.sock?.relayMessage?.bind(conn.sock) ||
-    conn?.relayMessage?.bind(conn);
+    conn?.relayMessage?.bind(conn) ||
+    null
+  );
+}
+
+async function relayRaw(conn, chat, content) {
+  const relay = relayOf(conn);
   if (typeof relay !== 'function') throw new Error('relayMessage مش متاح');
   await relay(chat, content, {});
 }
 
-const handler = async (m, { conn, args }) => {
+/* كارت ميتا AI اللي فيه المعادلة نفسها كـ LaTeX inline entity */
+function buildLatexCard(formula, url, size) {
+  const key = 'LX' + Math.floor(Math.random() * 100000);
+  const messageText = `{{${key}}}${formula}{{/${key}}}`;
+  const unified = {
+    response_id: crypto.randomUUID(),
+    sections: [
+      {
+        view_model: {
+          __typename: 'GenAISingleLayoutViewModel',
+          primitive: {
+            text: messageText,
+            inline_entities: [
+              {
+                key,
+                metadata: {
+                  latex_expression: formula,
+                  latex_image: { url, width: size.width, height: size.height },
+                  font_height: FONT_HEIGHT,
+                  padding: 15,
+                  __typename: 'GenAILatexItem'
+                }
+              }
+            ],
+            __typename: 'GenAIMarkdownTextUXPrimitive'
+          }
+        }
+      }
+    ]
+  };
+  return {
+    messageContextInfo: {
+      botMetadata: {
+        pluginMetadata: {},
+        richResponseSourcesMetadata: {}
+      }
+    },
+    botForwardedMessage: {
+      message: {
+        richResponseMessage: {
+          messageType: 1,
+          submessages: [{ messageType: 2, messageText }],
+          unifiedResponse: {
+            data: Buffer.from(JSON.stringify(unified)).toString('base64')
+          },
+          contextInfo: {
+            forwardingScore: 1,
+            isForwarded: true,
+            forwardedAiBotMessageInfo: { botJid: '0@bot' },
+            forwardOrigin: 4
+          }
+        }
+      }
+    }
+  };
+}
+
+const say = async (m, text) => {
+  try {
+    if (typeof m?.reply === 'function') return await m.reply(text);
+    return undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const handler = async (m, { conn, args, fetchImpl }) => {
   try {
     const formula = (args || []).join(' ').trim();
     if (!formula) {
-      await conn.sendMessage(m.chat, {
-        text: '✍️ اكتب المعادلة بعد الأمر:\n.لاتكس e^{i\\pi} = -1\n.لاتكس \\frac{a}{b}'
-      }, { quoted: m });
+      await say(m, '✍️ اكتب المعادلة بعد الأمر:\n.لاتكس e^{i\\pi} = -1\n.لاتكس \\frac{a}{b}');
       return;
     }
     const last = cooldown.get(m.chat) || 0;
@@ -52,82 +124,38 @@ const handler = async (m, { conn, args }) => {
     cooldown.set(m.chat, Date.now());
 
     const url = codecogsUrl(formula);
+    const doFetch = typeof fetchImpl === 'function' ? fetchImpl : fetch;
     let size = null;
     try {
-      const res = await fetch(url, {
+      const res = await doFetch(url, {
         signal: AbortSignal.timeout(15000),
         headers: { 'User-Agent': 'Mozilla/5.0' }
       });
-      if (res.ok) {
-        const buf = Buffer.from(await res.arrayBuffer());
-        size = pngSize(buf);
-      }
-    } catch { /* هنستخدم البديل */ }
-
-    if (!size) {
-      // ما قدرناش نتأكد من الصورة → البديل: إرسالها كصورة عادية
-      await conn.sendMessage(m.chat, { image: { url }, caption: `🧮 ${formula}` }, { quoted: m });
+      if (!res?.ok) throw new Error('HTTP ' + (res?.status || '?'));
+      const buf = Buffer.from(await res.arrayBuffer());
+      size = pngSize(buf);
+      if (!size) throw new Error('صيغة غير صالحة');
+    } catch (e) {
+      console.error('❌ [لاتكس] تعذّر رسم المعادلة:', e?.message || e);
+      await say(m, '❌ فشل رسم المعادلة. تأكد إن الصيغة صحيحة وجرب مثال زي e^{i\\pi} = -1');
       return;
     }
 
-    // بروتوكول ميتا AI للمعادلات: النص فيه placeholder والصورة inline جواه
-    const key = 'LX' + Math.floor(Math.random() * 100000);
-    const messageText = `{{${key}}}${formula}{{/${key}}}`;
-    const unified = {
-      response_id: crypto.randomUUID(),
-      sections: [
-        {
-          view_model: {
-            __typename: 'GenAISingleLayoutViewModel',
-            primitive: {
-              text: messageText,
-              inline_entities: [
-                {
-                  key,
-                  metadata: {
-                    latex_expression: formula,
-                    latex_image: { url, width: size.width, height: size.height },
-                    font_height: FONT_HEIGHT,
-                    padding: 15,
-                    __typename: 'GenAILatexItem'
-                  }
-                }
-              ],
-              __typename: 'GenAIMarkdownTextUXPrimitive'
-            }
-          }
-        }
-      ]
-    };
-    const content = {
-      messageContextInfo: {
-        botMetadata: {
-          pluginMetadata: {},
-          richResponseSourcesMetadata: {}
-        }
-      },
-      botForwardedMessage: {
-        message: {
-          richResponseMessage: {
-            messageType: 1,
-            submessages: [{ messageType: 2, messageText }],
-            unifiedResponse: {
-              data: Buffer.from(JSON.stringify(unified)).toString('base64')
-            },
-            contextInfo: {
-              forwardingScore: 1,
-              isForwarded: true,
-              forwardedAiBotMessageInfo: { botJid: '0@bot' },
-              forwardOrigin: 4
-            }
-          }
-        }
-      }
-    };
-    await relayRaw(conn, m.chat, content);
+    // 1) الصورة المُصيّرة — مضمونة على كل العملاء.
+    await conn.sendMessage(m.chat, { image: { url }, caption: `🧮 ${formula}` }, { quoted: m });
+
+    // 2) قسم LaTeX-native (GenAILatexItem) لما السوكيت بيدعم relayMessage.
+    if (typeof relayOf(conn) === 'function') {
+      await relayRaw(conn, m.chat, buildLatexCard(formula, url, size));
+      return;
+    }
+    // 3) كارت نصي عبر sendAiMessage كبديل أخير (مافيش relay).
+    if (typeof conn?.sendAiMessage === 'function') {
+      await conn.sendAiMessage(m.chat, [{ type: 2, text: formula }]);
+    }
   } catch (e) {
     console.error('❌ [لاتكس]', e?.message || e);
-    await conn.sendMessage(m.chat, { text: '❌ حصلت مشكلة في رسم المعادلة. تأكد إن الصيغة صحيحة.' }, { quoted: m });
+    await say(m, '❌ حصلت مشكلة في رسم المعادلة. تأكد إن الصيغة صحيحة.');
   }
 };
 

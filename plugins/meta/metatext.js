@@ -15,10 +15,16 @@ const cooldown = new Map();
 const COOLDOWN_MS = 4 * 1000;
 
 /* إرسال بروتوكول خام عبر السوكيت (conn = عميل meowsab) */
-async function relayRaw(conn, chat, content, extra = {}) {
-  const relay =
+function relayOf(conn) {
+  return (
     conn?.sock?.relayMessage?.bind(conn.sock) ||
-    conn?.relayMessage?.bind(conn);
+    conn?.relayMessage?.bind(conn) ||
+    null
+  );
+}
+
+async function relayRaw(conn, chat, content, extra = {}) {
+  const relay = relayOf(conn);
   if (typeof relay !== 'function') throw new Error('relayMessage مش متاح');
   await relay(chat, content, extra);
 }
@@ -68,13 +74,26 @@ function buildRich(text, thinking = false) {
   };
 }
 
-/* إرسال عبر دالة الإطار الجاهزة لو موجودة، وإلا البروتوكول الخام */
+/* إرسال عبر دالة الإطار الجاهزة (sendAiMessage) أو البروتوكول الخام */
 async function sendMeta(conn, chat, text, thinking) {
-  if (typeof conn?.sendAiMessage === 'function' && !thinking) {
+  // حالة "بيفكر…" مش مدعومة في sendAiMessage (type 2/4/5 بس)، فبنستخدم
+  // البروتوكول الخام اللي بيعرف is_in_progress، ونسقط على كارت نص عادي.
+  if (thinking) {
+    if (typeof relayOf(conn) === 'function') {
+      await relayRaw(conn, chat, buildRich(text, true));
+      return;
+    }
+    if (typeof conn?.sendAiMessage === 'function') {
+      await conn.sendAiMessage(chat, [{ type: 2, text }]);
+      return;
+    }
+    throw new Error('relayMessage مش متاح');
+  }
+  if (typeof conn?.sendAiMessage === 'function') {
     await conn.sendAiMessage(chat, [{ type: 2, text }]);
     return;
   }
-  await relayRaw(conn, chat, buildRich(text, thinking));
+  await relayRaw(conn, chat, buildRich(text, false));
 }
 
 const metaText = async (m, { conn, args }) => {

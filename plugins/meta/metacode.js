@@ -29,6 +29,7 @@ const handler = async (m, { conn, text }) => {
     cooldown.set(m.chat, Date.now());
 
     if (typeof conn?.sendAiMessage === 'function') {
+      // الشكل اللي الإطار بيتوقعه بالظبط: {type:5, codeMetadata:{language, code}}
       await conn.sendAiMessage(m.chat, [{ type: 5, codeMetadata: { language: lang, code } }]);
       return;
     }
