@@ -6,8 +6,19 @@ async function handler(m, { conn }) {
         delete global.gameActive[m.chat];
     }
     
-    const res = await fetch("https://gist.githubusercontent.com/Kyutaka101/799d5646ceed992bf862026847473852/raw/dcbecff259b1d94615d7c48079ed1396ed42ef67/gistfile1.txt");
-    const data = await res.json();
+    let data;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      try {
+        const res = await fetch("https://gist.githubusercontent.com/Kyutaka101/799d5646ceed992bf862026847473852/raw/dcbecff259b1d94615d7c48079ed1396ed42ef67/gistfile1.txt", { signal: controller.signal });
+        data = await res.json();
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      return m.reply('❌ تعذر تحميل أسئلة اللعبة، جرب تاني بعد شوية');
+    }
     const country = data[Math.floor(Math.random() * data.length)];
     
     const msg = await conn.sendMessage(m.chat, {

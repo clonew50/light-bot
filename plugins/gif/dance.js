@@ -1,7 +1,7 @@
 import { Scrapy } from "meowsab";
 import { gifToMp4 } from "../../system/utils.js";
 
-let handler = async (m, { conn }) => {
+let handler = async (m, { conn, command }) => {
     try {
         let target = m.mentionedJid?.[0] || m.quoted?.sender;
         if (!target) return m.reply(`*منشن شخص مثل /${command} @${m.sender.split('@')[0]}*`);

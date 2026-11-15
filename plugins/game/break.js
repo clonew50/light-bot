@@ -53,7 +53,19 @@ async function handler(m, { conn }) {
         delete global.break.games[m.chat];
     }
 
-    const data = await (await fetch("https://raw.githubusercontent.com/Xov445447533/Xov11111/master/src/JSON/venom-تفكيك.json")).json();
+    let data;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      try {
+        const res = await fetch("https://raw.githubusercontent.com/Xov445447533/Xov11111/master/src/JSON/venom-تفكيك.json", { signal: controller.signal });
+        data = await res.json();
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      return m.reply('❌ تعذر تحميل أسئلة اللعبة، جرب تاني بعد شوية');
+    }
     const q = data[Math.floor(Math.random() * data.length)];
     
     m.reply(`

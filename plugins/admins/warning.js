@@ -3,7 +3,7 @@ import { getWarnings, addWarning, resetWarnings, WARNING_LIMIT } from '../../sys
 const handler = async (m, { conn }) => {
   if (!m.isGroup) return m.reply('❌ الأمر ده داخل الجروبات بس');
   let targetLid = m.mentionedJid?.[0] || m.quoted?.sender;
-  let targetJid = m.lid2jid(targetLid);
+  let targetJid = await m.lid2jid(targetLid);
 
   if (!targetJid || !targetLid) return m.reply('⚠️ *يرجى منشن الشخص أو الرد على رسالته* ⚠️');
 
