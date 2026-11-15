@@ -50,6 +50,38 @@ npm ci          # installs exactly the pinned tree (meowsab/sharp at the SHAs ab
 > "extraneous". That is an artifact of the symlink, not of the pin; a real host
 > after `npm ci` is clean.
 
+## Experimental protocol surfaces (EXPERIMENTAL_PROTOCOLS)
+
+The framework's own interactive-button enum (`meowsab/dist/index.cjs`, `Ue`)
+accepts exactly six names:
+
+```
+quick_reply · cta_url · cta_call · cta_copy · single_select · call_permission_request
+```
+
+The upstream fork also ships a Pix-copy button named `cta_pix_code_copy` and a
+payment note labelled `payment_info`. **Neither is a member of that enum**, so
+neither can be shipped as-is; implementing them would require a hand-built relay
+that bypasses the framework's schema, which is explicitly rejected here.
+
+`plugins/native/experimental.js` therefore ships the one experimental surface the
+schema does accept — a `call_permission_request` button — and it is **OFF by
+default**. It only emits a native message when the operator sets:
+
+```bash
+export EXPERIMENTAL_PROTOCOLS=1   # restart after setting
+```
+
+With the flag unset (or `0`) the plugin replies in Arabic and sends nothing. The
+two rejected fork surfaces are deliberately omitted, not forgotten:
+
+- `cta_pix_code_copy` — invalid enum name; needs a hand-built relay.
+- `payment_info` — invalid label, and its note carries a foreign
+  `transactionData` blob plus a third-party bank account, so it is never
+  reproduced.
+
+No experimental surface embeds any foreign key, account, or third-party media.
+
 ## Rotating the pin (procedure)
 
 1. Resolve the new `main` commit:

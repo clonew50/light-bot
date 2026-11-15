@@ -43,3 +43,26 @@
   `config.info.urls.repo` / `urls.channel` وفي README ومنافذ الأزرار.
 - أرقام هواتف الملاك القديمة في `system/config.js` (owners) ما زالت بيانات
   القائمة الأصلية — **على المشغّل استبدالها بأرقامه الخاصة** (عنصر مفتوح).
+
+### 3. البروتوكولات التجريبية (EXPERIMENTAL_PROTOCOLS) — todo 21
+
+الإطار لا يقبل إلا ستة أسماء أزرار:
+`quick_reply · cta_url · cta_call · cta_copy · single_select · call_permission_request`.
+
+**مستبعدان عمدًا (لا يمكن شحنُهما بهذا الإطار):**
+
+- زر Pix-النسخ `cta_pix_code_copy` — الاسم ليس في تعداد الإطار أصلًا، وتنفيذه
+  يحتاج مسارًا يدويًا (relay) يتجاوز المخطط — مرفوض.
+- رسالة الدفع `payment_info` — تسمية غير صالحة، وتحمل `transactionData` وافدًا
+  وحساب بنك تابع لطرف ثالث — لا يُعاد إنتاجها إطلاقًا.
+
+ما يُشحن فعلًا هو السطح التجريبي الوحيد الذي يقبله المخطط: زر
+`call_permission_request` داخل `plugins/native/experimental.js`، وهو **مطفأ
+افتراضيًا**. لا يظهر إلا عند ضبط:
+
+```bash
+export EXPERIMENTAL_PROTOCOLS=1   # أعد التشغيل بعد الضبط
+```
+
+بدونFlag يردّ البلجن بالعربية ولا يرسل أي رسالة تفاعلية. تفاصيل الأسماء
+والتعداد في `DEPENDENCIES.md`.
