@@ -1,48 +1,90 @@
+import axios from 'axios';
+import { execFile } from 'node:child_process';
+import { accessSync, constants } from 'node:fs';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
+
+// ── bounds ────────────────────────────────────────────────────────────────────
+const REQUEST_TIMEOUT = 25000;
+const MEDIA_SEND_CAP = 16 * 1024 * 1024;
+const DOCUMENT_SEND_CAP = 1900 * 1024 * 1024;
+const YTDLP_TIMEOUT = 120000;
+
+// ── innertube clients ─────────────────────────────────────────────────────────
+// Public keys that ship inside youtube.com pages — no API key needed. Verified
+// 2026-11-15: ANDROID 20.10.38 returns full adaptive formats with direct URLs,
+// IOS 20.10.4 is a reliable second client. WEB/TV clients trip bot checks.
+const INNERTUBE_CLIENTS = [
+  {
+    name: 'ANDROID',
+    version: '20.10.38',
+    key: 'AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w',
+    userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip'
+  },
+  {
+    name: 'IOS',
+    version: '20.10.4',
+    key: 'AIzaSyB-63vPrdThhKuerbB2N_l7KwwmDjCyT_4',
+    userAgent: 'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X;)'
+  }
+];
+
+const PLAYER_URL = 'https://www.youtube.com/youtubei/v1/player';
+const YT_DLP_FALLBACK_FORMATS = { audio: 'bestaudio', video: 'best' };
+
+const PIPED_INSTANCES = [
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi.adminforge.de',
+  'https://api.piped.private.coffee',
+  'https://pipedapi.reallyaweso.me'
+];
+
+const INVIDIOUS_INSTANCES = [
+  'https://inv.nadeko.net',
+  'https://invidious.nerdvpn.de',
+  'https://yewtu.be',
+  'https://vid.puffyan.us'
+];
+
 const LOADER_API = 'https://loader.to/ajax/download.php';
-const HEADERS = {
+const LOADER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36',
   Referer: 'https://loader.to/'
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const fetchJson = async (url, options = {}, timeout = 20000) => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
+// ── helpers ───────────────────────────────────────────────────────────────────
 
+const withTimeout = async (promise, message) => {
+  let handle;
+  const timer = new Promise((_, reject) => {
+    handle = setTimeout(() => reject(new Error(message)), REQUEST_TIMEOUT);
+  });
   try {
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        ...HEADERS,
-        ...(options.headers || {})
-      },
-      signal: controller.signal
-    });
-    const raw = await response.text();
-    let data;
+    return await Promise.race([promise, timer]);
+  } finally {
+    clearTimeout(handle);
+  }
+};
 
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      throw new Error(`استجابة غير صالحة من سيرفر التحميل (${response.status})`);
-    }
-
-    if (!response.ok) {
-      throw new Error(data?.message || `سيرفر التحميل رجّع خطأ ${response.status}`);
-    }
-
+const fetchJson = async (url, options = {}) => {
+  try {
+    const { data } = await withTimeout(
+      axios.get(url, { ...options, timeout: REQUEST_TIMEOUT, headers: { ...LOADER_HEADERS, ...(options.headers || {}) } }),
+      'انتهت مهلة الاتصال بسيرفر التحميل'
+    );
     return data;
   } catch (error) {
-    if (error?.name === 'AbortError') {
+    if (error?.message?.startsWith('انتهت')) throw error;
+    if (error?.code === 'ECONNABORTED' || /timeout/i.test(error?.message || '')) {
       throw new Error('انتهت مهلة الاتصال بسيرفر التحميل');
     }
-    if (error instanceof TypeError && /fetch failed/i.test(error.message)) {
+    if (/fetch failed|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|502|503|504/i.test(String(error?.message))) {
       throw new Error('تعذر الاتصال بسيرفر التحميل، جرب تاني بعد شوية');
     }
     throw error;
-  } finally {
-    clearTimeout(timer);
   }
 };
 
@@ -89,58 +131,369 @@ const getMetadata = async (videoId) => {
 
   try {
     const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`;
-    const data = await fetchJson(oembedUrl, {}, 10000);
+    const data = await fetchJson(oembedUrl);
     return {
-      title: data.title || fallback.title,
-      author: data.author_name || fallback.author,
-      thumbnail: data.thumbnail_url || fallback.thumbnail
+      title: data?.title || fallback.title,
+      author: data?.author_name || fallback.author,
+      thumbnail: data?.thumbnail_url || fallback.thumbnail
     };
   } catch {
     return fallback;
   }
 };
 
-const getDownload = async (videoUrl, isAudio) => {
+const estimateBytes = (format, durationSeconds) => {
+  const declared = Number(format?.contentLength || 0);
+  if (declared > 0) return declared;
+  const bitrate = Number(format?.bitrate || 0);
+  const seconds = Number(durationSeconds || 0);
+  if (bitrate > 0 && seconds > 0) return Math.round((bitrate * seconds) / 8);
+  return Number.POSITIVE_INFINITY;
+};
+
+const extensionFromMime = (mimeType, fallback = 'bin') => {
+  const value = String(mimeType || '').toLowerCase();
+  if (value.startsWith('audio/mp4') || value.startsWith('audio/m4a')) return 'm4a';
+  if (value.startsWith('audio/webm')) return 'webm';
+  if (value.startsWith('audio/mpeg')) return 'mp3';
+  if (value.startsWith('audio/')) return 'm4a';
+  if (value.startsWith('video/mp4')) return 'mp4';
+  if (value.startsWith('video/webm')) return 'webm';
+  return fallback;
+};
+
+const baseMime = (mimeType) => String(mimeType || '').split(';')[0].trim() || 'application/octet-stream';
+
+// ── provider 1: youtube innertube (no API key) ────────────────────────────────
+
+const playabilityError = (playabilityStatus) => {
+  const status = String(playabilityStatus?.status || '');
+  const reason = String(playabilityStatus?.reason || '');
+  const error = new Error(
+    status === 'LOGIN_REQUIRED' || /sign in|age|bot|verify/i.test(reason)
+      ? 'الفيديو محمي أو مقيّد بالعمر، مينفعش نحمّله من السيرفر'
+      : /private/i.test(reason)
+        ? 'الفيديو خاص، متاحش للتحميل'
+        : status === 'ERROR' || /unavailable|removed|blocked|region/i.test(reason)
+          ? 'الفيديو مش متاح (محذوف، خاص، أو ممنوع في المنطقة)'
+          : status === 'AGE_VERIFICATION_REQUIRED'
+            ? 'الفيديو مقيّد بالعمر، متاحش للتحميل من السيرفر'
+            : reason || 'الفيديو مش متاح على يوتيوب'
+  );
+  error.definitive = true;
+  return error;
+};
+
+const requestPlayer = async (videoId, client) => {
+  const { data } = await withTimeout(
+    axios.post(
+      `${PLAYER_URL}?key=${client.key}`,
+      {
+        videoId,
+        context: {
+          client: {
+            clientName: client.name,
+            clientVersion: client.version,
+            hl: 'ar',
+            gl: 'EG'
+          }
+        },
+        contentCheckOk: true,
+        racyCheckOk: true
+      },
+      {
+        timeout: REQUEST_TIMEOUT,
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': client.userAgent,
+          'Accept-Language': 'ar-EG,ar;q=0.9'
+        }
+      }
+    ),
+    'انتهت مهلة الاتصال بيوتيوب'
+  );
+  return data;
+};
+
+const fetchViaInnertube = async (videoId) => {
+  let lastError = new Error('تعذر جلب بيانات الفيديو من يوتيوب');
+
+  for (const client of INNERTUBE_CLIENTS) {
+    try {
+      const data = await requestPlayer(videoId, client);
+      const playability = data?.playabilityStatus;
+      const details = data?.videoDetails;
+
+      if (playability?.status === 'OK' && details) {
+        const muxed = (data?.streamingData?.formatStreams || []).filter((f) => f?.url);
+        const adaptive = (data?.streamingData?.adaptiveFormats || []).filter((f) => f?.url);
+        if (muxed.length || adaptive.length) {
+          return {
+            source: 'innertube',
+            title: details.title || '',
+            author: details.author || '',
+            thumbnail: details.thumbnail?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+            durationSeconds: Number(details.lengthSeconds) || 0,
+            muxed,
+            adaptive
+          };
+        }
+        lastError = new Error('الفيديو متاح بس مالقيناش روابط تحميل مفتوحة');
+      } else if (playability) {
+        lastError = playabilityError(playability);
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  throw lastError;
+};
+
+// ── provider 2: yt-dlp binary (optional) ──────────────────────────────────────
+
+const findYtDlp = () => {
+  if (process.env.YTDLP_BIN) return process.env.YTDLP_BIN;
+  for (const dir of (process.env.PATH || '').split(':')) {
+    if (!dir) continue;
+    try {
+      const candidate = `${dir.replace(/\/$/, '')}/yt-dlp`;
+      accessSync(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // not here, keep scanning
+    }
+  }
+  return null;
+};
+
+const fetchViaYtDlp = async (videoId, isAudio) => {
+  const binary = findYtDlp();
+  if (!binary) throw new Error('yt-dlp غير متاح');
+
+  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  try {
+    const { stdout } = await execFileAsync(
+      binary,
+      ['--no-warnings', '--no-playlist', '-f', YTDLP_FALLBACK_FORMATS[isAudio ? 'audio' : 'video'], '-g', videoUrl],
+      { timeout: YTDLP_TIMEOUT, maxBuffer: 4 * 1024 * 1024 }
+    );
+    const url = String(stdout || '').trim().split('\n').filter(Boolean)[0];
+    if (!url) throw new Error('yt-dlp مرجعش رابط');
+    return { source: 'yt-dlp', url };
+  } catch (error) {
+    throw new Error(error?.code === 'ETIMEDOUT' ? 'انتهت مهلة yt-dlp' : `yt-dlp فشل: ${error?.message || 'خطأ غير معروف'}`);
+  }
+};
+
+// ── provider 3: piped API instances ───────────────────────────────────────────
+
+const fetchViaPiped = async (videoId) => {
+  let lastError = new Error('مفيش instance من Piped ردّ');
+
+  for (const base of PIPED_INSTANCES) {
+    try {
+      const data = await fetchJson(`${base}/streams/${videoId}`);
+      const muxed = (data?.videoStreams || []).filter((f) => f?.url);
+      const adaptive = (data?.audioStreams || []).filter((f) => f?.url);
+      if (muxed.length || adaptive.length) {
+        return {
+          source: 'piped',
+          title: data?.title || '',
+          author: data?.uploaderName || '',
+          thumbnail: data?.thumbnailUrl || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          durationSeconds: Number(data?.duration) || 0,
+          muxed,
+          adaptive
+        };
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  throw lastError;
+};
+
+// ── provider 4: invidious instances ───────────────────────────────────────────
+
+const fetchViaInvidious = async (videoId) => {
+  let lastError = new Error('مفيش instance من Invidious ردّ');
+
+  for (const base of INVIDIOUS_INSTANCES) {
+    try {
+      const data = await fetchJson(`${base}/api/v1/videos/${videoId}`);
+      const muxed = (data?.formatStreams || []).filter((f) => f?.url);
+      const adaptive = (data?.adaptiveFormats || []).filter((f) => f?.url);
+      if (muxed.length || adaptive.length) {
+        return {
+          source: 'invidious',
+          title: data?.title || '',
+          author: data?.author || '',
+          thumbnail: (data?.videoThumbnails || []).slice(-1)[0]?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          durationSeconds: Number(data?.lengthSeconds) || 0,
+          muxed,
+          adaptive
+        };
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  throw lastError;
+};
+
+// ── provider 5: loader.to (kept as last resort) ───────────────────────────────
+
+const fetchViaLoader = async (videoId, isAudio) => {
   const formats = isAudio ? ['mp3'] : ['720', '1080', '480', '360'];
-  let lastError = new Error('لم يتم تجهيز رابط التحميل');
+  let lastError = new Error('سيرفر التحميل الاحتياطي مرجعش رابط');
 
   for (const format of formats) {
-    const endpoint = `${LOADER_API}?format=${encodeURIComponent(format)}&url=${encodeURIComponent(videoUrl)}`;
-    const start = await fetchJson(endpoint);
-    const immediateUrl = start?.download_url || start?.url;
+    const endpoint = `${LOADER_API}?format=${encodeURIComponent(format)}&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}`;
 
-    if (immediateUrl) {
-      return { url: immediateUrl, title: start.title || '', format };
-    }
-
-    if (!start?.progress_url) {
-      lastError = new Error(start?.message || `سيرفر التحميل لا يدعم الجودة ${format}`);
-      continue;
-    }
-
-    let lastMessage = start.text || 'جاري تجهيز الملف';
-
-    for (let attempt = 0; attempt < 45; attempt++) {
-      await sleep(2000);
-
-      try {
-        const progress = await fetchJson(start.progress_url, {}, 12000);
-        const downloadUrl = progress?.download_url || progress?.url;
-        if (downloadUrl) {
-          return { url: downloadUrl, title: progress.title || start.title || '', format };
-        }
-
-        if (progress?.text) lastMessage = progress.text;
-        if (progress?.message && /error|fail|invalid|private/i.test(progress.message)) {
-          throw new Error(progress.message);
-        }
-      } catch (error) {
-        lastError = error;
-        if (/error|fail|invalid|private/i.test(error.message || '')) break;
+    try {
+      const start = await fetchJson(endpoint);
+      const immediateUrl = start?.download_url || start?.url;
+      if (immediateUrl) {
+        return { source: 'loader.to', url: immediateUrl, mimeType: isAudio ? 'audio/mpeg' : 'video/mp4' };
       }
-    }
 
-    lastError = new Error(`انتهت مهلة التحضير (${lastMessage})`);
+      if (start?.progress_url) {
+        for (let attempt = 0; attempt < 30; attempt++) {
+          await sleep(2000);
+          const progress = await fetchJson(start.progress_url, {}, 12000);
+          const downloadUrl = progress?.download_url || progress?.url;
+          if (downloadUrl) {
+            return { source: 'loader.to', url: downloadUrl, mimeType: isAudio ? 'audio/mpeg' : 'video/mp4' };
+          }
+        }
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  throw lastError;
+};
+
+// ── media selection ───────────────────────────────────────────────────────────
+
+const chooseFromStreams = (info, isAudio) => {
+  const durationSeconds = info.durationSeconds || 0;
+
+  if (isAudio) {
+    const pool = info.adaptive.filter((f) => /^audio\//.test(String(f.mimeType || '')));
+    const best = pool.find((f) => String(f.mimeType).startsWith('audio/mp4')) || pool[0];
+    if (!best) return null;
+    const size = estimateBytes(best, durationSeconds);
+    if (size > DOCUMENT_SEND_CAP) return null;
+    return {
+      url: best.url,
+      mimeType: baseMime(best.mimeType),
+      fileNameExt: extensionFromMime(best.mimeType, 'm4a'),
+      kind: size <= MEDIA_SEND_CAP ? 'audio' : 'document',
+      size,
+      quality: String(best.audioQuality || best.bitrate || '')
+    };
+  }
+
+  const muxed = info.muxed
+    .filter((f) => /^video\/mp4/.test(String(f.mimeType || '')) && f.url)
+    .sort((a, b) => (Number(b.height) || 0) - (Number(a.height) || 0));
+
+  if (!muxed.length) return null;
+
+  const fitting = muxed.find((f) => estimateBytes(f, durationSeconds) <= MEDIA_SEND_CAP);
+  if (fitting) {
+    return {
+      url: fitting.url,
+      mimeType: baseMime(fitting.mimeType),
+      fileNameExt: extensionFromMime(fitting.mimeType, 'mp4'),
+      kind: 'video',
+      size: estimateBytes(fitting, durationSeconds),
+      quality: `${fitting.height || '?'}p`
+    };
+  }
+
+  const bestQuality = muxed[0];
+  if (estimateBytes(bestQuality, durationSeconds) > DOCUMENT_SEND_CAP) return null;
+
+  return {
+    url: bestQuality.url,
+    mimeType: baseMime(bestQuality.mimeType),
+    fileNameExt: extensionFromMime(bestQuality.mimeType, 'mp4'),
+    kind: 'document',
+    size: estimateBytes(bestQuality, durationSeconds),
+    quality: `${bestQuality.height || '?'}p`
+  };
+};
+
+const chooseFromYtDlp = (result, isAudio) => {
+  const url = result.url;
+  let extension = 'mp4';
+  try {
+    const path = new URL(url).pathname;
+    const match = path.match(/\.([a-z0-9]{2,5})(?:\?|$)/i);
+    if (match) extension = match[1].toLowerCase();
+  } catch {
+    // keep default
+  }
+
+  const mimeType = isAudio
+    ? (extension === 'webm' ? 'audio/webm' : 'audio/mp4')
+    : (extension === 'webm' ? 'video/webm' : 'video/mp4');
+
+  return {
+    url,
+    mimeType,
+    fileNameExt: extensionFromMime(mimeType, extension),
+    kind: isAudio ? 'audio' : 'video',
+    size: Number.POSITIVE_INFINITY,
+    quality: 'yt-dlp'
+  };
+};
+
+const getDownload = async (videoId, isAudio) => {
+  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const attempts = [
+    () => fetchViaInnertube(videoId),
+    () => fetchViaYtDlp(videoId, isAudio),
+    () => fetchViaPiped(videoId),
+    () => fetchViaInvidious(videoId),
+    () => fetchViaLoader(videoId, isAudio)
+  ];
+
+  let lastError = new Error('تعذر تجهيز رابط التحميل');
+
+  for (const attempt of attempts) {
+    try {
+      const info = await attempt();
+
+      if (info?.source === 'yt-dlp') {
+        return chooseFromYtDlp(info, isAudio);
+      }
+      if (info?.source === 'loader.to') {
+        return {
+          url: info.url,
+          mimeType: info.mimeType,
+          fileNameExt: extensionFromMime(info.mimeType, isAudio ? 'mp3' : 'mp4'),
+          kind: isAudio ? 'audio' : 'video',
+          size: Number.POSITIVE_INFINITY,
+          quality: 'loader.to'
+        };
+      }
+
+      const chosen = chooseFromStreams(info, isAudio);
+      if (chosen) {
+        return { ...chosen, source: info.source, title: info.title || '' };
+      }
+      lastError = new Error(isAudio ? 'مالقيناش ملف صوتي نظيف للفيديو ده' : 'الفيديو كبير جداً على السيرفر، جرب صوت بدل الفيديو');
+    } catch (error) {
+      if (error?.definitive) throw error;
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
   }
 
   throw lastError;
@@ -154,6 +507,10 @@ const safeFileName = (title, extension) => {
     .slice(0, 120);
   return `${clean || 'youtube'}.${extension}`;
 };
+
+const kindLabel = (kind, isAudio) => (isAudio ? 'صوت' : kind === 'document' ? 'ملف فيديو' : 'فيديو');
+
+// ── command handler ───────────────────────────────────────────────────────────
 
 const handler = async (m, { conn, command, args }) => {
   try {
@@ -193,23 +550,22 @@ const handler = async (m, { conn, command, args }) => {
       }
     }, { quoted: m });
 
-    const media = await getDownload(videoUrl, isAudio);
-    const filename = safeFileName(media.title || metadata.title, isAudio ? 'mp3' : 'mp4');
+    const media = await getDownload(videoId, isAudio);
+    const filename = safeFileName(media.title || metadata.title, media.fileNameExt);
+    const label = kindLabel(media.kind, isAudio);
+    const caption2 = media.kind === 'document'
+      ? `*${metadata.title}*\n\n_${label} — الحجم كبير فاتبعتلك كملف_`
+      : `*${metadata.title}*`;
 
-    if (isAudio) {
-      await conn.sendMessage(m.chat, {
-        audio: { url: media.url },
-        mimetype: 'audio/mpeg',
-        fileName: filename
-      }, { quoted: m });
-    } else {
-      await conn.sendMessage(m.chat, {
-        video: { url: media.url },
-        mimetype: 'video/mp4',
-        caption: `*${metadata.title}*`,
-        fileName: filename
-      }, { quoted: m });
-    }
+    const payload = media.kind === 'document'
+      ? { document: { url: media.url }, mimetype: media.mimeType, fileName: filename, caption: caption2 }
+      : media.kind === 'audio'
+        ? { audio: { url: media.url }, mimetype: media.mimeType, fileName: filename }
+        : { video: { url: media.url }, mimetype: media.mimeType, caption: caption2, fileName: filename };
+
+    await conn.sendMessage(m.chat, payload, { quoted: m });
+
+    console.log(`[yt] ${videoId} ${media.source || 'stream'} ${media.kind} ${media.quality || ''} ${media.size === Number.POSITIVE_INFINITY ? '' : `${Math.round(media.size / 1024 / 1024)}MB`}`.trim());
   } catch (error) {
     console.error('YouTube downloader:', error);
     const message = error?.message || 'حدث خطأ غير متوقع';
