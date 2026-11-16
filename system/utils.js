@@ -150,6 +150,12 @@ async function uploadTmpfiles(buffer) {
     return res.data.path;
 }
 
+/** يختار عنصر عشوائي من قائمة — بديل محلي لـ Array.prototype.random (اتشال في todo 29). */
+export function pickRandom(list) {
+  if (!Array.isArray(list) || list.length === 0) return undefined;
+  return list[Math.floor(Math.random() * list.length)];
+}
+
 export { 
   uploadToCatbox, 
   uploadToQuax, 

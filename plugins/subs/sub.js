@@ -10,6 +10,17 @@ if (subBots.list().length >= 30) {
 
     if (!/^\d+$/.test(num)) return m.reply("⚠️ رقم الهاتف غير صالح");
 
+    // ─── بوابة موافقة المطور (todo 29e) ───
+    // ممنوع أي مستخدم ينصّب بوت فرعي: لازم يكون المطور نفسه، أو رقمه مسجّل
+    // في داتابيز السماح (db.subPairAllow) اللي المطور بيضيفه بـ .موافقه_تنصيب.
+    {
+      const allow = global.db.subPairAllow || {};
+      const approved = m.isOwner === true || !!allow[num];
+      if (!approved) {
+        return m.reply("⛔ تنصيب البوتات الفرعية محتاج موافقة المطور.\nاطلب من المطور يضيف رقمك بأمر *.موافقه_تنصيب*، وجرب تاني بعد الموافقة.");
+      }
+    }
+
     const sub = global.subBots;
     if (!sub) return m.reply("❌ نظام البوتات الفرعية غير متاح");
 

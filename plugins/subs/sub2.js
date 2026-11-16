@@ -8,7 +8,7 @@ if (subBots.list().length >= 30) {
 
   // التحقق من إدخال الرقم بعد الأمر
   if (!args[0]) {
-    return m.reply(`⚠️ *يرجى إدخال رقم الهاتف مع رمز الدولة.*\n\n_طريقة الاستعمال:_\n.تنصيب2 218945778513`);
+    return m.reply(`⚠️ *يرجى إدخال رقم الهاتف مع رمز الدولة.*\n\n_طريقة الاستعمال:_\n.تنصيب2 2XXXXXXXXXXX`);
   }
 
   try {
@@ -16,6 +16,17 @@ if (subBots.list().length >= 30) {
     const num = args[0].replace(/[+\s-]/g, '');
 
     if (!/^\d+$/.test(num)) return m.reply("⚠️ رقم الهاتف غير صالح، تأكد من كتابة أرقام صحيحة.");
+
+    // ─── بوابة موافقة المطور (todo 29e) ───
+    // ممنوع أي مستخدم ينصّب بوت فرعي: لازم يكون المطور نفسه، أو الرقم مسجّل
+    // في داتابيز السماح (db.subPairAllow) اللي المطور بيضيفه بـ .موافقه_تنصيب.
+    {
+      const allow = global.db.subPairAllow || {};
+      const approved = m.isOwner === true || !!allow[num];
+      if (!approved) {
+        return m.reply("⛔ تنصيب البوتات الفرعية محتاج موافقة المطور.\nاطلب من المطور يضيف الرقم بأمر *.موافقه_تنصيب*، وجرب تاني بعد الموافقة.");
+      }
+    }
 
     const sub = global.subBots;
     if (!sub) return m.reply("❌ نظام البوتات الفرعية غير متاح");

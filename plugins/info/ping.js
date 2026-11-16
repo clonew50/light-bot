@@ -1,18 +1,17 @@
 const handler = async (m, { conn }) => {
-  // حساب الوقت بين إرسال الرسالة ومعالجتها بالملي ثانية
-  const userMsgTime = m.messageTimestamp ? m.messageTimestamp * 1000 : Date.now();
+  // ◄ زمن استجابة حقيقي (todo 29f): من وصول رسالة المستخدم (timestamp
+  //    السيرفر) لحد لحظة الردّ دلوقتي — شامل وقت الشبكة والمعالجة.
+  //    الأرقام العشوائية القديمة اتشالت: مش هيكون في رقم ملفّق.
   const now = Date.now();
-  
-  let ping = now - userMsgTime;
-  
-  if (ping <= 0) {
-    ping = (Math.random() * (250 - 80) + 80);
-  } else {
-    ping = ping + (Math.random() * 0.9);
-  }
+  const userMsgTime = typeof m.messageTimestamp === 'number' && m.messageTimestamp > 0
+    ? m.messageTimestamp * 1000
+    : now;
+
+  const rtt = Math.max(0, now - userMsgTime);
+  const shown = Number.isFinite(rtt) ? `${rtt.toFixed(1)}ms` : '—';
 
   let text = `❐═━━━═╊⊰🩸⊱╉═━━━═❐\n\n`;
-  text += `⚡ *سرعة البوت:* *${ping.toFixed(1)}ms*\n\n`;
+  text += `⚡ *سرعة البوت:* *${shown}*\n\n`;
   text += `❐═━━━═╊⊰🩸⊱╉═━━━═❐`;
 
   await conn.sendMessage(m.chat, { text }, { quoted: m });

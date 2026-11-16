@@ -1,4 +1,5 @@
 import { MAX_MENTIONS } from "../../system/text-chunks.js";
+import { pickRandom } from "../../system/utils.js";
 
 const h =  async (m, { text, bot, conn }) => {
     
@@ -7,7 +8,7 @@ const h =  async (m, { text, bot, conn }) => {
         const adReply = {
             title: bot.config.info.nameBot || "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻",
             body: null,
-            thumbnailUrl: images.random(),
+            thumbnailUrl: pickRandom(images),
             mediaType: 1,
             renderLargerThumbnail: false
         };

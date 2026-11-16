@@ -9,7 +9,9 @@ async function test(m, { conn, bot, text }) {
       return m.reply("*⚠️ لا توجد نتائج*");
     }
     
-    const start = Math.floor(Math.random() * (arr.length - 10));
+    // حرس slice (todo 29f): قديم كان Math.random بحاصل سالب
+    // لما arr.length < 10 فيجيب من آخر القائمة بالغلط.
+    const start = arr.length > 10 ? Math.floor(Math.random() * (arr.length - 10)) : 0;
     const selectedImages = arr.slice(start, start + 10);
 
     const cards = selectedImages.map((item, index) => {

@@ -4,6 +4,9 @@
 
 const toM = a => '@' + a.split('@')[0];
 
+// اختيار عشوائي محلي ( Array.prototype.getRandom اتشال — todo 29)
+const pickRandom = (list) => list[Math.floor(Math.random() * list.length)];
+
 /**
  * handler
  * @param {Object} m   رسالة الواتساب الواردة
@@ -23,10 +26,10 @@ const handler = async (m, { conn }) => {
     if (participants.length < 2) return m.reply('المجموعة تحتاج إلى عضوين على الأقل');
 
     // اختيار عضوين عشوائيين مختلفين
-    const a = participants.getRandom();
+    const a = pickRandom(participants);
     let b;
     do {
-      b = participants.getRandom();
+      b = pickRandom(participants);
     } while (b === a);
 
     const resultText = `❐═━━━═╊⊰🩸⊱╉═━━━═❐\n*⚔️ ┇ أكـثـر واحـد هـنـا بـيـبـيـض عـلـيـك:* \n\n➤ ${toM(a)}\n❐═━━━═╊⊰🩸⊱╉═━━━═❐`;
@@ -41,13 +44,6 @@ const handler = async (m, { conn }) => {
     m.reply('❌ حدث خطأ أثناء تنفيذ الأمر. تأكد أن البوت مشرف في المجموعة ويمكنه قراءة الأعضاء.');
   }
 };
-
-// إضافة دالة عشوائية للمصفوفة إذا لم تكن موجودة مسبقًا
-if (!Array.prototype.getRandom) {
-  Array.prototype.getRandom = function () {
-    return this[Math.floor(Math.random() * this.length)];
-  };
-}
 
 handler.command = ['بيبضني'];
 handler.usage = ['بيبضني'];

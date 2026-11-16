@@ -22,7 +22,8 @@ const handler = async (m, { conn, text }) => {
 };
 
 handler.usage = ["انضم"];
-handler.category = "group";
+handler.category = "owner";
 handler.command = ["انضم", "ادخل"];
+handler.owner = true;
 
 export default handler;

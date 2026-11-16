@@ -1,6 +1,5 @@
-Array.prototype.random = function() {
-  return this[Math.floor(Math.random() * this.length)];
-};
+// دالة عشوائية محلية على المصفوفات ( Array.prototype.random اتشال — todo 29)
+// الاستخدام: pickRandom(list) من system/utils.js
 
 export default async function before(m, { conn , bot }) {
 

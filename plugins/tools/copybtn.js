@@ -61,7 +61,6 @@ const handler = async (m, { conn, bot, args }) => {
 handler.command = ['زر_نسخ', 'copybtn'];
 handler.usage = ['.زر_نسخ <نص>'];
 handler.category = 'tools';
-handler.owner = true;
 handler.cooldown = 5;
 
 export default handler;

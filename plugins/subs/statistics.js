@@ -2,7 +2,18 @@ const run = async (m, { conn, bot }) => {
   const sub = global.subBots;
   if (!sub) return m.reply("❌ نـظـام الـبـوتـات الـفـرعـيـه غير متاح");
 
-  const stats = sub.stats();
+  // حرس وصول الداتابيز/الجلسة (todo 29f): الجلسة أو الإحصاءات ممكن تكون
+  // مش جاهزة وقت النداء → ردود عربية بدل الـ TypeError.
+  let stats = null;
+  try {
+    stats = sub.stats();
+  } catch (e) {
+    return m.reply("❌ تعذّر حساب إحصاءات البوتات الفرعية، جرب تاني بعد شوية.");
+  }
+
+  const mainId = bot?.sock?.user?.id;
+  const mainNum = mainId ? mainId.split('@')[0] : 'غير معروف';
+
   const uptime = process.uptime();
   const days = Math.floor(uptime / 86400);
   const hours = Math.floor((uptime % 86400) / 3600);
@@ -17,7 +28,7 @@ const run = async (m, { conn, bot }) => {
 ❐═━━━═╊⊰📖⊱╉═━━━═❐
 ⏱️ — مدة التشغيل: ${days} يوم ${hours} ساعة ${minutes} دقيقة
 ❐═━━━═╊⊰🩸⊱╉═━━━═❐
-🆔 — البوت الرئيسي: ${bot.sock.user.id.split('@')[0]}
+🆔 — البوت الرئيسي: ${mainNum}
 ❐═━━━═╊⊰🩸⊱╉═━━━═❐
 > *𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻*`;
 

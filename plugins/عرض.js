@@ -1,6 +1,8 @@
 'use strict';
 
-import { downloadMediaMessage } from '@whiskeysockets/baileys';
+// (todo 29f) استيراد downloadMediaMessage من حزمة baileys المش متعرضة في
+// package.json اتشال. conn هو نفسه socket الإطار وبيوفر الدالة كـ method —
+// بنستخدمه من غير أي استيراد إضافي.
 
 /* ═══════════════ ثوابت ═══════════════ */
 const MEDIA_TYPES = ['imageMessage', 'videoMessage', 'audioMessage'];
@@ -131,7 +133,7 @@ async function downloadMediaBuffer(m, conn, found) {
 
   for (const variant of variants) {
     try {
-      const buf = await downloadMediaMessage(
+      const buf = await conn.downloadMediaMessage(
         variant,
         'buffer',
         {},
