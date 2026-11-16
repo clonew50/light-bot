@@ -84,8 +84,8 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
     }
 };
 
-handler.usage = ['بروفايل'];
+handler.usage = ['pfp'];
 handler.category = 'tools';
-handler.command = ['بروفايل', 'pfp', 'profile'];
+handler.command = ['pfp', 'profile'];
 
 export default handler;
