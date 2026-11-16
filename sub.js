@@ -1,12 +1,39 @@
 import { SubBots } from "meowsab";
+import { pushEvent } from "./system/events.js";
 
 // خريطة لتخزين حالة الوضع لكل بوت فرعي (المفتاح هو uid أو رقم البوت)
 const subBotModes = new Map();
 
+// ─── كود اقتران عشوائي (todo 31a) ───
+// "LIGHTBOT" كان كود ثابت معروف — أي حد يقدر يربط بوت على رقم الضحية.
+// بنولّد كود عشوائي لكل دور اقتران، بنخزّنه في الداتابيز (المطور بيشوفه
+// من اللوحة)، وبنبطّله بعد أول اقتران ناجح عشان ما يتستخدمش تاني.
+const PAIR_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // من غير حروف ملتبسة
+const PAIR_CODE_LEN = 8;
+
+const generatePairCode = () => {
+  let code = "";
+  for (let i = 0; i < PAIR_CODE_LEN; i++) {
+    code += PAIR_CODE_CHARS[Math.floor(Math.random() * PAIR_CODE_CHARS.length)];
+  }
+  return code;
+};
+
+const persistPairCode = (code, meta = {}) => {
+  try {
+    global.db.subPairing = { code, createdAt: Date.now(), used: false, ...meta };
+  } catch (e) {
+    console.error("⚠️ [SUB] تعذّر حفظ كود الاقتران في الداتابيز:", e?.message || e);
+  }
+};
+
 async function sub(client) {
   global.subBots = new SubBots(client.commandSystem)
-  
-  SubBots.pariCode("LIGHTBOT") // Pairing
+
+  // كود البداية: عشوائي ومخزّن — الإطار بيرجّع لـ "VENI1234" من غيره
+  const bootCode = generatePairCode();
+  SubBots.pariCode(bootCode) // Pairing
+  persistPairCode(bootCode, { note: "كود بدء التشغيل" })
  
   const { config } = client;
 
@@ -31,10 +58,30 @@ async function sub(client) {
 
   global.subBots.on('pair', (uid, code) => {
     console.log(`🔐 [SubBot ${uid}] Pairing code: ${code}`);
+    // (todo 31a) الاقتران نجح → الكود اتسهلك: نبطّله ونولّد كود جديد
+    // للاقترانات الجاية — الكود المخزّن مبقاش صالح للاستخدام.
+    try {
+      const rec = global.db.subPairing || {};
+      if (rec.code && code === rec.code && rec.used !== true) {
+        rec.used = true;
+        rec.usedAt = Date.now();
+        rec.usedBy = uid;
+      }
+      const fresh = generatePairCode();
+      SubBots.pariCode(fresh);
+      persistPairCode(fresh, { note: "كود جديد بعد اقتران ناجح" });
+      pushEvent('sub', `🔐 اقتران ناجح للبوت الفرعي ${uid} — تم تجديد كود الاقتران`);
+    } catch (e) {
+      console.error("⚠️ [SUB] تجديد كود الاقتران بعد الاقتران فشل:", e?.message || e);
+    }
   });
 
   global.subBots.on('message', async (uid, msg) => {
-    if (msg.key.id.includes("3EB0")) return;
+    // (todo 31b) رسايل ناقصة العنوان كانت ترمي TypeError وبتوقف المعالج
+    const keyId = msg?.key?.id;
+    const remoteJid = msg?.key?.remoteJid;
+    if (!keyId || !remoteJid) return;
+    if (keyId.includes("3EB0")) return;
 
     const body = getMessageText(msg);
     const bot = global.subBots.get(uid);
@@ -44,8 +91,14 @@ async function sub(client) {
 
     // استخراج رقم البوت الفرعي وصاحب الرسالة
     const botNumber = uid.replace(/[^0-9]/g, '');
-    const senderNumber = msg.key.remoteJid.includes('@s.whatsapp.net') 
-      ? msg.key.remoteJid.split('@')[0] 
+    // (todo 31d) الرقم لازم رقم حقيقي بـ 8 لـ 15 رقم — أي شكل تاني
+    // بنرفض الرسالة بهدوء بديل ما نحسب أرقام وهمية.
+    if (!/^\+?\d{8,15}$/.test(botNumber)) {
+      console.warn(`⚠️ [SubBot ${uid}] رقم البوت الفرعي مش صحيح (${botNumber}) — تم تجاهل الرسالة`);
+      return;
+    }
+    const senderNumber = remoteJid.includes('@s.whatsapp.net')
+      ? remoteJid.split('@')[0]
       : (msg.key.participant ? msg.key.participant.split('@')[0] : '');
 
     // تهيئة الوضع الافتراضي (عام = false) إذا لم يتم تحديده مسبقاً
@@ -60,12 +113,12 @@ async function sub(client) {
       if (senderNumber === botNumber) {
         if (body === ".خاص") {
           subBotModes.set(uid, true);
-          await sock.sendMessage(msg.key.remoteJid, { text: "🔒 تم تفعيل وضع (الخاص). البوت سيرد عليك وحدك الآن." }, { quoted: msg });
+          await sock.sendMessage(remoteJid, { text: "🔒 تم تفعيل وضع (الخاص). البوت سيرد عليك وحدك الآن." }, { quoted: msg });
           return;
         }
         if (body === ".عام") {
           subBotModes.set(uid, false);
-          await sock.sendMessage(msg.key.remoteJid, { text: "🌐 تم تفعيل وضع (العام). البوت سيستجيب للجميع الآن." }, { quoted: msg });
+          await sock.sendMessage(remoteJid, { text: "🌐 تم تفعيل وضع (العام). البوت سيستجيب للجميع الآن." }, { quoted: msg });
           return;
         }
       }
@@ -77,7 +130,7 @@ async function sub(client) {
 
       // الأوامر العادية للبوت الفرعي
       if (body === "بوتات") {
-        await sock.sendMessage(msg.key.remoteJid, {
+        await sock.sendMessage(remoteJid, {
           react: { text: "✅", key: msg.key }
         });
       }
@@ -92,7 +145,22 @@ async function sub(client) {
   });
 
   global.subBots.on('badSession', (uid) => {
-    console.log(`⚠️ [SubBot ${uid}] Bad session, removed`);
+    console.log(`⚠️ [SubBot ${uid}] Bad session, removing record`);
+    // (todo 31c) كان بس بيكتب "removed" ومش بيمسح حاجة — دلوقتي
+    // بنمسح سجل البوت الفرعي فعليًا وبنبعت حدث للوحة.
+    try {
+      let removed = false;
+      if (typeof global.subBots.remove === 'function') {
+        try { global.subBots.remove(uid); removed = true; } catch (e) { removed = false; }
+      }
+      if (!removed && typeof global.subBots.removeByphone === 'function') {
+        try { global.subBots.removeByphone(uid.replace(/[^0-9]/g, '')); removed = true; } catch (e) { removed = false; }
+      }
+      pushEvent('sub', `⚠️ البوات الفرعي ${uid} جلسته سيئة — ${removed ? 'تم حذف سجله' : 'تعطّر حذف السجل (شوف اللوج)'}`);
+    } catch (e) {
+      console.error("⚠️ [SUB] حذف البوات الفرعي بعد الجلسة السيئة فشل:", e?.message || e);
+      pushEvent('sub', `⚠️ تعطّر حذف البوات الفرعي ${uid} بعد الجلسة السيئة: ${e?.message || e}`);
+    }
   });
 
   return global.subBots;
