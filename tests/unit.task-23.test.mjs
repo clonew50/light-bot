@@ -27,9 +27,10 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { walkSourceTree, isExcludedPath, EXCLUDED_DIRS, EXCLUDED_FILES } from './scan-exclusions.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..');
@@ -524,19 +525,10 @@ test('attempt3 keep: a >1000-char prompt is refused in Arabic before any provide
 
 test('attempt3 keep: no repository file references the dead provider anymore', () => {
   const deadHost = ['emam-api', 'web', 'id'].join('.');
-  const skipDirs = new Set(['node_modules', '.git', '.omo', 'session', 'tmp', 'agent-backups']);
 
-  const walk = (dir, out = []) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        if (skipDirs.has(entry.name)) continue;
-        walk(path.join(dir, entry.name), out);
-      } else if (entry.isFile()) {
-        out.push(path.join(dir, entry.name));
-      }
-    }
-    return out;
-  };
+  // (todo 43) الفحص كان بيمشي على الشجرة كلها فيقع في داتا التشغيل
+  // (sub/*.ldb|*.log) والهادية .omo — walkSourceTree بيمشي على المصدر بس.
+  const walk = walkSourceTree;
 
   const offenders = [];
   for (const file of walk(repoRoot)) {
@@ -550,4 +542,70 @@ test('attempt3 keep: no repository file references the dead provider anymore', (
   }
 
   assert.deepEqual(offenders, [], `dead provider still referenced in: ${offenders.join(', ')}`);
+});
+
+/* ------------------------------------------------------------------ *
+ * todo 43: the exclusion list itself is asserted here
+ * ------------------------------------------------------------------ */
+
+test('todo43: the scan exclusion list keeps runtime data out of source scans', () => {
+  // مسارات التشغيل/الأدوات — لازم تكون مستثناة
+  for (const p of ['sub', 'sub/shard-4', 'sub/shard-4/000005.ldb', 'session', 'tmp', '.omo', 'node_modules', '.git', 'agent-backups/foo.bak-1', 'system/database.json', 'system/panel-config.json', 'x.log', 'x.ldb']) {
+    assert.equal(isExcludedPath(p), true, `${p} must be excluded`);
+  }
+  // مسارات المصدر — لازم الـscan يشوفها
+  for (const p of ['plugins', 'plugins/ai/OpenAi.js', 'plugins/ai/probe.js', 'system/config.js', 'index.js', 'tests/unit.task-23.test.mjs', 'sub-plugin.js']) {
+    assert.equal(isExcludedPath(p), false, `${p} must stay scanned`);
+  }
+  assert.deepEqual(
+    [...EXCLUDED_DIRS].sort(),
+    ['.git', '.omo', 'node_modules', 'session', 'sub', 'tmp'].sort(),
+    'directory exclusion list changed'
+  );
+  assert.ok(EXCLUDED_FILES.length >= 4, 'file exclusion list must keep the runtime artefacts out');
+});
+
+test('todo43: a probe dropped in sub/shard-4 cannot fail the source scan', () => {
+  const deadHost = ['emam-api', 'web', 'id'].join('.');
+  const probeDir = path.join(repoRoot, 'sub', 'shard-4');
+  const probe = path.join(probeDir, 'probe-dead-' + Date.now() + '.ldb');
+  mkdirSync(probeDir, { recursive: true });
+  try {
+    writeFileSync(probe, `dead ${deadHost} reference inside runtime data`);
+    const offenders = [];
+    for (const file of walkSourceTree(repoRoot)) {
+      let content;
+      try { content = readFileSync(file, 'utf8'); } catch { continue; }
+      if (content.includes(deadHost)) offenders.push(path.relative(repoRoot, file));
+    }
+    assert.deepEqual(offenders, [], 'runtime data still fails the scan: ' + offenders.join(', '));
+  } finally {
+    rmSync(probe, { force: true });
+  }
+});
+
+test('todo43: a source probe referencing the dead host still fails the scan', () => {
+  const deadHost = ['emam-api', 'web', 'id'].join('.');
+  const probeDir = path.join(repoRoot, 'plugins', 'ai');
+  const probe = path.join(probeDir, '.probe-scan-' + Date.now() + '.js');
+  let offenders = [];
+  try {
+    writeFileSync(probe, `// probe\nconst host = "${deadHost}";\n`);
+    for (const file of walkSourceTree(repoRoot)) {
+      let content;
+      try { content = readFileSync(file, 'utf8'); } catch { continue; }
+      if (content.includes(deadHost)) offenders.push(path.relative(repoRoot, file));
+    }
+    assert.ok(offenders.some((f) => f.includes('.probe-scan-')), 'the source probe was not caught — the scan is too weak');
+  } finally {
+    rmSync(probe, { force: true });
+    // verify cleanup actually happened
+    offenders = [];
+    for (const file of walkSourceTree(repoRoot)) {
+      let content;
+      try { content = readFileSync(file, 'utf8'); } catch { continue; }
+      if (content.includes(deadHost)) offenders.push(path.relative(repoRoot, file));
+    }
+    assert.ok(!offenders.some((f) => f.includes('.probe-scan-')), 'probe file was not cleaned up');
+  }
 });

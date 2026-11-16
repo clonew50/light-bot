@@ -10,6 +10,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
+import { isExcludedStatusLine } from './scan-exclusions.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(here, '..')
@@ -308,6 +309,9 @@ test('row 40 agent loop: no new dependency and the sandbox helpers are untouched
 test('row 40 agent loop: the worktree is clean apart from the two row files', () => {
   const changed = execFileSync('git', ['status', '--porcelain'], { cwd: ROOT, encoding: 'utf8' })
     .split('\n').map((l) => l.trim()).filter(Boolean)
+    // (todo 43) git بيرجّع مسارات مش مصدر (sub/, session/, .omo/, *.log ...)
+    // — نستثنيها بنفس القائمة المؤكدة في الفحص، من غير ما نضعّف التأكيد
+    .filter((l) => !isExcludedStatusLine(l))
   const allowed = [
     'M plugins/owner/agent.js',
     '?? tests/unit.task-37.test.mjs',
@@ -320,4 +324,19 @@ test('row 40 agent loop: the worktree is clean apart from the two row files', ()
   let backups = []
   try { backups = readdirSync(join(ROOT, 'agent-backups')).filter((f) => f.includes('task40-probe-')) } catch {}
   assert.deepEqual(backups, [], 'probe backups left behind: ' + backups.join(', '))
+})
+
+/* ------------------------------------------------------------------ *
+ * todo 43: the exclusion list itself is asserted here
+ * ------------------------------------------------------------------ */
+
+test('todo43: the worktree check ignores untracked runtime and tooling trees', () => {
+  // أسطر git status مؤقتة للمسارات المستثناة
+  for (const line of ['?? .omo/', '?? .omo/plans/x.md', '?? sub/', '?? sub/shard-4/000005.ldb', '?? session/creds.json', '?? bot.log', '?? system/database.json', '?? agent-backups/x.bak-3']) {
+    assert.equal(isExcludedStatusLine(line), true, `status line must be excluded: ${line}`);
+  }
+  // أسطر المصدر لازم تتفحص
+  for (const line of ['M plugins/owner/agent.js', '?? tests/unit.task-40.test.mjs', 'A index.js', '?? plugins/ai/probe.js']) {
+    assert.equal(isExcludedStatusLine(line), false, `status line must stay checked: ${line}`);
+  }
 })
