@@ -12,6 +12,8 @@
 const COOLDOWN_MS = 10 * 1000;
 const REQUEST_TTL = 30 * 60 * 1000;   // صلاحية انتظار الرد 30 دقيقة
 
+import { pruneCooldown } from "../../system/cooldowns.js";
+
 const cooldown = new Map();
 // الشاتات اللي البوت طلب فيها جهة اتصال ومستني رد
 const pending = new Map();
@@ -28,6 +30,7 @@ const handler = async (m, { conn }) => {
   try {
     const last = cooldown.get(m.chat) || 0;
     if (Date.now() - last < COOLDOWN_MS) return;
+    pruneCooldown(cooldown, COOLDOWN_MS);
     cooldown.set(m.chat, Date.now());
 
     const content = {
@@ -59,6 +62,7 @@ const handler = async (m, { conn }) => {
       ]
     };
     await relayRaw(conn, m.chat, content, extra);
+    pruneCooldown(pending, REQUEST_TTL);
     pending.set(m.chat, Date.now());
   } catch (e) {
     console.error('❌ [طلب_جهة]', e?.message || e);

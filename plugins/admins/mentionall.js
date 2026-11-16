@@ -1,3 +1,5 @@
+import { splitText, mentionsIn, MAX_MENTIONS } from "../../system/text-chunks.js";
+
 const handler = async (m, { conn, args }) => {
     const metadata = await conn.groupMetadata(m.chat);
     const participants = metadata.participants;
@@ -30,15 +32,19 @@ const handler = async (m, { conn, args }) => {
 
     messageText += `> *إجمالي المشاركين — ${participants.length}*`;
 
-    return conn.sendMessage(m.chat, { 
-        text: messageText, 
-        mentions: participants.map(p => p.id)
-    }, { quoted: m });
+    // واتساب بيرفض الرسائل الأطول من 4096 حرف، فبنقسّم القائمة لرسائل
+    // وكل رسالة بتاخد منشناتها هي بس (بدون ما حد يختفي من العرض).
+    const parts = splitText(messageText);
+    for (const part of parts) {
+        await conn.sendMessage(m.chat, {
+            text: part,
+            mentions: mentionsIn(part, participants).slice(0, MAX_MENTIONS)
+        }, { quoted: m });
+    }
 };
 
 handler.usage = ["منشن_الكل"];
-handler.category = "admin";
-handler.command = ["منشن_الكل"];
+handler.category = "admin";handler.command = ["منشن_الكل"];
 handler.admin = true;
 handler.group = true;
 

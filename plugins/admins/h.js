@@ -1,3 +1,5 @@
+import { MAX_MENTIONS } from "../../system/text-chunks.js";
+
 const h =  async (m, { text, bot, conn }) => {
     
     try {
@@ -23,9 +25,10 @@ const h =  async (m, { text, bot, conn }) => {
         const groupMetadata = await conn.groupMetadata(m.chat);
         const participants = groupMetadata.participants.map(v => v.id);
         
-        await conn.sendMessage(m.chat, { 
-            forward: m.quoted.fakeObj(), 
-            mentions: participants,
+        // قائمة المنشنات الضخمة بتقفل الرسالة، فنقصرها على حد آمن.
+        await conn.sendMessage(m.chat, {
+            forward: m.quoted.fakeObj(),
+            mentions: participants.slice(0, MAX_MENTIONS),
             contextInfo: {
                 isForwarded: true,
                 forwardingScore: 999, 

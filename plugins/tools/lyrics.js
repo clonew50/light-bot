@@ -1,4 +1,5 @@
 import { Scrapy } from "meowsab";
+import { splitText } from "../../system/text-chunks.js";
 
 let handler = async (m, { conn, text }) => {
   if (!text) return m.reply("مثال: .كلمات Shiloh again");
@@ -20,7 +21,11 @@ let handler = async (m, { conn, text }) => {
   result += `⏱️ *المدة:* ${Math.floor(data.duration / 60)}:${(data.duration % 60).toString().padStart(2, '0')}\n\n`;
   result += `📝 *كلمات الأغنية:*\n\`\`\`\n${data.plainLyrics}\n\`\`\``;
   
-  await conn.sendMessage(m.chat, { text: result }, { quoted: m });
+  // كلمات الأغنية الطويلة بتتجاوز حد الواتساب، فبنبعت النص على رسائل
+  // متتابعة بدل ما الرسالة تضيع.
+  for (const part of splitText(result)) {
+    await conn.sendMessage(m.chat, { text: part }, { quoted: m });
+  }
 }
 
 handler.usage = ["كلمات"];

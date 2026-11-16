@@ -9,6 +9,8 @@
     .ميتا_كود py print("hello")
   ═══════════════════════════════════════════
 */
+import { pruneCooldown } from "../../system/cooldowns.js";
+
 const cooldown = new Map();
 const COOLDOWN_MS = 4 * 1000;
 
@@ -26,6 +28,7 @@ const handler = async (m, { conn, text }) => {
     }
     const last = cooldown.get(m.chat) || 0;
     if (Date.now() - last < COOLDOWN_MS) return;
+    pruneCooldown(cooldown, COOLDOWN_MS);
     cooldown.set(m.chat, Date.now());
 
     if (typeof conn?.sendAiMessage === 'function') {

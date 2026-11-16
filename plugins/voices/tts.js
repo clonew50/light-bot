@@ -6,6 +6,7 @@
   ═══════════════════════════════════════════
 */
 import axios from "axios";
+import { pruneCooldown } from "../../system/cooldowns.js";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
 
@@ -51,6 +52,7 @@ const handler = async (m, { conn, text, args, usedPrefix, command }) => {
     if (now - last < COOLDOWN)
       return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN - (now - last)) / 1000)} ثانية تانية`);
 
+    pruneCooldown(cooldown, COOLDOWN);
     cooldown.set(m.sender, now);
 
     try { await m.react("⏳"); } catch (e) {}

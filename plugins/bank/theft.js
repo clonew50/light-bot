@@ -1,3 +1,5 @@
+import { pruneCooldown } from "../../system/cooldowns.js";
+
 const cooldown = new Map();
 
 const handler = async (m, { conn }) => {
@@ -21,6 +23,7 @@ const handler = async (m, { conn }) => {
     const stealAmount = Math.floor(Math.random() * 201) + 100;
     const success = Math.random() < 0.7;
     
+    pruneCooldown(cooldown, 3600000);
     cooldown.set(m.sender, now);
     
     if (!success) {

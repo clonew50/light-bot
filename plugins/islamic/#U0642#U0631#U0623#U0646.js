@@ -27,6 +27,7 @@ const API_TIMEOUT_MS = 15000;
 const AUDIO_TIMEOUT_MS = 20000;
 const SEND_TIMEOUT_MS = 60000;
 const COOLDOWN_MS = 10000;
+const MAX_TRACKED = 5000;   // أقصى عدد مستخدمين محفوظين في خريطة الكولداون
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
 const ERR_API = `${HEADER}\n❌ *تعذّر جلب فهرس السور من المصدر.*\n🔄 استنى شوية وجرّب تاني.\n${HEADER}`;
@@ -120,9 +121,24 @@ const cooldownLeft = (sender, slot) => {
     return left > 0 ? left : 0;
 };
 
+/* حصر الخريطة: مدخل انتهت صلاحية كل خاناته يتمسح، وبعد كده الأقدم أولاً */
+const pruneCooldowns = () => {
+    const now = Date.now();
+    for (const [id, rec] of cooldowns) {
+        const newest = Math.max(Number(rec.index) || 0, Number(rec.audio) || 0);
+        if (now - newest > COOLDOWN_MS) cooldowns.delete(id);
+    }
+    if (cooldowns.size > MAX_TRACKED) {
+        const oldest = [...cooldowns.entries()]
+            .sort((a, b) => Math.max(Number(a[1].index) || 0, Number(a[1].audio) || 0) - Math.max(Number(b[1].index) || 0, Number(b[1].audio) || 0));
+        for (const [id] of oldest.slice(0, cooldowns.size - MAX_TRACKED)) cooldowns.delete(id);
+    }
+};
+
 const markCooldown = (sender, slot) => {
     const rec = cooldowns.get(sender) || {};
     rec[slot] = Date.now();
+    pruneCooldowns();
     cooldowns.set(sender, rec);
 };
 

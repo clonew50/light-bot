@@ -10,6 +10,7 @@
   ═══════════════════════════════════════════
 */
 import crypto from 'crypto';
+import { pruneCooldown } from "../../system/cooldowns.js";
 
 const cooldown = new Map();
 const COOLDOWN_MS = 4 * 1000;
@@ -105,6 +106,7 @@ const metaText = async (m, { conn, args }) => {
     }
     const last = cooldown.get(m.chat) || 0;
     if (Date.now() - last < COOLDOWN_MS) return;
+    pruneCooldown(cooldown, COOLDOWN_MS);
     cooldown.set(m.chat, Date.now());
     await sendMeta(conn, m.chat, body, false);
   } catch (e) {
@@ -122,6 +124,7 @@ const metaThinking = async (m, { conn, args }) => {
     }
     const last = cooldown.get(m.chat) || 0;
     if (Date.now() - last < COOLDOWN_MS) return;
+    pruneCooldown(cooldown, COOLDOWN_MS);
     cooldown.set(m.chat, Date.now());
     await sendMeta(conn, m.chat, body, true);
   } catch (e) {

@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import fs from "fs";
 import path from "path";
 import { promisify } from "util";
@@ -8,10 +8,19 @@ import { fileTypeFromBuffer } from "file-type";
 import { Sticker } from "wa-sticker-formatter";
 import cheerio from "cheerio";
 
-const execAsync = promisify(exec);
+// أوامر بدون شل (execFile) وبمهلة صارمة — العملية المعلّقة بتتقتل بدل ما تعلّ البوت.
+const execFileAsync = promisify(execFile);
+const FFMPEG_TIMEOUT = 120000;   // دقيقتين أقصى مدة لتحويل واحد
+const HTTP_TIMEOUT = 60000;      // مهلة افتراضية لطلبات الرفع/التحميل
 const tmp = path.join(process.cwd(), "tmp");
 
 if (!fs.existsSync(tmp)) fs.mkdirSync(tmp, { recursive: true });
+
+// fileTypeFromBuffer ممكن ترجّع null للملفات المجهولة — منفصلّعش على undefined
+const fileInfo = async (buffer) => {
+  const type = (await fileTypeFromBuffer(buffer)) || {};
+  return { ext: type.ext || 'bin', mime: type.mime || 'application/octet-stream' };
+};
 
 /* ========== Create Sticker ======== */
 
@@ -33,7 +42,7 @@ async function gifToMp4(url) {
   const mp4Path = path.join(tmp, `${id}.mp4`);
   
   const writer = fs.createWriteStream(gifPath);
-  const res = await axios({ url, responseType: 'stream' });
+  const res = await axios({ url, responseType: 'stream', timeout: HTTP_TIMEOUT });
   res.data.pipe(writer);
   // مشاكل قديمة: ملفات كانت بتفضل عالقة في tmp لو ffmpeg فشل، وأخطاء الستريم
   // كانت ممكن تعمل uncaught أو pending promise للأبد
@@ -44,7 +53,11 @@ async function gifToMp4(url) {
   });
   
   try {
-    await execAsync(`ffmpeg -i "${gifPath}" -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -pix_fmt yuv420p "${mp4Path}"`);
+    await execFileAsync("ffmpeg", [
+      "-i", gifPath,
+      "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+      "-c:v", "libx264", "-pix_fmt", "yuv420p", mp4Path, "-y"
+    ], { timeout: FFMPEG_TIMEOUT });
     return fs.readFileSync(mp4Path);
   } finally {
     // نضمن تنظيف الملفات المؤقتة في نجاح أو فشل
@@ -55,12 +68,12 @@ async function gifToMp4(url) {
 /* =========== CatBox =========== */
 
 async function uploadToCatbox(buffer) {
-  const { ext, mime } = await fileTypeFromBuffer(buffer);
+  const { ext, mime } = await fileInfo(buffer);
   const form = new FormData();
   form.append('reqtype', 'fileupload');
   form.append('fileToUpload', buffer, { filename: `${Date.now()}.${ext}`, contentType: mime });
 
-  const { data } = await axios.post('https://catbox.moe/user/api.php', form, { headers: form.getHeaders() });
+  const { data } = await axios.post('https://catbox.moe/user/api.php', form, { headers: form.getHeaders(), timeout: HTTP_TIMEOUT });
   if (!data?.includes('catbox')) throw new Error('upload failed');
   return data.trim();
 }
@@ -72,7 +85,7 @@ async function AiChat(options = {}) {
   // فبيكسر الطلب أو بيعمل مسارات ملخبطة
   const text = encodeURIComponent(String(options.text || ''));
   const url = `https://text.pollinations.ai/${text}?model=${encodeURIComponent(options.model || "openai")}`;
-  return (await fetch(url)).text();
+  return (await fetch(url, { signal: AbortSignal.timeout(30000) })).text();
 }
 
 /* =========== Qu.ax Upload =========== */
@@ -98,16 +111,16 @@ const extractFromHtml = (html, baseUrl) => {
 };
 
 const uploadToQuax = async (buffer) => {
-  const { ext, mime } = await fileTypeFromBuffer(buffer);
+  const { ext, mime } = await fileInfo(buffer);
   const form = new FormData();
   form.append('files[]', buffer, { filename: `tmp.${ext}`, contentType: mime });
-  const { data } = await axios.post('https://qu.ax/upload.php', form, { headers: form.getHeaders() });
-  
+  const { data } = await axios.post('https://qu.ax/upload.php', form, { headers: form.getHeaders(), timeout: HTTP_TIMEOUT });
+
   let mediaUrl = typeof data === 'string' ? extractFromHtml(data, 'https://qu.ax') : data.files?.[0]?.url;
   if (!mediaUrl) throw new Error('Upload failed');
   if (mediaUrl.includes('/x/')) return mediaUrl;
-  
-  const { data: pageHtml } = await axios.get(mediaUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+
+  const { data: pageHtml } = await axios.get(mediaUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: HTTP_TIMEOUT });
   return extractFromHtml(pageHtml, mediaUrl) || mediaUrl;
 };
 
@@ -122,7 +135,7 @@ async function uploadTmpfiles(buffer) {
         throw new Error("مفتاح رفع الملفات غير مضبوط — اضبط TERMAI_KEY في البيئة");
     }
 
-    const { ext, mime } = await fileTypeFromBuffer(buffer);
+    const { ext, mime } = await fileInfo(buffer);
     const form = new FormData();
     form.append('file', buffer, { filename: `file.${ext}`, contentType: mime });
 

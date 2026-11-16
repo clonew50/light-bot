@@ -1,3 +1,5 @@
+import { splitText } from "../../system/text-chunks.js";
+
 const handler = async (m, { conn, bot, config }) => {
 
   const helpMessage = `❐═━━━═╊⊰🩸⊱╉═━━━═❐
@@ -125,10 +127,16 @@ const handler = async (m, { conn, bot, config }) => {
 
   const img = "https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/0b22c6a0-3522-4e3d-b1b8-120642cb25b2.jpg";
 
+  // الكابشن محدود (1024 حرف) والقائمة أطول من كده بكثير: بنبعت صورة
+  // بكابشن قصير وبعدين القائمة نص مقسّم على رسائل ≤ 4096 حرف.
   await conn.sendMessage(m.chat, {
     image: { url: img },
-    caption: helpMessage
+    caption: "📜 قائمة أوامر البوت"
   }, { quoted: m });
+
+  for (const part of splitText(helpMessage)) {
+    await conn.sendMessage(m.chat, { text: part }, { quoted: m });
+  }
 };
 
 handler.command = ["شرح", "help"];

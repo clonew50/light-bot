@@ -1,5 +1,6 @@
 import axios from 'axios';
 import FormData from 'form-data';
+import { fitText } from "../../system/text-chunks.js";
 
 let handler = async (m, { conn }) => {
   try {
@@ -22,7 +23,8 @@ let handler = async (m, { conn }) => {
       return await conn.sendMessage(m.chat, { text: `❌ ${err}` }, { quoted: m });
     }
 
-    await conn.sendMessage(m.chat, { text: parsed }, { quoted: m });
+    // النص المستخرج ممكن يبقى أطول من حد الواتساب، فنقيله بملاحظة قطع صريحة.
+    await conn.sendMessage(m.chat, { text: fitText(parsed) }, { quoted: m });
   } catch (error) {
     await conn.sendMessage(m.chat, { text: `Err: ${error.message}` }, { quoted: m });
   }
