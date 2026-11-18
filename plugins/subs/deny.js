@@ -31,7 +31,7 @@ const run = async (m, { args }) => {
 };
 
 run.command = ["رفض_تنصيب", "denysub"];
-run.usage = [".رفض_تنصيب <رقم>"];
+run.usage = ["رفض_تنصيب <رقم>"];
 run.category = "sub";
 run.owner = true;
 export default run;

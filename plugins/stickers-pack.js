@@ -388,7 +388,5 @@ let handler = async (m, { conn, text, prefix, command, bot }) => {
 handler.command = ['ملصقات', 'باكج', 'stickerpack', 'pack']
 handler.usage = ['ملصقات [بحث] [عدد]', 'باكج [بحث] [عدد]']
 handler.category = 'sticker'
-handler.help = ['ملصقات', 'باكج']
-handler.tags = ['sticker']
 
 export default handler

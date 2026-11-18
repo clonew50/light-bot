@@ -88,7 +88,7 @@ const handler = async (m, { conn }) => {
     };
 
   } catch (e) {
-    console.error(e);
+    console.error('احزر:', e?.message || e);
     conn.reply(m.chat, '❌ حدث خطأ فني أثناء تشغيل اللعبة.', m);
   }
 };

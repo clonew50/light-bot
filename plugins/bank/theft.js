@@ -94,7 +94,7 @@ const handler = async (m, { conn }) => {
 };
 
 handler.usage = ["سرقة"];
-handler.category = "games";
+handler.category = "bank";
 handler.command = ["سرقة", "steal"];
 
 export default handler;

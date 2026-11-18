@@ -58,7 +58,7 @@ const handler = async (m, ctx = {}) => {
 };
 
 handler.command = ['اختفاء', 'vanish'];
-handler.usage = ['.اختفاء <نص>'];
+handler.usage = ['اختفاء <نص>'];
 handler.category = 'tools';
 handler.cooldown = 3;
 

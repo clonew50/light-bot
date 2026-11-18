@@ -1168,10 +1168,6 @@ handler.command = [
     'ايديت-بينتر'
 ];
 
-handler.help = [
-    'ايديت <نص>'
-];
-
 handler.usage = [
     'ايديت <نص>'
 ];

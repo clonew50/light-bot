@@ -1,146 +1,72 @@
 /*
   ═══════════════════════════════════════════
-  🌤️ الطقس — Open-Meteo (مجاني بدون مفتاح، يدعم أسماء المدن بالعربي)
-  الأمر: .طقس <مدينة>  |  .جو <مدينة>  |  .weather <city>
+  🌤️ حالة الطقس — Open-Meteo (مجاني، بدون مفتاح)
+  الأمر: .طقس <مدينة>  |  .جو <مدينة>
   ═══════════════════════════════════════════
 */
-import axios from "axios";
-import { pruneCooldown } from "../../system/cooldowns.js";
+import axios from 'axios'
+import { pruneCooldown } from '../../system/cooldowns.js'
 
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
-const TIMEOUT = 25000;
-const COOLDOWN = 10 * 1000;
+const GEOCODE = 'https://geocoding-api.open-meteo.com/v1/search'
+const FORECAST = 'https://api.open-meteo.com/v1/forecast'
+const COOLDOWN = 15 * 1000
+const cooldown = new Map()
 
-/* كولداون في الذاكرة زي plugins/bank/theft.js */
-const cooldown = new Map();
-
-const FOOTER = "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻";
-
-/* أكواد WMO من Open-Meteo → وصف عربي + إيموجي */
-const WMO = {
-  0:  ["صافي", "☀️"], 1: ["صافي جزئياً", "🌤️"], 2: ["غائم جزئياً", "⛅"], 3: ["غائم", "☁️"],
-  45: ["ضباب", "🌫️"], 48: ["ضباب متجمد", "🌫️"],
-  51: ["رشات خفيفة", "🌦️"], 53: ["رشات متوسطة", "🌦️"], 55: ["رشات كثيفة", "🌦️"],
-  56: ["رشات متجمدة", "🌧️"], 57: ["رشات متجمدة كثيفة", "🌧️"],
-  61: ["مطر خفيف", "🌧️"], 63: ["مطر متوسط", "🌧️"], 65: ["مطر غزير", "⛈️"],
-  66: ["مطر متجمد", "🌧️"], 67: ["مطر متجمد غزير", "🌧️"],
-  71: ["ثلوج خفيفة", "🌨️"], 73: ["ثلوج متوسطة", "🌨️"], 75: ["ثلوج كثيفة", "❄️"], 77: ["حبيبات ثلج", "❄️"],
-  80: ["زخات مطر خفيفة", "🌦️"], 81: ["زخات مطر متوسطة", "🌧️"], 82: ["زخات مطر غزيرة", "⛈️"],
-  85: ["زخات ثلج خفيفة", "🌨️"], 86: ["زخات ثلج كثيفة", "❄️"],
-  95: ["عواصف رعدية", "⛈️"], 96: ["عواصف رعدية مع برد", "⛈️"], 99: ["عواصف رعدية شديدة مع برد", "⛈️"]
-};
-
-const handler = async (m, { conn, text, usedPrefix, command }) => {
+const handler = async (m, { conn, text }) => {
   try {
-    if (!text || !text.trim())
-      return m.reply(`📌 اكتب اسم المدينة بعد الأمر\nمثال: ${usedPrefix}${command} القاهرة\nأو: ${usedPrefix}${command} الرياض`);
-
-    const city = text.trim();
+    const city = (text || '').trim()
+    if (!city) return m.reply('📍 اكتب اسم المدينة: .طقس القاهرة')
 
     /* كولداون ضد السبام */
-    const now = Date.now();
-    const last = cooldown.get(m.sender) || 0;
+    const now = Date.now()
+    const last = cooldown.get(m.sender) || 0
     if (now - last < COOLDOWN)
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN - (now - last)) / 1000)} ثانية تانية`);
+      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN - (now - last)) / 1000)} ثانية تانية قبل عملية جديدة`)
 
-    pruneCooldown(cooldown, COOLDOWN);
-    cooldown.set(m.sender, now);
+    pruneCooldown(cooldown, COOLDOWN)
+    cooldown.set(m.sender, now)
 
-    try { await m.react("🌍"); } catch (e) {}
+    const { data: geo } = await axios.get(GEOCODE, { params: { name: city, count: 1, language: 'ar', format: 'json' } })
+    if (!geo?.results?.length) return m.reply('❌ مدينة غير معروفة')
 
-    /* 1) البحث عن المدينة (بيفهم العربي، ولو الإملاء ناقص همزات نجرب مصدر تاني) */
-    let place = await geocode(city);
-    if (!place) place = await geocodeOSM(city);
-    if (!place) {
-      try { await m.react("❌"); } catch (e) {}
-      return m.reply(`❌ ملقتش مدينة باسم "${city}"، اكتبها صح أو بالإنجليزي`);
+    const { latitude, longitude, name, country, admin1 } = geo.results[0]
+    const { data: fc } = await axios.get(FORECAST, {
+      params: {
+        latitude, longitude,
+        current_weather: true,
+        daily: 'temperature_2m_max,temperature_2m_min,weathercode',
+        timezone: 'auto'
+      }
+    })
+
+    const cw = fc.current_weather
+    const daily = fc.daily
+    const codes = {
+      0: '☀️ صافٍ', 1: '🌤️ غائم جزئياً', 2: '⛅ غائم', 3: '☁️ مغطى',
+      45: '🌫️ ضباب', 48: '🌫️ ضباب متجمد', 51: '🌦️ رذاذ خفيف', 53: '🌦️ رذاذ متوسط',
+      55: '🌧️ رذاذ كثيف', 61: '🌧️ مطر خفيف', 63: '🌧️ مطر متوسط', 65: '🌧️ مطر غزير',
+      71: '❄️ ثلج خفيف', 73: '❄️ ثلج متوسط', 75: '❄️ ثلج كثيف', 80: '🌦️ زخات مطر',
+      95: '⛈️ عاصفة', 99: '⛈️ عاصفة ببرد'
     }
 
-    /* 2) جلب حالة الطقس */
-    const w = await getWeather(place.latitude, place.longitude);
-    const code = w.current?.weather_code ?? 0;
-    const [desc, icon] = WMO[code] || ["غير معروف", "🌡️"];
-    const cur = w.current || {};
+    const today = daily?.weathercode?.[0] ? codes[daily.weathercode[0]] : '—'
+    const maxT = daily?.temperature_2m_max?.[0] ?? '—'
+    const minT = daily?.temperature_2m_min?.[0] ?? '—'
 
-    const reply = `❐═━━━═╊⊰🌤️⊱╉═━━━═❐
-*${icon} ┇ طقس ${place.name} ┇ ${icon}*
-*📍 البلد:* ${place.country}${place.admin1 && place.admin1 !== place.name ? ` — ${place.admin1}` : ""}
+    const msg = `🌤️ *حالة الطقس: ${name}${admin1 ? `، ${admin1}` : ''}${country ? `، ${country}` : ''}*\n\n` +
+      `🌡️ *الحالية:* ${cw?.temperature}°C (رياح ${cw?.windspeed} كم/س)\n` +
+      `☁️ *الحالة:* ${codes[cw?.weathercode] || 'غير معروف'}\n\n` +
+      `📅 *اليوم:* ${today}\n` +
+      `🔺 *العليا:* ${maxT}°C | 🔻 *الصغرى:* ${minT}°C`
 
-🌡️ *الحرارة:* ${cur.temperature_2m}°C
-🥵 *الإحساس الفعلي:* ${cur.apparent_temperature}°C
-💧 *الرطوبة:* ${cur.relative_humidity_2m}%
-💨 *الرياح:* ${cur.wind_speed_10m} كم/س
-🔍 *الحالة:* ${desc}
-🗓️ *أعلى/أقل اليوم:* ${w.daily?.temperature_2m_max?.[0] ?? "—"}° / ${w.daily?.temperature_2m_min?.[0] ?? "—"}°
-
-🕐 ${cur.time || ""} — بتوقيت ${w.timezone || ""}
-❐═━━━═╊⊰🩸⊱╉═━━━═❐
-${FOOTER}`;
-
-    try { await m.react("✅"); } catch (e) {}
-    await m.reply(reply);
-  } catch (error) {
-    console.error("[weather]", error?.message || error);
-    try { await m.react("❌"); } catch (e) {}
-    await m.reply("❌ حصلت مشكلة في جلب الطقس: " + (error.message || error));
+    await m.reply(msg)
+  } catch (e) {
+    console.error('weather:', e)
+    m.reply('❌ فشل جلب الطقس')
   }
-};
-
-async function geocode(name) {
-  const { data } = await axios.get("https://geocoding-api.open-meteo.com/v1/search", {
-    params: { name, count: 1, language: "ar", format: "json" },
-    headers: { "User-Agent": UA },
-    timeout: TIMEOUT
-  });
-  const r = data?.results?.[0];
-  if (!r) return null;
-  return {
-    name: r.name,
-    country: r.country || "",
-    admin1: r.admin1 || "",
-    latitude: r.latitude,
-    longitude: r.longitude
-  };
 }
 
-/* مصدر احتياطي بيتسامح مع الإملاء (مثلاً "الاسكندرية" من غير همزة) */
-async function geocodeOSM(name) {
-  const { data } = await axios.get("https://nominatim.openstreetmap.org/search", {
-    params: { q: name, format: "json", limit: 1, "accept-language": "ar" },
-    headers: { "User-Agent": UA },
-    timeout: TIMEOUT
-  });
-  const r = Array.isArray(data) ? data[0] : null;
-  if (!r) return null;
-  const parts = String(r.display_name || "").split(",").map((s) => s.trim()).filter(Boolean);
-  return {
-    name: r.name || parts[0] || name,
-    country: parts[parts.length - 1] || "",
-    admin1: parts.length > 2 ? parts[parts.length - 2] : "",
-    latitude: parseFloat(r.lat),
-    longitude: parseFloat(r.lon)
-  };
-}
-
-async function getWeather(lat, lon) {
-  const { data } = await axios.get("https://api.open-meteo.com/v1/forecast", {
-    params: {
-      latitude: lat,
-      longitude: lon,
-      current: "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m",
-      daily: "temperature_2m_max,temperature_2m_min",
-      timezone: "auto",
-      forecast_days: 1
-    },
-    headers: { "User-Agent": UA },
-    timeout: TIMEOUT
-  });
-  return data;
-}
-
-handler.command = ["طقس", "جو", "weather"];
-handler.usage = ["طقس <مدينة>"];
-handler.category = "tools";
-handler.usePrefix = true;
-
-export default handler;
+handler.command = ['طقس', 'جو', 'weather']
+handler.usage = ['طقس القاهرة', 'طقس دبي', 'جو الرياض']
+handler.category = 'tools'
+export default handler

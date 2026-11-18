@@ -8,7 +8,7 @@ const handler = async (m, { conn }) => {
     const sticker = await conn.convertToSticker(m.quoted, { contextInfo: { mentionedJid: [m.sender] } });
     await conn.sendMessage(m.chat, { sticker }, { quoted: m });
   } catch (e) {
-    console.error(e);
+    console.error('ستيكر:', e?.message || e);
     m.reply('❌ حدث خطأ أثناء تحويل الصورة إلى ملصق');
   }
 };

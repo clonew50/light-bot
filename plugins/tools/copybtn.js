@@ -59,7 +59,7 @@ const handler = async (m, { conn, bot, args }) => {
 };
 
 handler.command = ['زر_نسخ', 'copybtn'];
-handler.usage = ['.زر_نسخ <نص>'];
+handler.usage = ['زر_نسخ <نص>'];
 handler.category = 'tools';
 handler.cooldown = 5;
 

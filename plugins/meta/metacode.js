@@ -45,7 +45,7 @@ const handler = async (m, { conn, text }) => {
 };
 
 handler.command = ['ميتا_كود', 'ميتاكود'];
-handler.usage = ['.ميتا_كود <لغة> <كود>'];
+handler.usage = ['ميتا_كود <لغة> <كود>'];
 handler.category = 'ai';
 handler.cooldown = 4;
 

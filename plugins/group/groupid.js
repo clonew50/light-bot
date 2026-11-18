@@ -54,7 +54,7 @@ const handler = async (m, { conn, text }) => {
       mentions: [m.sender]
     }, { quoted: m });
   } catch (error) {
-    console.error(error);
+    console.error('groupid:', error?.message || error);
     await m.reply('❌ حدث خطأ أثناء جلب معلومات المجموعة');
   }
 };

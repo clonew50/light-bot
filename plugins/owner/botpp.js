@@ -13,7 +13,7 @@ const handler = async (m, { conn }) => {
         await conn.updateProfilePicture(jid, media);
         m.reply('*✅  تم تغيير صورة بروفايل البوت*');
     } catch (error) {
-        console.error(error);
+        console.error('botpp:', error?.message || error);
         m.reply(error.message);
     }
 };

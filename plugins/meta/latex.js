@@ -162,7 +162,7 @@ const handler = async (m, { conn, args, fetchImpl }) => {
 };
 
 handler.command = ['لاتكس', 'latex', 'معادلة'];
-handler.usage = ['.لاتكس <معادلة>'];
+handler.usage = ['لاتكس <معادلة>'];
 handler.category = 'tools';
 handler.cooldown = 5;
 

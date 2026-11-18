@@ -24,7 +24,7 @@ const handler = async (m, { conn, command }) => {
       mentions: [m.sender]
     }, m);
   } catch (error) {
-    console.error(error);
+    console.error('image2url2:', error?.message || error);
     m.reply('❌ حدث خطأ أثناء الرفع');
   }
 };

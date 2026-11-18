@@ -250,7 +250,7 @@ const handler = async (m, { conn, text, command }) => {
 };
 
 // إعدادات الأمر الخاصة بك بالملي
-handler.usage = ['apk <اسم التطبيق']; 
+handler.usage = ['apk <اسم التطبيق>']; 
 handler.category = 'downloads';
 handler.command = ['apk']; 
 handler.limit = true;

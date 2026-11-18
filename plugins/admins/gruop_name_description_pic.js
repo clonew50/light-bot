@@ -31,7 +31,7 @@ const handler = async (m, { conn, text, command }) => {
     try {
         await action();
     } catch (error) {
-        console.error(error);
+        console.error('gruop_name_description_pic:', error?.message || error);
         await m.reply(`❌ ${error?.message || error}`);
     }
 };

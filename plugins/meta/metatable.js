@@ -52,8 +52,8 @@ const handler = async (m, ctx = {}) => {
   }
 };
 
-handler.command = ['جدول', 'table', 'احصائيات'];
-handler.usage = ['.جدول'];
+handler.command = ['جدول', 'table'];
+handler.usage = ['جدول'];
 handler.category = 'info';
 handler.cooldown = 6;
 
