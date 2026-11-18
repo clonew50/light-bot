@@ -96,7 +96,7 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     // إعدادات سريعة
     if (subCmd === 'نموذج' || subCmd === 'model') {
       const id = args[1]
-      if (!id) return conn.sendMessage(m.chat, { text: '🎨 اختر النموذج:', footer: 'LIGHT BOT • Imagine', buttons: MODELS.map(m => ({ name: 'quick_reply', params: { display_text: `${m.emoji} ${m.name}`, id: `.imagine نموذج ${m.id}` })) }), { quoted: m })
+      if (!id) return conn.sendMessage(m.chat, { text: '🎨 اختر النموذج:', footer: 'LIGHT BOT • Imagine', buttons: MODELS.map(m => ({ name: 'quick_reply', params: { display_text: `${m.emoji} ${m.name}`, id: `.imagine نموذج ${m.id}` } })) }, { quoted: m })
       const mdl = MODELS.find(x => x.id === id)
       if (!mdl) return m.reply('❌ نموذج غير موجود')
       settings.model = id
@@ -105,7 +105,7 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     if (subCmd === 'نسبة' || subCmd === 'ratio' || subCmd === 'أبعاد') {
       const id = args[1]
-      if (!id) return conn.sendMessage(m.chat, { text: '📐 اختر النسبة:', footer: 'LIGHT BOT • Imagine', buttons: ASPECT_RATIOS.map(r => ({ name: 'quick_reply', params: { display_text: `${r.emoji} ${r.name}`, id: `.imagine نسبة ${r.id}` })) }), { quoted: m })
+      if (!id) return conn.sendMessage(m.chat, { text: '📐 اختر النسبة:', footer: 'LIGHT BOT • Imagine', buttons: ASPECT_RATIOS.map(r => ({ name: 'quick_reply', params: { display_text: `${r.emoji} ${r.name}`, id: `.imagine نسبة ${r.id}` } })) }, { quoted: m })
       const ratio = ASPECT_RATIOS.find(x => x.id === id)
       if (!ratio) return m.reply('❌ نسبة غير موجودة')
       settings.ratio = id
@@ -114,7 +114,7 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     if (subCmd === 'أسلوب' || subCmd === 'style') {
       const id = args[1]
-      if (!id) return conn.sendMessage(m.chat, { text: '🎨 اختر الأسلوب:', footer: 'LIGHT BOT • Imagine', buttons: STYLES.map(s => ({ name: 'quick_reply', params: { display_text: `${s.emoji} ${s.name}`, id: `.imagine أسلوب ${s.id}` })) }), { quoted: m })
+      if (!id) return conn.sendMessage(m.chat, { text: '🎨 اختر الأسلوب:', footer: 'LIGHT BOT • Imagine', buttons: STYLES.map(s => ({ name: 'quick_reply', params: { display_text: `${s.emoji} ${s.name}`, id: `.imagine أسلوب ${s.id}` } })) }, { quoted: m })
       const style = STYLES.find(x => x.id === id)
       if (!style) return m.reply('❌ أسلوب غير موجود')
       settings.style = id

@@ -235,7 +235,7 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
         `🟨 = حرف صحيح في المكان الخطأ\n` +
         `⬜ = حرف غير موجود\n\n` +
         `⌨️ *اللوحة:*\n\`\`\`\n${keyboard}\n\`\`\`\n\n` +
-        `استخدم الأزرار أو اكتب: `.wordle حرف ق``,
+        `استخدم الأزرار أو اكتب: \`.wordle حرف ق\``,
       footer: 'LIGHT BOT • Wordle',
       buttons: [
         { name: 'quick_reply', params: { display_text: '💡 تلميح', id: `${usedPrefix}wordle تلميح` } },

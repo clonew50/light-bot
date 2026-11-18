@@ -155,13 +155,13 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     if (subCmd === 'إعدادات' || subCmd === 'settings' || subCmd === 'current') {
       const strength = getStrength(prefs.length, prefs.symbols, prefs.upper, prefs.lower, prefs.digits)
       return m.reply(
-        `⚙️ *إعدادات التوليد الحالية:*\\n\\n` +
-        `📏 *الطول:* ${prefs.length}\\n` +
-        `${prefs.symbols ? '✅' : '❌'} *رموز خاصة* (!@#$%^&*_-+=)\\n` +
-        `${prefs.upper ? '✅' : '❌'} *حروف كبيرة* (A-Z)\\n` +
-        `${prefs.lower ? '✅' : '❌'} *حروف صغيرة* (a-z)\\n` +
-        `${prefs.digits ? '✅' : '❌'} *أرقام* (0-9)\\n` +
-        `${prefs.excludeAmbiguous ? '✅' : '❌'} *استبعاد غامض* (il1Lo0O)\\n\\n` +
+        `⚙️ *إعدادات التوليد الحالية:*\n\n` +
+        `📏 *الطول:* ${prefs.length}\n` +
+        `${prefs.symbols ? '✅' : '❌'} *رموز خاصة* (!@#$%^&*_-+=)\n` +
+        `${prefs.upper ? '✅' : '❌'} *حروف كبيرة* (A-Z)\n` +
+        `${prefs.lower ? '✅' : '❌'} *حروف صغيرة* (a-z)\n` +
+        `${prefs.digits ? '✅' : '❌'} *أرقام* (0-9)\n` +
+        `${prefs.excludeAmbiguous ? '✅' : '❌'} *استبعاد غامض* (il1Lo0O)\n\n` +
         `${strength.emoji} *القوة المتوقعة:* ${strength.label}`
       )
     }
@@ -170,11 +170,11 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     if (subCmd === 'آخر' || subCmd === 'last') {
       const lastPwd = userPrefs.get(m.sender + '_last')
       if (!lastPwd) return m.reply('📭 لا توجد كلمة مرور سابقة')
-      const strength = getStrength(lastPwd.length, /[!@#$%^&*_-+=]/.test(lastPwd), /[A-Z]/.test(lastPwd), /[a-z]/.test(lastPwd), /[0-9]/.test(lastPwd))
+      const strength = getStrength(lastPwd.length, /[!@#$%^&*_\-+=]/.test(lastPwd), /[A-Z]/.test(lastPwd), /[a-z]/.test(lastPwd), /[0-9]/.test(lastPwd))
       return m.reply(
-        `📋 *آخر كلمة مرور مولدة:*\\n\\n` +
-        `\`${lastPwd}\`\\n\\n` +
-        `${strength.emoji} ${strength.label}\\n` +
+        `📋 *آخر كلمة مرور مولدة:*\n\n` +
+        `\`${lastPwd}\`\n\n` +
+        `${strength.emoji} ${strength.label}\n` +
         `⚠️ *لا تشاركها مع أحد*`
       )
     }
@@ -189,10 +189,10 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       await m.react('🔐')
 
       return conn.sendMessage(m.chat, {
-        text: `🔐 *كلمة مرور جديدة مولدة:*\\n\\n` +
-          `\`${pwd}\`\\n\\n` +
-          `📏 *الطول:* ${prefs.length} حرف\\n` +
-          `${strength.emoji} *القوة:* ${strength.label}\\n\\n` +
+        text: `🔐 *كلمة مرور جديدة مولدة:*\n\n` +
+          `\`${pwd}\`\n\n` +
+          `📏 *الطول:* ${prefs.length} حرف\n` +
+          `${strength.emoji} *القوة:* ${strength.label}\n\n` +
           `⚠️ *لا تشاركها مع أحد، احفظها بأمان*`,
         footer: 'LIGHT BOT • Password Generator',
         buttons: [
@@ -209,14 +209,14 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     if (subCmd === 'نسخ' || subCmd === 'copy') {
       const value = args.slice(1).join(' ')
       if (!value) return m.reply('❌ لا توجد قيمة')
-      return m.reply(`📋 *تم النسخ:*\\n\`${value}\`\\n\\n(اضغط مطولاً للنسخ)`)
+      return m.reply(`📋 *تم النسخ:*\n\`${value}\`\n\n(اضغط مطولاً للنسخ)`)
     }
 
     // قائمة رئيسية
     const strength = getStrength(prefs.length, prefs.symbols, prefs.upper, prefs.lower, prefs.digits)
     cooldown.set(m.sender, now)
     return conn.sendMessage(m.chat, {
-      text: `🔐 *مولد كلمة مرور قوية*\\n\\n` +
+      text: `🔐 *مولد كلمة مرور قوية*\n\n` +
         `الإعدادات الحالية: ${prefs.length} حرف • ${strength.emoji} ${strength.label}`,
       footer: 'LIGHT BOT • Password Generator',
       buttons: buildMainButtons()

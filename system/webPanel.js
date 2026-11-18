@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { createPairingState } from './pairing.js';
 import { pushEvent as busPushEvent, getEvents } from './events.js';
 import { isAlive, livenessStatus } from './liveness.js';
+import { normalizeCommandsList, simulateCommand } from './simulator.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // hook للاختبارات/التشغيل المعزول: ملف الإعدادات في مكان تاني (افتراضيًا نفس الملف)
@@ -502,101 +503,243 @@ border-radius:10px;font-size:13px;text-align:center}
 const PANEL_HTML = `<!DOCTYPE html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>لوحة تحكم البوت</title>
+<title>لوحة تحكم لايت بوت التفاعلية</title>
 <style>
 *{box-sizing:border-box;font-family:system-ui,'Segoe UI',Tahoma,sans-serif}
-body{margin:0;background:#0b1220;color:#e2e8f0;padding:16px}
-.wrap{max-width:960px;margin:0 auto}
-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
-h1{font-size:20px;margin:0}
+:root{--bg:#090e1a;--surface:#111827;--surface2:#0b1220;--border:#1f2937;--border2:#334155;--text:#e2e8f0;--muted:#94a3b8;--accent:#38bdf8;--green:#4ade80;--amber:#f59e0b;--red:#ef4444}
+html,body{margin:0;background:var(--bg);color:var(--text);overflow-x:hidden}
+body{padding:16px}
+.wrap{max-width:1240px;margin:0 auto}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.brand{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h1{font-size:20px;margin:0;letter-spacing:-0.01em}
+.sub-meta{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.header-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .badge{padding:6px 12px;border-radius:999px;font-size:13px;font-weight:700}
 .on{background:#052e1a;color:#4ade80;border:1px solid #14532d}
 .off{background:#3f1d1d;color:#fca5a5;border:1px solid #7f1d1d}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
-.card{background:#111827;border:1px solid #1f2937;border-radius:16px;padding:16px}
-.card h2{margin:0 0 12px;font-size:15px;color:#93c5fd;display:flex;gap:8px;align-items:center}
-.row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed #1f2937;font-size:14px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tab-btn{border:1px solid var(--border2);background:var(--surface);color:var(--muted);border-radius:10px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer;transition:.15s}
+.tab-btn:hover{color:var(--text);border-color:var(--accent)}
+.tab-btn.active{background:var(--accent);color:#04283a;border-color:var(--accent)}
+.panel{display:none}
+.panel.active{display:block}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;min-width:0}
+.card h2{margin:0 0 12px;font-size:15px;color:#93c5fd;display:flex;gap:8px;align-items:center;justify-content:space-between}
+.row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border);font-size:14px;font-variant-numeric:tabular-nums}
 .row:last-child{border-bottom:0}
-.row span:first-child{color:#94a3b8}
-button{border:0;border-radius:10px;padding:10px 12px;cursor:pointer;font-weight:600;font-size:14px;background:#1f2937;color:#e2e8f0}
+.row span:first-child{color:var(--muted)}
+button{border:0;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;font-size:14px;background:#1f2937;color:var(--text);transition:.15s}
 button:hover{background:#334155}
-button.pri{background:#38bdf8;color:#04283a}
-button.warn{background:#f59e0b;color:#3b2100}
-button.danger{background:#ef4444;color:#fff}
-button.ghost{background:transparent;border:1px solid #334155}
+button.pri{background:var(--accent);color:#04283a}
+button.pri:hover{background:#7dd3fc}
+button.warn{background:var(--amber);color:#3b2100}
+button.danger{background:var(--red);color:#fff}
+button.ghost{background:transparent;border:1px solid var(--border2)}
+button.sm{padding:6px 10px;font-size:12px;border-radius:8px}
 .actions{display:flex;flex-wrap:wrap;gap:10px}
-input,select{width:100%;padding:11px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#e2e8f0;margin-bottom:10px}
+input,select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);margin-bottom:10px;font-size:14px}
+input:focus,select:focus{outline:none;border-color:var(--accent)}
 .qrbox{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
 .qrbox img{width:min(100%,280px);background:#fff;padding:10px;border-radius:14px}
 .code{font-size:30px;font-weight:800;letter-spacing:3px;color:#4ade80;direction:ltr;text-align:center;
-background:#052e1a;border:1px solid #14532d;border-radius:12px;padding:14px;margin:8px 0}
-.hint{color:#94a3b8;font-size:13px;line-height:1.7}
+background:#052e1a;border:1px solid #14532d;border-radius:12px;padding:14px;margin:8px 0;font-variant-numeric:tabular-nums}
+.hint{color:var(--muted);font-size:13px;line-height:1.7}
 .log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#a5b4fc;
-max-height:190px;overflow:auto;background:#0b1220;border:1px solid #1f2937;border-radius:10px;padding:10px;white-space:pre-wrap}
+max-height:220px;overflow:auto;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;white-space:pre-wrap}
 .err-item{background:#2a1414;border:1px solid #7f1d1d;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:13px}
 .msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#052e1a;border:1px solid #14532d;
-color:#86efac;padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;transition:.3s;pointer-events:none}
+color:#86efac;padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;transition:.3s;pointer-events:none;z-index:99}
 .msg.show{opacity:1}
-small.t{color:#475569}
+small.t{color:#64748b}
+
+/* Command Explorer */
+.toolbar{display:grid;grid-template-columns:2fr 1fr auto;gap:10px;margin-bottom:14px;align-items:start}
+.toolbar input,.toolbar select{margin-bottom:0}
+.cmd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.cmd-item{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;flex-direction:column;justify-content:space-between;gap:8px}
+.cmd-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cmd-name{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:700;color:var(--accent);direction:ltr;unicode-bidi:plaintext}
+.cmd-cat{font-size:11px;color:var(--muted)}
+.cmd-desc{font-size:13px;color:#cbd5e1;line-height:1.5;min-height:20px}
+.pager{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;flex-wrap:wrap}
+
+/* Interactive WhatsApp Simulator */
+.sim-layout{display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px;align-items:start}
+.sim-layout > *{min-width:0}
+.preset-list{display:flex;flex-direction:column;gap:8px}
+.preset-btn{text-align:right;display:flex;justify-content:space-between;align-items:center;background:var(--surface2);border:1px solid var(--border)}
+.preset-btn:hover{border-color:var(--accent)}
+.sim-bar{display:flex;gap:8px;margin-bottom:12px}
+.sim-bar input{margin-bottom:0;flex:1;min-width:0;direction:rtl;text-align:right;unicode-bidi:plaintext}
+.wa-chat{background:#0b141a;border:1px solid #1f2c34;border-radius:14px;padding:14px;min-height:420px;max-height:620px;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:12px}
+.wa-msg{max-width:88%;border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.65;word-break:break-word;min-width:0}
+.wa-user{align-self:flex-start;background:#005c4b;color:#e9edef;border-top-right-radius:2px}
+.wa-bot{align-self:flex-end;background:#1f2c34;color:#e9edef;border-top-left-radius:2px;width:min(100%,540px)}
+.wa-body{white-space:pre-wrap}
+.wa-body code{background:#0b141a;padding:2px 6px;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#7dd3fc}
+.wa-body pre{background:#0b141a;padding:10px;border-radius:8px;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#a5b4fc;direction:ltr;text-align:left;margin:6px 0}
+.wa-footer{margin-top:8px;font-size:11px;color:#8696a0}
+.wa-reacts{display:flex;gap:6px;margin-top:4px;font-size:13px}
+.wa-btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;padding-top:8px;border-top:1px solid #2a3942}
+.wa-btn{background:#111b21;color:#53bdeb;border:1px solid #2a3942;border-radius:8px;padding:7px 11px;font-size:13px;font-weight:600;cursor:pointer}
+.wa-btn:hover{background:#18262e;border-color:#53bdeb}
+.wa-select-box{width:100%;margin-top:6px;background:#111b21;border:1px solid #2a3942;border-radius:10px;padding:8px}
+.wa-select-row{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:right;background:transparent;border-bottom:1px solid #1f2c34;border-radius:0;padding:7px 4px;font-size:13px}
+.wa-select-row:last-child{border-bottom:0}
+.wa-poll{background:#111b21;border:1px solid #2a3942;border-radius:10px;padding:10px;margin-top:4px}
+.wa-poll-opt{display:flex;justify-content:space-between;width:100%;margin-top:6px;background:#18262e;border:1px solid #2a3942;text-align:right}
+.wa-poll-opt.voted{border-color:#4ade80;background:#052e1a}
+.wa-carousel{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;margin-top:8px;max-width:100%}
+.wa-car-card{min-width:210px;background:#111b21;border:1px solid #2a3942;border-radius:10px;padding:10px;flex-shrink:0}
+.wa-widget{width:100%;height:265px;border:1px solid #2a3942;border-radius:10px;background:#0f172a;margin-top:6px}
+
+@media (max-width: 820px){
+  body{padding:12px}
+  .toolbar{grid-template-columns:1fr}
+  .sim-layout{grid-template-columns:minmax(0,1fr)}
+  .sim-layout > .card:last-child{order:-1}
+  .preset-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  .preset-btn{padding:8px 10px;font-size:12px}
+  .preset-btn small{display:none}
+  .wa-msg{max-width:100%;width:100%}
+}
 </style></head>
 <body>
 <div class="wrap">
   <div id="pendingRestart" style="display:none;background:#3b2f05;border:1px solid #f59e0b;color:#fde68a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:14px">♻️ أعد التشغيل جارٍ... الإعداد الجديد بيتطبق لما البوت يرجع يقلع</div>
   <header>
-    <h1>🩸 لوحة تحكم البوت</h1>
-    <div style="display:flex;gap:8px;align-items:center">
+    <div class="brand">
+      <h1>🩸 لوحة تحكم لايت بوت</h1>
+      <span class="sub-meta" id="hdr-cmds">جارٍ تحميل الأوامر…</span>
+    </div>
+    <div class="header-actions">
       <span id="badge" class="badge off">…</span>
-      <button class="ghost" onclick="doAction('logout')">خروج</button>
+      <button class="ghost" type="button" onclick="doAction('logout')">خروج</button>
     </div>
   </header>
 
-  <div class="grid">
-    <div class="card">
-      <h2>📊 الحالة</h2>
-      <div class="row"><span>الاتصال</span><b id="s-conn">…</b></div>
-      <div class="row"><span>رقم البوت</span><b id="s-phone">…</b></div>
-      <div class="row"><span>الجلسة مُسجّلة</span><b id="s-session">…</b></div>
-      <div class="row"><span>عدد الأوامر</span><b id="s-cmds">…</b></div>
-      <div class="row"><span>الذاكرة</span><b id="s-mem">…</b></div>
-      <div class="row"><span>مدة التشغيل</span><b id="s-up">…</b></div>
-    </div>
+  <nav class="tabs" role="tablist" aria-label="أقسام لوحة التحكم">
+    <button type="button" class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">📊 الحالة والربط</button>
+    <button type="button" class="tab-btn" data-tab="commands" onclick="switchTab('commands')">📜 دليل الأوامر (<span id="tab-cmd-count">0</span>)</button>
+    <button type="button" class="tab-btn" data-tab="simulator" onclick="switchTab('simulator')">💬 محاكي التفاعل</button>
+  </nav>
 
-    <div class="card" id="installCard">
-      <h2>🔗 تنصيب / ربط واتساب</h2>
-      <div id="installBody"></div>
-    </div>
-
-    <div class="card">
-      <h2>🎛️ التحكم</h2>
-      <div class="actions">
-        <button class="pri" onclick="doAction('restart')">♻️ إعادة تشغيل</button>
-        <button class="warn" onclick="doAction('stop')">⏹️ إيقاف</button>
-        <button onclick="doAction('start')">▶️ تشغيل</button>
-        <button class="danger" onclick="resetSession()">🗑️ تصفير الجلسة</button>
+  <!-- TAB 1: Overview & Pairing -->
+  <section id="tab-overview" class="panel active">
+    <div class="grid">
+      <div class="card">
+        <h2>📊 الحالة</h2>
+        <div class="row"><span>الاتصال</span><b id="s-conn">…</b></div>
+        <div class="row"><span>رقم البوت</span><b id="s-phone">…</b></div>
+        <div class="row"><span>الجلسة مُسجّلة</span><b id="s-session">…</b></div>
+        <div class="row"><span>عدد الأوامر</span><b id="s-cmds">…</b></div>
+        <div class="row"><span>الذاكرة</span><b id="s-mem">…</b></div>
+        <div class="row"><span>مدة التشغيل</span><b id="s-up">…</b></div>
       </div>
-      <h2 style="margin-top:16px">✉️ إرسال رسالة</h2>
-      <input id="msgTo" placeholder="رقم واتساب مثال: 2010xxxxxxx">
-      <input id="msgText" placeholder="نص الرسالة">
-      <button class="pri" onclick="sendMsg()">إرسال</button>
-    </div>
 
-    <div class="card">
-      <h2>📝 سجل الأحداث</h2>
-      <div class="log" id="log">…</div>
-    </div>
+      <div class="card" id="installCard">
+        <h2>🔗 تنصيب / ربط واتساب</h2>
+        <div id="installBody"></div>
+      </div>
 
-    <div class="card">
-      <h2>⚠️ آخر الأخطاء</h2>
-      <div id="errors"><small class="t">لا يوجد</small></div>
+      <div class="card">
+        <h2>🎛️ التحكم</h2>
+        <div class="actions">
+          <button type="button" class="pri" onclick="doAction('restart')">♻️ إعادة تشغيل</button>
+          <button type="button" class="warn" onclick="doAction('stop')">⏹️ إيقاف</button>
+          <button type="button" onclick="doAction('start')">▶️ تشغيل</button>
+          <button type="button" class="danger" onclick="resetSession()">🗑️ تصفير الجلسة</button>
+        </div>
+        <h2 style="margin-top:16px">✉️ إرسال رسالة</h2>
+        <input id="msgTo" placeholder="رقم واتساب مثال: 2010xxxxxxx">
+        <input id="msgText" placeholder="نص الرسالة">
+        <button type="button" class="pri" onclick="sendMsg()">إرسال</button>
+      </div>
+
+      <div class="card">
+        <h2>📝 سجل الأحداث</h2>
+        <div class="log" id="log">…</div>
+      </div>
+
+      <div class="card">
+        <h2>⚠️ آخر الأخطاء</h2>
+        <div id="errors"><small class="t">لا يوجد</small></div>
+      </div>
     </div>
-  </div>
+  </section>
+
+  <!-- TAB 2: Command Explorer -->
+  <section id="tab-commands" class="panel">
+    <div class="card">
+      <h2><span>📜 دليل الأوامر التفاعلي</span><small class="t" id="cmdSummary"></small></h2>
+      <div class="toolbar">
+        <input id="cmdSearch" type="search" placeholder="ابحث باسم الأمر أو الوصف (مثال: سورة، زخرفة، تصويت، بطاقتي، دليل)..." oninput="cmdPage=1;renderCommands()">
+        <select id="cmdCat" onchange="cmdPage=1;renderCommands()">
+          <option value="">كل الأقسام</option>
+        </select>
+        <button type="button" class="ghost" onclick="loadCommands(true)">🔄 تحديث</button>
+      </div>
+      <div id="cmdGrid" class="cmd-grid"></div>
+      <div class="pager">
+        <button type="button" class="ghost sm" id="cmdPrev" onclick="changePage(-1)">◀ السابق</button>
+        <span class="hint" id="cmdPageInfo">صفحة 1</span>
+        <button type="button" class="ghost sm" id="cmdNext" onclick="changePage(1)">التالي ▶</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 3: Interactive Simulator -->
+  <section id="tab-simulator" class="panel">
+    <div class="sim-layout">
+      <div class="card">
+        <h2>⚡ أوامر تفاعلية جاهزة</h2>
+        <div class="preset-list">
+          <button type="button" class="preset-btn" onclick="runSim('.تصفح')"><span>🧭 المتصفح الشامل</span><small>.تصفح</small></button>
+          <button type="button" class="preset-btn" onclick="runSim('.اذكار_الصباح')"><span>🌅 أذكار الصباح</span><small>أزرار + نسخ</small></button>
+          <button type="button" class="preset-btn" onclick="runSim('.سبحة')"><span>📿 السبحة التفاعلية</span><small>حفظ قاعدة</small></button>
+          <button type="button" class="preset-btn" onclick="runSim('.زخرفة1 لايت')"><span>✒️ زخرفة الاسم</span><small>نسخ فوري</small></button>
+          <button type="button" class="preset-btn" onclick="runSim('.لغز_عشوائي')"><span>🧩 لغز تفاعلي</span><small>اختيارات</small></button>
+          <button type="button" class="preset-btn" onclick="runSim('.ابراج')"><span>🔮 قائمة الأبراج</span><small>منسدلة</small></button>
+          <button type="button" class="preset-btn" onclick="runSim('.بطاقتي')"><span>🪪 بطاقتي HTML</span><small>Widget</small></button>
+          <button type="button" class="preset-btn" onclick="runSim('.لوحة_البوت')"><span>📊 لوحة البوت HTML</span><small>Widget</small></button>
+          <button type="button" class="preset-btn" onclick="runSim('.تصويت_سريع')"><span>🗳️ استطلاع رأي</span><small>Poll</small></button>
+          <button type="button" class="preset-btn" onclick="runSim('.معاينة_كاروسيل')"><span>🎠 عرض دوّار</span><small>Carousel</small></button>
+          <button type="button" class="preset-btn" onclick="runSim('.دولة_مصر')"><span>🇪🇬 دليل دولة</span><small>بطاقة</small></button>
+          <button type="button" class="preset-btn" onclick="runSim('.محفظتي')"><span>💳 محفظتي</span><small>بنك</small></button>
+          <button type="button" class="preset-btn" onclick="runSim('.بحث_امر سورة')"><span>🔎 بحث أمر</span><small>فهرس</small></button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span>💬 معاينة رسائل واتساب التفاعلية</span><button type="button" class="ghost sm" onclick="clearSim()">🧹 مسح</button></h2>
+        <form class="sim-bar" onsubmit="event.preventDefault();runSim()">
+          <input id="simInput" value=".تصفح" placeholder="اكتب أي أمر مثل .بطاقتي أو .زخرفة1 لايت أو .كم_لميل 10">
+          <button type="submit" class="pri" id="simRunBtn">تنفيذ ▶</button>
+        </form>
+        <div class="wa-chat" id="simChat">
+          <div class="wa-msg wa-bot">
+            <div class="wa-body">👋 مرحباً بك في <strong>محاكي واتساب التفاعلي</strong>!<br>اختر أي أمر من القائمة الجانبية أو اكتب أمراً واضغط <strong>تنفيذ</strong> لمعاينة البطاقات والأزرار والاستطلاعات وودجت HTML مباشرة.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 </div>
 <div class="msg" id="msg"></div>
 
 <script>
 function toast(t){const m=document.getElementById('msg');m.textContent=t;m.classList.add('show');setTimeout(()=>m.classList.remove('show'),2500);}
 function fmt(s){s=Math.floor(s);const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return (d?d+'ي ':'')+(h?h+'س ':'')+m+'د';}
-let lastQr=null;
+function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+function switchTab(name){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='tab-'+name));
+  if(name==='commands' && !allCommands.length) loadCommands();
+}
+
 async function refresh(){
   try{
     const r=await fetch('/api/status');if(r.status===401){location.reload();return;}
@@ -608,6 +751,8 @@ async function refresh(){
     document.getElementById('s-phone').textContent=d.phone||'—';
     document.getElementById('s-session').textContent=d.sessionRegistered?'نعم':'لا';
     document.getElementById('s-cmds').textContent=d.commands;
+    document.getElementById('tab-cmd-count').textContent=d.commands;
+    document.getElementById('hdr-cmds').textContent=d.commands+' أمر جاهز';
     document.getElementById('s-mem').textContent=d.memoryMB+' MB';
     document.getElementById('s-up').textContent=fmt(d.uptimeSec);
     document.getElementById('log').textContent=(d.events||[]).map(e=>e&&e.line?e.line:(e&&e.text?e.text:String(e||''))).join('\\n')||'—';
@@ -618,7 +763,7 @@ async function refresh(){
     renderInstall(d);
   }catch(e){}
 }
-function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
 function renderInstall(d){
   const box=document.getElementById('installBody');
   if(d.connected){
@@ -641,10 +786,11 @@ function renderInstall(d){
      +'<option value="qr"'+(d.loginMode==='qr'?' selected':'')+'>رمز QR</option></select>'
      +'<label class="hint">رقم البوت</label>'
      +'<input id="ph" value="'+esc(d.configuredPhone)+'" placeholder="2010xxxxxxx">'
-     +'<div class="actions"><button class="pri" onclick="applyLogin()">حفظ وإعادة التشغيل</button>'
-     +'<button class="ghost" onclick="refresh()">🔄 تحديث</button></div></div>';
+     +'<div class="actions"><button type="button" class="pri" onclick="applyLogin()">حفظ وإعادة التشغيل</button>'
+     +'<button type="button" class="ghost" onclick="refresh()">🔄 تحديث</button></div></div>';
   box.innerHTML=html;
 }
+
 async function applyLogin(){
   const loginMode=document.getElementById('lm').value;
   const phone=document.getElementById('ph').value.trim();
@@ -671,7 +817,205 @@ async function sendMsg(){
   const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'send',to,text})});
   const d=await r.json();toast(d.message||'تم');
 }
+
+/* Command Explorer */
+let allCommands=[],cmdPage=1;
+const PAGE_SIZE=24;
+async function loadCommands(force){
+  try{
+    const r=await fetch('/api/commands');
+    if(r.status===401){location.reload();return;}
+    const d=await r.json();
+    allCommands=d.commands||[];
+    const sel=document.getElementById('cmdCat');
+    const prev=sel.value;
+    sel.innerHTML='<option value="">كل الأقسام ('+allCommands.length+')</option>'
+      +(d.categories||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.emoji+' '+c.label+' ('+c.count+')')+'</option>').join('');
+    if(prev)sel.value=prev;
+    renderCommands();
+    if(force)toast('تم تحديث الفهرس: '+allCommands.length+' أمر');
+  }catch(e){toast('تعذّر تحميل الأوامر');}
+}
+
+function getFilteredCommands(){
+  const q=(document.getElementById('cmdSearch').value||'').trim().toLowerCase();
+  const cat=document.getElementById('cmdCat').value;
+  return allCommands.filter(c=>{
+    if(cat && c.category!==cat) return false;
+    if(!q) return true;
+    return c.primary.toLowerCase().includes(q)
+      || (c.description||'').toLowerCase().includes(q)
+      || (c.categoryLabel||'').toLowerCase().includes(q)
+      || (c.triggers||[]).some(t=>String(t).toLowerCase().includes(q));
+  });
+}
+
+function renderCommands(){
+  const items=getFilteredCommands();
+  const pages=Math.max(1,Math.ceil(items.length/PAGE_SIZE));
+  if(cmdPage>pages)cmdPage=pages;
+  const start=(cmdPage-1)*PAGE_SIZE;
+  const slice=items.slice(start,start+PAGE_SIZE);
+  document.getElementById('cmdSummary').textContent='عرض '+slice.length+' من '+items.length+' أمر';
+  document.getElementById('cmdPageInfo').textContent='صفحة '+cmdPage+' من '+pages;
+  document.getElementById('cmdPrev').disabled=cmdPage<=1;
+  document.getElementById('cmdNext').disabled=cmdPage>=pages;
+  const grid=document.getElementById('cmdGrid');
+  if(!slice.length){
+    grid.innerHTML='<div class="hint">لا توجد أوامر مطابقة لبحثك.</div>';
+    return;
+  }
+  grid.innerHTML=slice.map(c=>{
+    const sample='.'+(c.usages&&c.usages[0]?c.usages[0].split(' ')[0]:c.primary);
+    return '<div class="cmd-item">'
+      +'<div><div class="cmd-head"><span class="cmd-name">.'+esc(c.primary)+'</span><span class="cmd-cat">'+esc(c.categoryEmoji+' '+c.categoryLabel)+'</span></div>'
+      +'<div class="cmd-desc">'+esc(c.description||'أمر متاح للتشغيل')+'</div></div>'
+      +'<button type="button" class="pri sm" data-cmd="'+esc(sample)+'" onclick="tryInSimulator(this.dataset.cmd)">جرب في المحاكي ▶</button>'
+      +'</div>';
+  }).join('');
+}
+function changePage(delta){cmdPage=Math.max(1,cmdPage+delta);renderCommands();}
+function tryInSimulator(cmd){switchTab('simulator');runSim(cmd);}
+
+/* Interactive Simulator */
+function clearSim(){
+  document.getElementById('simChat').innerHTML='<div class="wa-msg wa-bot"><div class="wa-body">تم مسح المحادثة. اكتب أي أمر لتجربته الآن!</div></div>';
+}
+function formatWaText(raw){
+  let s=esc(raw||'');
+  s=s.replace(/\\\`\\\`\\\`([\\s\\S]*?)\\\`\\\`\\\`/g,(_,c)=>'<pre>'+c.trim()+'</pre>');
+  s=s.replace(/\\\`([^\\\`\\n]+)\\\`/g,'<code>$1</code>');
+  s=s.replace(/\\*([^\\*\\n]+)\\*/g,'<strong>$1</strong>');
+  s=s.replace(/(^|\\s)_([^_\\n]+)_(\\s|$)/g,'$1<em>$2</em>$3');
+  return s;
+}
+function appendChatNode(node){
+  const chat=document.getElementById('simChat');
+  chat.appendChild(node);
+  chat.scrollTop=chat.scrollHeight;
+}
+function copyValue(val){
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(val).then(()=>toast('تم النسخ: '+val.slice(0,30))).catch(()=>toast('القيمة: '+val));
+  }else{toast('القيمة: '+val);}
+}
+function renderButtons(btns){
+  if(!btns||!btns.length)return null;
+  const wrap=document.createElement('div');
+  wrap.className='wa-btns';
+  for(const b of btns){
+    if(b.name==='single_select'&&b.params&&Array.isArray(b.params.sections)){
+      const box=document.createElement('div');box.className='wa-select-box';
+      const title=document.createElement('div');title.className='hint';title.textContent='📜 '+(b.params.display_title||b.params.title||'قائمة اختيار');
+      box.appendChild(title);
+      for(const sec of b.params.sections){
+        for(const row of (sec.rows||[])){
+          const rbtn=document.createElement('button');rbtn.type='button';rbtn.className='wa-select-row';
+          rbtn.innerHTML='<span>'+esc(row.title)+'</span><small class="t">'+esc(row.id||'')+'</small>';
+          rbtn.onclick=()=>{if(row.id)runSim(row.id);};
+          box.appendChild(rbtn);
+        }
+      }
+      wrap.appendChild(box);
+      continue;
+    }
+    const btn=document.createElement('button');btn.type='button';btn.className='wa-btn';
+    if(b.name==='cta_copy'){
+      btn.textContent=(b.params&&b.params.display_text)||'📋 نسخ';
+      btn.onclick=()=>copyValue((b.params&&b.params.copy_code)||'');
+    }else if(b.name==='cta_url'){
+      btn.textContent=(b.params&&b.params.display_text)||'🔗 رابط';
+      btn.onclick=()=>toast('الرابط: '+((b.params&&b.params.url)||''));
+    }else{
+      const label=(b.params&&b.params.display_text)||b.displayText||b.id||'زر';
+      const cmdId=(b.params&&b.params.id)||b.id||'';
+      btn.textContent=label;
+      btn.onclick=()=>{if(cmdId)runSim(cmdId);};
+    }
+    wrap.appendChild(btn);
+  }
+  return wrap;
+}
+async function runSim(presetCmd){
+  const inp=document.getElementById('simInput');
+  const cmd=(typeof presetCmd==='string'?presetCmd:inp.value).trim();
+  if(!cmd){toast('اكتب أمراً أولاً');return;}
+  if(typeof presetCmd==='string')inp.value=cmd;
+
+  const uNode=document.createElement('div');
+  uNode.className='wa-msg wa-user';
+  uNode.innerHTML='<div class="wa-body">'+esc(cmd)+'</div>';
+  appendChatNode(uNode);
+
+  try{
+    const r=await fetch('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:cmd})});
+    if(r.status===401){location.reload();return;}
+    const d=await r.json();
+    if(!d.ok){
+      const eNode=document.createElement('div');eNode.className='wa-msg wa-bot';
+      eNode.innerHTML='<div class="wa-body">⚠️ '+esc(d.error||'تعذّر تنفيذ الأمر')+'</div>';
+      appendChatNode(eNode);
+      return;
+    }
+    const outs=(d.outputs&&d.outputs.length)?d.outputs:[{type:'text',text:'✅ تم التنفيذ بدون نص إضافي ('+d.durationMs+'ms)'}];
+    for(const out of outs){
+      const bNode=document.createElement('div');bNode.className='wa-msg wa-bot';
+      if(out.type==='widget'){
+        const hdr=document.createElement('div');hdr.innerHTML='<strong>🧩 '+esc(out.title||'Widget')+'</strong>';
+        const ifr=document.createElement('iframe');
+        ifr.className='wa-widget';
+        ifr.setAttribute('sandbox','allow-scripts');
+        ifr.srcdoc=out.html||'';
+        bNode.appendChild(hdr);bNode.appendChild(ifr);
+      }else if(out.type==='poll'){
+        const pBox=document.createElement('div');pBox.className='wa-poll';
+        pBox.innerHTML='<strong>📊 '+esc(out.name)+'</strong>';
+        for(const v of (out.values||[])){
+          const ob=document.createElement('button');ob.type='button';ob.className='wa-poll-opt';
+          ob.innerHTML='<span>'+esc(v)+'</span><span>0</span>';
+          ob.onclick=()=>{
+            pBox.querySelectorAll('.wa-poll-opt').forEach(x=>{x.classList.remove('voted');x.lastChild.textContent='0';});
+            ob.classList.add('voted');ob.lastChild.textContent='1 ✓';
+            toast('تم التصويت: '+v);
+          };
+          pBox.appendChild(ob);
+        }
+        bNode.appendChild(pBox);
+      }else if(out.type==='carousel'){
+        const h=document.createElement('div');h.className='wa-body';h.innerHTML=formatWaText(out.headerText||'');
+        bNode.appendChild(h);
+        const track=document.createElement('div');track.className='wa-carousel';
+        for(const c of (out.cards||[])){
+          const cc=document.createElement('div');cc.className='wa-car-card';
+          cc.innerHTML='<strong>'+esc(c.title||'')+'</strong><div class="hint" style="margin:6px 0">'+esc(c.body||'')+'</div>';
+          const btns=renderButtons(c.buttons||[]);
+          if(btns)cc.appendChild(btns);
+          track.appendChild(cc);
+        }
+        bNode.appendChild(track);
+      }else{
+        const body=document.createElement('div');body.className='wa-body';body.innerHTML=formatWaText(out.text||'');
+        bNode.appendChild(body);
+        const btns=renderButtons(out.buttons||[]);
+        if(btns)bNode.appendChild(btns);
+      }
+      if(out.footer){
+        const f=document.createElement('div');f.className='wa-footer';f.textContent=out.footer+' • '+d.durationMs+'ms';
+        bNode.appendChild(f);
+      }
+      if(d.reactions&&d.reactions.length){
+        const rx=document.createElement('div');rx.className='wa-reacts';rx.textContent='تفاعل: '+d.reactions.join(' ');
+        bNode.appendChild(rx);
+      }
+      appendChatNode(bNode);
+    }
+  }catch(e){
+    toast('خطأ في الاتصال بالمحاكي');
+  }
+}
+
 refresh();setInterval(refresh,3000);
+loadCommands();
 </script>
 </body></html>`;
 
@@ -731,6 +1075,43 @@ async function handle(req, res, client) {
       }
     }
     return sendJson(res, 200, getClientInfo(client));
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/commands') {
+    const all = normalizeCommandsList(client);
+    const catMap = new Map();
+    for (const c of all) {
+      const prev = catMap.get(c.category) || { id: c.category, label: c.categoryLabel, emoji: c.categoryEmoji, count: 0 };
+      prev.count += 1;
+      catMap.set(c.category, prev);
+    }
+    const q = (url.searchParams.get('q') || '').trim().toLowerCase();
+    const cat = (url.searchParams.get('cat') || '').trim();
+    const filtered = all.filter((c) => {
+      if (cat && c.category !== cat) return false;
+      if (!q) return true;
+      return c.primary.toLowerCase().includes(q)
+        || c.description.toLowerCase().includes(q)
+        || c.categoryLabel.toLowerCase().includes(q)
+        || c.triggers.some((t) => String(t).toLowerCase().includes(q));
+    });
+    return sendJson(res, 200, {
+      ok: true,
+      total: all.length,
+      filtered: filtered.length,
+      categories: [...catMap.values()].sort((a, b) => b.count - a.count),
+      commands: filtered
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/simulate') {
+    const { json } = await readBody(req);
+    const input = String(json?.input || '');
+    if (!input.trim() || input.length > 1000) {
+      return sendJson(res, 400, { ok: false, error: 'اكتب أمراً صالحاً (أقل من 1000 حرف)' });
+    }
+    const result = await simulateCommand(client, input);
+    return sendJson(res, 200, result);
   }
 
   if (req.method === 'POST' && url.pathname === '/api/action') {
@@ -855,7 +1236,9 @@ export function startWebPanel(client, options = {}) {
 
   hookConsole();
 
-  const port = Number(options.port || process.env.WEB_PORT || process.env.PORT || process.env.SERVER_PORT || process.env.P_SERVER_PORT) || 3732;
+  const port = options.port !== undefined
+    ? Number(options.port)
+    : (Number(process.env.WEB_PORT || process.env.PORT || process.env.SERVER_PORT || process.env.P_SERVER_PORT) || 3000);
   const host = options.host || '0.0.0.0';
 
   const server = http.createServer((req, res) => {

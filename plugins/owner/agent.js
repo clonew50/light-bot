@@ -78,11 +78,11 @@ if (!global.__agentExitHook) {
   process.once('exit', global.__agentExitHook)
 }
 
-// 🔑 NVIDIA Key مضاف افتراضيًا
-const DEFAULT_NVIDIA_KEY = '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'
+// 🔑 NVIDIA Key يُقرأ من البيئة (NVIDIA_API_KEY) أو إعدادات الوكيل
+const DEFAULT_NVIDIA_KEY = process.env.NVIDIA_API_KEY || ''
 
 console.log('[agent] 🎯 LIGHT BOT (meowsab) — ROOT: ' + ROOT)
-console.log('[agent] ✅ NVIDIA Key مضاف افتراضيًا')
+if (DEFAULT_NVIDIA_KEY) console.log('[agent] ✅ NVIDIA Key مضاف من البيئة')
 
 // ═══════════════════════════════════════════════════════════════
 //  🔄 Helpers LIGHT BOT (UltraDB)

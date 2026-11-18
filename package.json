@@ -5,7 +5,9 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
+    "dev": "AUTO_UPDATE=0 PORT=3000 node index.js",
+    "build": "node --check index.js",
+    "start": "AUTO_UPDATE=0 node index.js",
     "test": "node --test tests/unit.task-*.test.mjs"
   },
   "keywords": [
