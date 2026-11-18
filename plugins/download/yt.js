@@ -31,12 +31,20 @@ const INNERTUBE_CLIENTS = [
 ];
 
 const PLAYER_URL = 'https://www.youtube.com/youtubei/v1/player';
-const YT_DLP_FALLBACK_FORMATS = { audio: 'bestaudio', video: 'best' };
+// yt-dlp fallback: prefer a single muxed file, otherwise let yt-dlp merge.
+const YT_DLP_FALLBACK_FORMATS = {
+  audio: 'bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best',
+  video: 'best[height<=720][ext=mp4]/18/22/best[ext=mp4]/best'
+};
 
+// Free public Piped instances (no key, no login). Ordered by reliability:
+// verified 2026-11-18: wireway/private.coffee/ducks.party respond with streams.
 const PIPED_INSTANCES = [
+  'https://pipedapi.wireway.ch',
+  'https://api.piped.private.coffee',
+  'https://pipedapi.ducks.party',
   'https://pipedapi.kavin.rocks',
   'https://pipedapi.adminforge.de',
-  'https://api.piped.private.coffee',
   'https://pipedapi.reallyaweso.me'
 ];
 
@@ -169,18 +177,26 @@ const baseMime = (mimeType) => String(mimeType || '').split(';')[0].trim() || 'a
 const playabilityError = (playabilityStatus) => {
   const status = String(playabilityStatus?.status || '');
   const reason = String(playabilityStatus?.reason || '');
-  const error = new Error(
-    status === 'LOGIN_REQUIRED' || /sign in|age|bot|verify/i.test(reason)
-      ? 'الفيديو محمي أو مقيّد بالعمر، مينفعش نحمّله من السيرفر'
-      : /private/i.test(reason)
-        ? 'الفيديو خاص، متاحش للتحميل'
-        : status === 'ERROR' || /unavailable|removed|blocked|region/i.test(reason)
-          ? 'الفيديو مش متاح (محذوف، خاص، أو ممنوع في المنطقة)'
-          : status === 'AGE_VERIFICATION_REQUIRED'
-            ? 'الفيديو مقيّد بالعمر، متاحش للتحميل من السيرفر'
-            : reason || 'الفيديو مش متاح على يوتيوب'
-  );
-  error.definitive = true;
+  const isAge = status === 'AGE_VERIFICATION_REQUIRED' || /confirm your age|age.?restricted|age.?verification/i.test(reason);
+  const isBotCheck = /confirm you (?:are|are not) a bot|not a bot|bot check|unusual traffic/i.test(reason)
+    || (status === 'LOGIN_REQUIRED' && !isAge && !/private/i.test(reason));
+  const isGone = status === 'ERROR' || /unavailable|removed|private|blocked|region|not available|no longer supported/i.test(reason);
+
+  const message = isAge
+    ? 'الفيديو محمي أو مقيّد بالعمر، مينفعش نحمّله من السيرفر'
+    : isBotCheck
+      ? 'يوتيوب رفض الطلب من السيرفر الأساسي (فحص البوت)، بنجرّب السيرفرات البديلة'
+      : isGone
+        ? 'الفيديو مش متاح (محذوف، خاص، أو ممنوع في المنطقة)'
+        : status === 'LOGIN_REQUIRED'
+          ? 'الفيديو محمي أو مقيّد بالعمر، مينفعش نحمّله من السيرفر'
+          : reason || 'الفيديو مش متاح على يوتيوب';
+
+  const error = new Error(message);
+  // Age/private/removed/region errors are final — a proxy can't fix them.
+  // Bot checks are transport-level: let the proxy providers try next.
+  error.definitive = isAge || isGone;
+  error.soft = isBotCheck;
   return error;
 };
 
@@ -217,6 +233,7 @@ const requestPlayer = async (videoId, client) => {
 
 const fetchViaInnertube = async (videoId) => {
   let lastError = new Error('تعذر جلب بيانات الفيديو من يوتيوب');
+  let definitiveError = null;
 
   for (const client of INNERTUBE_CLIENTS) {
     try {
@@ -240,28 +257,36 @@ const fetchViaInnertube = async (videoId) => {
         }
         lastError = new Error('الفيديو متاح بس مالقيناش روابط تحميل مفتوحة');
       } else if (playability) {
-        lastError = playabilityError(playability);
+        const error = playabilityError(playability);
+        if (error.definitive && !definitiveError) definitiveError = error;
+        lastError = error;
       }
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
     }
   }
 
-  throw lastError;
+  // A real age/private/removed verdict wins over a later transport hiccup, so
+  // we don't fall through to proxies for a video that can never be fetched.
+  throw definitiveError || lastError;
 };
 
 // ── provider 2: yt-dlp binary (optional) ──────────────────────────────────────
 
 const findYtDlp = () => {
   if (process.env.YTDLP_BIN) return process.env.YTDLP_BIN;
-  for (const dir of (process.env.PATH || '').split(':')) {
+  const names = process.platform === 'win32' ? ['yt-dlp.exe', 'yt-dlp'] : ['yt-dlp', 'youtube-dl'];
+  const separator = process.platform === 'win32' ? ';' : ':';
+  for (const dir of (process.env.PATH || '').split(separator)) {
     if (!dir) continue;
-    try {
-      const candidate = `${dir.replace(/\/$/, '')}/yt-dlp`;
-      accessSync(candidate, constants.X_OK);
-      return candidate;
-    } catch {
-      // not here, keep scanning
+    for (const name of names) {
+      try {
+        const candidate = `${dir.replace(/[\\/]$/, '')}/${name}`;
+        accessSync(candidate, constants.X_OK);
+        return candidate;
+      } catch {
+        // not here, try the next candidate
+      }
     }
   }
   return null;
@@ -294,8 +319,12 @@ const fetchViaPiped = async (videoId) => {
   for (const base of PIPED_INSTANCES) {
     try {
       const data = await fetchJson(`${base}/streams/${videoId}`);
-      const muxed = (data?.videoStreams || []).filter((f) => f?.url);
-      const adaptive = (data?.audioStreams || []).filter((f) => f?.url);
+      // Piped mixes progressive and video-only streams; keep only real muxed
+      // (videoOnly !== true) and drop the LBRY placeholder (itag -1).
+      const muxed = (data?.videoStreams || [])
+        .filter((f) => f?.url && f.videoOnly !== true && f.itag !== -1)
+        .map((f) => ({ ...f, mimeType: f.mimeType || f.type }));
+      const adaptive = (data?.audioStreams || []).filter((f) => f?.url).map((f) => ({ ...f, mimeType: f.mimeType || f.type }));
       if (muxed.length || adaptive.length) {
         return {
           source: 'piped',
@@ -323,8 +352,8 @@ const fetchViaInvidious = async (videoId) => {
   for (const base of INVIDIOUS_INSTANCES) {
     try {
       const data = await fetchJson(`${base}/api/v1/videos/${videoId}`);
-      const muxed = (data?.formatStreams || []).filter((f) => f?.url);
-      const adaptive = (data?.adaptiveFormats || []).filter((f) => f?.url);
+      const muxed = (data?.formatStreams || []).filter((f) => f?.url).map((f) => ({ ...f, mimeType: f.mimeType || f.type }));
+      const adaptive = (data?.adaptiveFormats || []).filter((f) => f?.url).map((f) => ({ ...f, mimeType: f.mimeType || f.type }));
       if (muxed.length || adaptive.length) {
         return {
           source: 'invidious',
@@ -349,22 +378,37 @@ const fetchViaInvidious = async (videoId) => {
 const fetchViaLoader = async (videoId, isAudio) => {
   const formats = isAudio ? ['mp3'] : ['720', '1080', '480', '360'];
   let lastError = new Error('سيرفر التحميل الاحتياطي مرجعش رابط');
+  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  // loader.to answers with { success, progress_url, download_url }.
+  // `url` is only the watch URL, so don't treat it as a download link.
+  const looksLikeDownload = (value) => {
+    const v = String(value || '');
+    if (!v) return false;
+    if (/youtube\.com\/watch|youtu\.be\//i.test(v)) return false;
+    return /^https?:\/\//i.test(v) && /\.(mp4|mp3|m4a|webm|3gp)(\?|$)/i.test(v) || /\/download\//i.test(v);
+  };
 
   for (const format of formats) {
-    const endpoint = `${LOADER_API}?format=${encodeURIComponent(format)}&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}`;
+    const endpoint = `${LOADER_API}?format=${encodeURIComponent(format)}&url=${encodeURIComponent(watchUrl)}`;
 
     try {
       const start = await fetchJson(endpoint);
-      const immediateUrl = start?.download_url || start?.url;
+      if (start?.success === false || start?.success === 0) {
+        lastError = new Error(start?.message || 'سيرفر التحميل رفض الفيديو');
+        continue;
+      }
+
+      const immediateUrl = start?.download_url || (looksLikeDownload(start?.url) ? start.url : null);
       if (immediateUrl) {
         return { source: 'loader.to', url: immediateUrl, mimeType: isAudio ? 'audio/mpeg' : 'video/mp4' };
       }
 
       if (start?.progress_url) {
-        for (let attempt = 0; attempt < 30; attempt++) {
+        for (let attempt = 0; attempt < 40; attempt++) {
           await sleep(2000);
-          const progress = await fetchJson(start.progress_url, {}, 12000);
-          const downloadUrl = progress?.download_url || progress?.url;
+          const progress = await fetchJson(start.progress_url);
+          const downloadUrl = progress?.download_url || (looksLikeDownload(progress?.url) ? progress.url : null);
           if (downloadUrl) {
             return { source: 'loader.to', url: downloadUrl, mimeType: isAudio ? 'audio/mpeg' : 'video/mp4' };
           }
@@ -466,6 +510,7 @@ const getDownload = async (videoId, isAudio) => {
   ];
 
   let lastError = new Error('تعذر تجهيز رابط التحميل');
+  let softError = null;
 
   for (const attempt of attempts) {
     try {
@@ -492,11 +537,16 @@ const getDownload = async (videoId, isAudio) => {
       lastError = new Error(isAudio ? 'مالقيناش ملف صوتي نظيف للفيديو ده' : 'الفيديو كبير جداً على السيرفر، جرب صوت بدل الفيديو');
     } catch (error) {
       if (error?.definitive) throw error;
+      // Bot-check/login errors are not fatal: remember them and keep trying the
+      // free proxy providers below.
+      if (error?.soft && !softError) softError = error;
       lastError = error instanceof Error ? error : new Error(String(error));
     }
   }
 
-  throw lastError;
+  // If every provider failed and YouTube only ever complained about a bot
+  // check, surface that reason instead of a generic transport error.
+  throw softError || lastError;
 };
 
 const safeFileName = (title, extension) => {

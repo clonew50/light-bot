@@ -227,6 +227,24 @@ test('video: IOS client is tried when ANDROID trips the bot check', () => {
   assert.deepEqual(r.replies, [], 'no error reply on a successful fallback');
 });
 
+test('video: a bot-check falls through to the loader.to proxy', () => {
+  const r = runYtScenario({
+    oembed: oembedOk,
+    player: {
+      byClient: {
+        ANDROID: { data: { playabilityStatus: { status: 'LOGIN_REQUIRED', reason: 'Sign in to confirm you are not a bot' } } },
+        IOS: { data: { playabilityStatus: { status: 'LOGIN_REQUIRED', reason: 'Sign in to confirm you are not a bot' } } }
+      }
+    },
+    loader: { data: { success: true, progress_url: 'https://loader.to/ajax/progress?id=1', download_url: 'https://cdn.example/file.mp4' } },
+    others: { reject: 'down' }
+  });
+
+  assert.ok(r.sends[1]?.payload.video, 'a bot-check must fall through to loader.to');
+  assert.match(String(r.sends[1].payload.video.url), /cdn\.example\/file\.mp4/);
+  assert.deepEqual(r.replies, [], 'no error reply when a proxy succeeds');
+});
+
 test('video: a definitively unavailable video fails fast with the Arabic message', () => {
   const r = runYtScenario({
     oembed: oembedOk,
