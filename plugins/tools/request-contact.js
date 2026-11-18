@@ -101,7 +101,7 @@ const before = async (m, { conn }) => {
 };
 
 handler.command = ['طلب_جهة', 'requestcontact'];
-handler.usage = ['.طلب_جهة'];
+handler.usage = ['طلب_جهة'];
 handler.category = 'tools';
 handler.cooldown = 10;
 handler.before = before;

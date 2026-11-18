@@ -599,8 +599,6 @@ handler.before = async (m, { conn }) => {
 
 handler.command = ['صور', ...Object.keys(CMD_MAP).filter((c) => c !== 'صور'), 'امان', 'بحث-امن', 'عدد', 'عدد-صور'];
 
-handler.help = ['صور <نص>', 'عدد <رقم>', 'امان on|off'];
-
 handler.usage = ['صور <نص>', 'عدد <رقم>', 'امان on|off'];
 
 handler.category = 'search';

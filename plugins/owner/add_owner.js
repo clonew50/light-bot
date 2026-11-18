@@ -17,7 +17,7 @@ const handler = async (m, { conn, bot }) => {
    m.reply("📂: تم اضافة مطور جديد")
 };
 
-handler.usage = ["اضافه-مطور"];
+handler.usage = ["ضيف_مطور", "اضافه_مطور"];
 handler.category = "owner";
 handler.command = ["ضيف_مطور", "اضافه_مطور"];
 handler.owner = true;

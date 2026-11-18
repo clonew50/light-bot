@@ -91,16 +91,15 @@ export function parseNumEnv(name, fallback, options = {}) {
  */
 export function buildConfig(env = process.env) {
   return {
-    phoneNumber: env.BOT_PHONE || '201505362172', // Bot number (يمكن تغييره من BOT_PHONE)
+    phoneNumber: env.BOT_PHONE || '', // Bot number (يجب تعيينه عبر BOT_PHONE في البيئة)
     prefix: [".", "/", "!"],
     fromMe: false,
     owners: [
     // Owner 1
-      { name: "𝑮𝑶𝑲𝑶", lid: "12 972 3211@lid", jid: "218930171336@s.whatsapp.net" },
+      { name: "𝑮𝑶𝑲𝑶", lid: "129723211@lid", jid: "218930171336@s.whatsapp.net" },
     // Owner 2
-      { name: "GOKO", lid: "218945778513@lid", jid: "218930171336@s.whatsapp.net" },
-    // جروب المطور الصلب (owner بجروب @g.us) اتشال — ملاك البوت أرقام/معرّفات المشغّل بس.
-    // Owner 3 
+      { name: "GOKO", lid: "218945778513@lid", jid: "218930171337@s.whatsapp.net" },
+    // Owner 3
      { name: "GOKO", jid: "201212446299@s.whatsapp.net", lid: "959666432747@lid" }
     ],
     settings: { noWelcome: true },

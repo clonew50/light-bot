@@ -127,7 +127,7 @@ const handler = async (m, { conn, text, command }) => {
     }, m);
   }
   } catch (e) {
-    console.error(e);
+    console.error('anime:', e?.message || e);
     await m.reply(`❌ حدث خطأ أثناء جلب بيانات الأنمي: ${(e && e.message) || e}`);
   }
 };

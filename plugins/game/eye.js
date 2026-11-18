@@ -63,7 +63,7 @@ const handler = async (m, { conn }) => {
     };
 
   } catch (e) {
-    console.error(e);
+    console.error('eye:', e?.message || e);
     conn.reply(m.chat, '❌ حدث خطأ فني أثناء جلب الصورة.', m);
   }
 };

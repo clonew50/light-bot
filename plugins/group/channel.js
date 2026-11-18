@@ -53,7 +53,7 @@ const handler = async (m, { conn, text }) => {
       mentions: [m.sender]
     }, { quoted: m });
   } catch (error) {
-    console.error(error);
+    console.error('channel:', error?.message || error);
     await m.reply('❌ حصل خطأ، تأكد من الرابط أو الكود');
   }
 };

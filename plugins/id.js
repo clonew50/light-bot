@@ -27,7 +27,7 @@ const handler = async (m, { conn }) => {
       `📱 الرقم: ${info.jid}\n` +
       `🪪 الـLID: ${info.lid}`);
   } catch (error) {
-    console.error(error);
+    console.error('id:', error?.message || error);
     await m.reply(`❌ ${error.message || error}`);
   }
 };

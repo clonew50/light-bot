@@ -1,5 +1,12 @@
-// مصفوفة مؤقتة في الذاكرة لحفظ إنذارات المستخدمين
+// مصفوفة مؤقتة في الذاكرة لحفظ إنذارات المستخدمين — حجم محدود
 const userWarns = {};
+const MAX_WARNS = 5000;
+function pruneWarns() {
+  if (Object.keys(userWarns).length > MAX_WARNS) {
+    const keys = Object.keys(userWarns);
+    for (let i = 0; i < keys.length - MAX_WARNS; i++) delete userWarns[keys[i]];
+  }
+}
 
 // قائمة الجروبات التي لا تريد للبوتات الفرعية أن تعمل فيها
 // الجروبات بتاعة المشغّل — مش جروبات المطور. حط جروباتك هنا (أو خلّيها فاضية).
@@ -31,6 +38,7 @@ export default async function before(m, { conn, bot }) {
             // زيادة عدد الإنذارات
             userWarns[warnKey] += 1;
             const currentWarns = userWarns[warnKey];
+            pruneWarns();
 
             // تخصيص الرسالة بناءً على عدد الإنذارات
             if (currentWarns === 1) {

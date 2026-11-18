@@ -4,7 +4,7 @@ const handler = async (m, { conn, text }) => {
 };
 
 handler.usage = ["اخرج"];
-handler.category = "group";
+handler.category = "owner";
 handler.command = ["اخرج"];
 handler.owner = true 
 export default handler;

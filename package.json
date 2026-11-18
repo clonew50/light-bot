@@ -5,7 +5,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test tests/unit.task-*.test.mjs"
   },
   "keywords": [
     "whatsapp-bot",
@@ -27,7 +28,8 @@
     "ruhend-scraper": "^10.0.3",
     "sharp": "https://github.com/deveni0/sharp-tmx/archive/67f11b2c6176c50cd9beb821f10c7fd50dc8459e.tar.gz",
     "wa-sticker-formatter": "^4.3.2",
-    "youtube-dl-exec": "^3.1.17"
+    "youtube-dl-exec": "^3.1.17",
+    "@whiskeysockets/baileys": "^7.0.0-rc14"
   },
   "overrides": {
     "sharp": "https://github.com/deveni0/sharp-tmx/archive/67f11b2c6176c50cd9beb821f10c7fd50dc8459e.tar.gz",

@@ -134,12 +134,12 @@ const metaThinking = async (m, { conn, args }) => {
 };
 
 metaText.command = ['ميتا', 'metaai'];
-metaText.usage = ['.ميتا <نص>', '.ميتا_يفكر <نص>'];
+metaText.usage = ['ميتا <نص>', 'ميتا_يفكر <نص>'];
 metaText.category = 'ai';
 metaText.cooldown = 4;
 
 metaThinking.command = ['ميتا_يفكر', 'ميتايفكر'];
-metaThinking.usage = ['.ميتا_يفكر <نص>'];
+metaThinking.usage = ['ميتا_يفكر <نص>'];
 metaThinking.category = 'ai';
 metaThinking.cooldown = 4;
 

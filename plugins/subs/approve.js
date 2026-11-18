@@ -45,7 +45,7 @@ const run = async (m, { args, conn }) => {
 };
 
 run.command = ["موافقه_تنصيب", "approvesub"];
-run.usage = [".موافقه_تنصيب <رقم>"];
+run.usage = ["موافقه_تنصيب <رقم>"];
 run.category = "sub";
 run.owner = true;
 export default run;

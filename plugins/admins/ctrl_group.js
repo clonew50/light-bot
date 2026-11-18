@@ -8,7 +8,7 @@ const handler = async (m, { conn, command }) => {
   }
 };
 
-handler.usage = ["قفل", "فتح"];
+handler.usage = ["قفل_المجموعة", "فتح_المجموعة"];
 handler.category = "admin";
 handler.command = ["قفل_المجموعة", "فتح_المجموعة"];
 handler.admin = true;

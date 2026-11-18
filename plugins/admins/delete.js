@@ -4,7 +4,7 @@ const handler = async (m, { conn }) => {
     await conn.sendMessage(m.chat, { delete: m.quoted.key });
     await m.reply('✅ تم حذف الرسالة بنجاح');
   } catch (e) {
-    console.error(e);
+    console.error('delete:', e?.message || e);
     m.reply('❌ فشل حذف الرسالة');
   }
 };
