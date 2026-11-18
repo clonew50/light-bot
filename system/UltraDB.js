@@ -188,15 +188,11 @@ class UltraDB {
     }
 
     #isValidId(id) {
-        // واتساب بقى يبعت معرّفات @lid بدل رقم الموبايل في كذا حالة (خصوصاً
-        // للمالكين ولما الحساب يكون مفعّل بالخصوصية الجديدة) — فالمعرّفValid
-        // لازم يقبل @lid و@s.whatsapp.net و@g.us، ويرفض بس الحاجات اللي
-        // مبقاش معرّفات أصلاً: undefined / null / [object Object] / بدون @.
         if (typeof id !== 'string') return false;
         const s = id.trim();
         if (!s || s.length > 64) return false;
         if (s === 'undefined' || s === 'null' || s === 'NaN' || s === '[object Object]') return false;
-        if (s.includes('@newsletter')) return false; // معرّفات القنوات — مش مستخدمين
+        if (s.includes('@newsletter') || s.endsWith('@newsletter')) return false; // تجاهل تامة لمعرّفات القنوات
         if (!s.includes('@')) return false;
         return true;
     }

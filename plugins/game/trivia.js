@@ -266,6 +266,6 @@ handler.usage = ['ترivia', 'ترivia عامة', 'ترivia تلميح', 'ترiv
 handler.category = 'games';
 handler.usePrefix = true;
 handler.cooldown = 6;
-handler.group = true;
-handler.private = true;
+handler.group = false;
+handler.private = false;
 export default handler;

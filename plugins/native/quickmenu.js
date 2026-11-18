@@ -120,7 +120,7 @@ const handler = async (m, ctx = {}) => {
 handler.usage = ['قائمة', 'قسم <القسم>'];
 handler.command = ['قائمة', 'القائمة', 'قسم']; // 'menu' is already owned by plugins/menu2.js
 handler.category = 'native';
-handler.group = true;
-handler.private = true;
+handler.group = false;
+handler.private = false;
 
 export default handler;
