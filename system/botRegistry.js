@@ -21,8 +21,15 @@ function storeFilePath() {
 }
 
 export function normalizePhone(raw) {
-  const digits = String(raw || '').replace(/[^0-9]/g, '');
-  if (!/^\d{8,15}$/.test(digits)) return '';
+  const s = String(raw || '').trim();
+  if (s.endsWith('@lid') || s.endsWith('@s.whatsapp.net') || s.endsWith('@g.us')) {
+    const parts = s.split('@')[0].split(':');
+    const digits = parts[0].replace(/[^0-9]/g, '');
+    if (digits.length >= 4) return s; // Keep full JID/LID format if valid
+    return '';
+  }
+  const digits = s.replace(/[^0-9]/g, '');
+  if (!/^\d{4,20}$/.test(digits)) return '';
   return digits;
 }
 
