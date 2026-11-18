@@ -205,6 +205,13 @@ function getMessageText(msg) {
   if (msg.message.extendedTextMessage?.text) return msg.message.extendedTextMessage.text;
   if (msg.message.imageMessage?.caption) return msg.message.imageMessage.caption;
   if (msg.message.videoMessage?.caption) return msg.message.videoMessage.caption;
+  if (msg.message.interactiveResponseMessage) {
+    try {
+      const p = JSON.parse(msg.message.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson);
+      if (p.id) return p.id;
+      if (p.displayText) return p.displayText;
+    } catch {}
+  }
   return msg.body || null;
 }
 

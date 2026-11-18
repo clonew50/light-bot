@@ -99,6 +99,17 @@ config.info = buildInfo();
 applyMainBotSettingsOnBoot(client);
 client.commandSystem?.before?.((m, ctx) => {
   try {
+    const interactiveMsg = m?.message?.interactiveResponseMessage || m?.msg?.message?.interactiveResponseMessage;
+    if (interactiveMsg?.nativeFlowResponseMessage?.paramsJson) {
+      try {
+        const parsed = JSON.parse(interactiveMsg.nativeFlowResponseMessage.paramsJson);
+        if (parsed.id) {
+          m.body = parsed.id;
+          if (m.text !== undefined) m.text = parsed.id;
+        }
+      } catch {}
+    }
+
     if (!m.sender) {
       m.sender = m.key?.participant || (!m.isGroup ? (m.chat || m.from || m.key?.remoteJid || '') : '') || '';
     }
