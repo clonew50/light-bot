@@ -8,7 +8,6 @@ agent-backups/
 agent-models.json
 agent-sessions.json
 system/database.json
-database/
 system/panel-config.json
 .git-pull-state.json
 tmp/
