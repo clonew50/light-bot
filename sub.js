@@ -6,7 +6,8 @@ import {
   setSubBotModeByUidOrPhone,
   recordSubPairEvent,
   recordSubReadyEvent,
-  recordSubStatusEvent
+  recordSubStatusEvent,
+  syncSubBotSelfOwner
 } from "./system/botRegistry.js";
 
 // خريطة لتخزين حالة الوضع لكل بوت فرعي (المفتاح هو uid أو رقم البوت)
@@ -49,6 +50,7 @@ async function sub(client) {
     commandsPath: config.commandsPath || './plugins',
     owners: config.owners,
     prefix: config.prefix,
+    fromMe: null,
     info: config.info,
     printQR: false
   });
@@ -71,6 +73,7 @@ async function sub(client) {
 
   global.subBots.on('ready', async (uid, sock) => {
     console.log(`✅ [SubBot ${uid}] Connected!`);
+    try { syncSubBotSelfOwner(global.subBots.get(uid), sock); } catch {}
     try { recordSubReadyEvent(uid, sock, global.subBots); } catch {}
   });
 
@@ -116,9 +119,11 @@ async function sub(client) {
       console.warn(`⚠️ [SubBot ${uid}] رقم البوت الفرعي مش صحيح (${botNumber}) — تم تجاهل الرسالة`);
       return;
     }
-    const senderNumber = remoteJid.includes('@s.whatsapp.net')
-      ? remoteJid.split('@')[0]
-      : (msg.key.participant ? msg.key.participant.split('@')[0] : '');
+    const senderNumber = msg.key?.fromMe
+      ? botNumber
+      : (remoteJid.includes('@s.whatsapp.net')
+        ? remoteJid.split('@')[0]
+        : (msg.key.participant ? msg.key.participant.split('@')[0] : ''));
 
     const botSettings = getSubBotSettings(botNumber, global.subBots);
 

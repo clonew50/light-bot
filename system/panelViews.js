@@ -852,7 +852,14 @@ return `<!DOCTYPE html>
           <div class="switch-row"><span>إغلاق التنصيب الفرعي (noSub)</span><label class="toggle"><input type="checkbox" id="ms-noSub"><span class="toggle-track"></span></label></div>
           <div class="switch-row"><span>وضع الصيانة</span><label class="toggle"><input type="checkbox" id="ms-maint"><span class="toggle-track"></span></label></div>
           <div class="switch-row"><span>القراءة التلقائية (autoRead)</span><label class="toggle"><input type="checkbox" id="ms-autoRead"><span class="toggle-track"></span></label></div>
-          <div class="switch-row"><span>الرد على رسائل المالك (fromMe)</span><label class="toggle"><input type="checkbox" id="ms-fromMe"><span class="toggle-track"></span></label></div>
+          <div style="margin:10px 0 6px">
+            <label class="lbl" for="ms-fromMe" style="margin-top:0">تشغيل الأوامر من الرقم المتصل (fromMe)</label>
+            <select id="ms-fromMe">
+              <option value="both">الجميع + الرقم المتصل بالبوت (الافتراضي)</option>
+              <option value="others">الآخرين فقط (تجاهل الرقم المتصل)</option>
+              <option value="self">الرقم المتصل فقط (وضع خاص)</option>
+            </select>
+          </div>
           <div class="switch-row"><span>الترحيب بالأعضاء</span><label class="toggle"><input type="checkbox" id="ms-welcome"><span class="toggle-track"></span></label></div>
           <div class="switch-row"><span>مانع الروابط العام</span><label class="toggle"><input type="checkbox" id="ms-antiLink"><span class="toggle-track"></span></label></div>
           <button type="button" class="pri" style="width:100%;margin-top:12px" onclick="saveMainSettings()">حفظ إعدادات البوت الرئيسي</button>
@@ -1089,7 +1096,7 @@ async function loadFleet(notify){
     document.getElementById('ms-noSub').checked=!!ms.noSub;
     document.getElementById('ms-maint').checked=!!ms.maintenance;
     document.getElementById('ms-autoRead').checked=!!ms.autoRead;
-    document.getElementById('ms-fromMe').checked=!!ms.fromMe;
+    document.getElementById('ms-fromMe').value=ms.fromMeMode||'both';
     document.getElementById('ms-welcome').checked=ms.welcomeEnabled!==false;
     document.getElementById('ms-antiLink').checked=!!ms.antiLink;
 
@@ -1170,7 +1177,7 @@ async function saveMainSettings(){
     noSub:document.getElementById('ms-noSub').checked,
     maintenance:document.getElementById('ms-maint').checked,
     autoRead:document.getElementById('ms-autoRead').checked,
-    fromMe:document.getElementById('ms-fromMe').checked,
+    fromMeMode:document.getElementById('ms-fromMe').value,
     welcomeEnabled:document.getElementById('ms-welcome').checked,
     antiLink:document.getElementById('ms-antiLink').checked
   };

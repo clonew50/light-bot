@@ -57,7 +57,8 @@ export const DEFAULT_SUB_SETTINGS = Object.freeze({
 export const DEFAULT_MAIN_SETTINGS = Object.freeze({
   nameBot: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻',
   prefix: ['.', '/', '!'],
-  fromMe: false,
+  fromMe: null,
+  fromMeModeV2: true,
   autoRead: false,
   maintenance: false,
   noSub: false,
@@ -65,6 +66,19 @@ export const DEFAULT_MAIN_SETTINGS = Object.freeze({
   welcomeEnabled: true,
   antiLink: false
 });
+
+export function normalizeFromMeValue(val) {
+  if (val === 'both' || val === null || val === undefined || val === '') return null;
+  if (val === 'others' || val === false || val === 'false') return false;
+  if (val === 'self' || val === true || val === 'true') return true;
+  return null;
+}
+
+export function fromMeToMode(val) {
+  if (val === true || val === 'self') return 'self';
+  if (val === false || val === 'others') return 'others';
+  return 'both';
+}
 
 let memStore = null;
 let lastStorePath = null;
@@ -90,13 +104,23 @@ export function loadBotsStore() {
   if (memStore && lastStorePath === fp) return memStore;
   lastStorePath = fp;
   let loaded = emptyStore();
+  let needsMigrate = false;
   try {
     if (fs.existsSync(fp)) {
       const parsed = JSON.parse(fs.readFileSync(fp, 'utf8'));
       if (parsed && typeof parsed === 'object') {
+        const mergedMain = { ...DEFAULT_MAIN_SETTINGS, ...(parsed.mainBot || {}) };
+        if (!parsed.mainBot?.fromMeModeV2 && parsed.mainBot?.fromMe === false) {
+          mergedMain.fromMe = null;
+          mergedMain.fromMeModeV2 = true;
+          needsMigrate = true;
+        } else {
+          mergedMain.fromMe = normalizeFromMeValue(mergedMain.fromMe);
+          mergedMain.fromMeModeV2 = true;
+        }
         loaded = {
           subBots: parsed.subBots && typeof parsed.subBots === 'object' ? parsed.subBots : {},
-          mainBot: { ...DEFAULT_MAIN_SETTINGS, ...(parsed.mainBot || {}) }
+          mainBot: mergedMain
         };
       }
     }
@@ -104,6 +128,7 @@ export function loadBotsStore() {
     console.error('⚠️ [BOTS-STORE] تعذّر قراءة ملف حالة البوتات:', e?.message || e);
   }
   memStore = loaded;
+  if (needsMigrate) saveBotsStore(loaded);
   return memStore;
 }
 
@@ -574,12 +599,15 @@ export async function controlSubBot(phoneRaw, action, payload = {}, subBots = gl
 export function getMainBotSettings(client) {
   const store = loadBotsStore();
   const m = store.mainBot || { ...DEFAULT_MAIN_SETTINGS };
+  const rawFromMe = client?.config && 'fromMe' in client.config ? client.config.fromMe : m.fromMe;
+  const fromMe = normalizeFromMeValue(rawFromMe);
   return {
     nameBot: client?.config?.info?.nameBot || m.nameBot || DEFAULT_MAIN_SETTINGS.nameBot,
     prefix: Array.isArray(client?.config?.prefix)
       ? client.config.prefix.join(' ')
       : String(client?.config?.prefix || (Array.isArray(m.prefix) ? m.prefix.join(' ') : '.')),
-    fromMe: Boolean(client?.config?.fromMe ?? m.fromMe),
+    fromMe,
+    fromMeMode: fromMeToMode(fromMe),
     autoRead: Boolean(client?.config?.autoRead ?? m.autoRead),
     maintenance: Boolean(global.db?.maintenance ?? m.maintenance),
     noSub: Boolean(global.db?.noSub ?? m.noSub),
@@ -596,10 +624,72 @@ export function applyMainBotSettingsOnBoot(client) {
   try {
     if (m.nameBot && client.config.info) client.config.info.nameBot = m.nameBot;
     if (Array.isArray(m.prefix) && m.prefix.length) client.config.prefix = m.prefix;
-    if (typeof m.fromMe === 'boolean') client.config.fromMe = m.fromMe;
+    client.config.fromMe = normalizeFromMeValue(m.fromMe);
     if (typeof m.autoRead === 'boolean') client.config.autoRead = m.autoRead;
     syncToGlobalDb(store);
   } catch {}
+}
+
+export function syncConnectedBotOwner(client, sock = client?.sock) {
+  try {
+    if (!client?.config || !sock?.user?.id) return false;
+    const rawId = String(sock.user.id || '');
+    const phone = normalizePhone(rawId.split(':')[0].split('@')[0]);
+    if (!phone) return false;
+    const selfJid = `${phone}@s.whatsapp.net`;
+    const selfLid = sock.user.lid ? String(sock.user.lid).split(':')[0] : '';
+    const owners = Array.isArray(client.config.owners) ? [...client.config.owners] : [];
+    const exists = owners.some((o) => {
+      if (!o) return false;
+      if (typeof o === 'string') return normalizePhone(o) === phone;
+      return normalizePhone(o.jid) === phone || (selfLid && (o.lid === selfLid || o.lid === selfLid.split('@')[0]));
+    });
+    if (!exists) {
+      owners.push({
+        name: sock.user.name || 'Bot Connected Number',
+        jid: selfJid,
+        ...(selfLid ? { lid: selfLid } : {})
+      });
+      client.config.owners = owners;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function syncSubBotSelfOwner(bot, sock = bot?.sock) {
+  try {
+    if (!bot || !sock?.user?.id) return false;
+    const rawId = String(sock.user.id || '');
+    const phone = normalizePhone(rawId.split(':')[0].split('@')[0]);
+    if (!phone) return false;
+    const selfJid = `${phone}@s.whatsapp.net`;
+    const selfLid = sock.user.lid ? String(sock.user.lid).split(':')[0] : '';
+    const curCfg = bot.cfg || bot.config || {};
+    const owners = Array.isArray(curCfg.owners) ? [...curCfg.owners] : [];
+    const exists = owners.some((o) => {
+      if (!o) return false;
+      if (typeof o === 'string') return normalizePhone(o) === phone;
+      return normalizePhone(o.jid) === phone || (selfLid && (o.lid === selfLid || o.lid === selfLid.split('@')[0]));
+    });
+    if (!exists) {
+      owners.push({
+        name: sock.user.name || `SubBot ${phone}`,
+        jid: selfJid,
+        ...(selfLid ? { lid: selfLid } : {})
+      });
+    }
+    const nextCfg = {
+      ...curCfg,
+      fromMe: curCfg.fromMe === undefined ? null : curCfg.fromMe,
+      owners
+    };
+    bot.cfg = nextCfg;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function updateMainBotSettings(client, patch = {}) {
@@ -619,9 +709,11 @@ export function updateMainBotSettings(client, patch = {}) {
       if (client?.config) client.config.prefix = m.prefix;
     }
   }
-  if (typeof patch.fromMe === 'boolean') {
-    m.fromMe = patch.fromMe;
-    if (client?.config) client.config.fromMe = patch.fromMe;
+  if (patch.fromMeMode !== undefined || patch.fromMe !== undefined) {
+    const rawVal = patch.fromMeMode !== undefined ? patch.fromMeMode : patch.fromMe;
+    m.fromMe = normalizeFromMeValue(rawVal);
+    m.fromMeModeV2 = true;
+    if (client?.config) client.config.fromMe = m.fromMe;
   }
   if (typeof patch.autoRead === 'boolean') {
     m.autoRead = patch.autoRead;

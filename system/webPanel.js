@@ -28,7 +28,8 @@ import {
   updateSubBotSettings,
   controlSubBot,
   updateMainBotSettings,
-  getBotFleetOverview
+  getBotFleetOverview,
+  syncConnectedBotOwner
 } from './botRegistry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -200,6 +201,7 @@ function hookConsole() {
 
 /* ============ ربط مستمع الـ QR/الاتصال بجلسة واتساب ============ */
 let attachedSock = null;
+let attachedClient = null;
 
 /* كود الفصل من آخر حدث close (401 = loggedOut | 403 = forbidden) */
 function closeStatusCode(update) {
@@ -228,6 +230,7 @@ export function handleConnectionUpdate(update) {
         state.pairingCode = null;
         state.lastConnected = Date.now();
         pairingState.clear(); // الاتصال اتفتح — خلاص مفيش ربط شغال
+        if (attachedClient) syncConnectedBotOwner(attachedClient);
       }
       if (connection === 'close') {
         const code = closeStatusCode(update);
@@ -241,7 +244,9 @@ export function handleConnectionUpdate(update) {
 }
 
 function attachSock(client) {
+  attachedClient = client || attachedClient;
   const sock = client?.sock;
+  if (sock?.user?.id) syncConnectedBotOwner(client, sock);
   if (!sock || sock === attachedSock) return;
   if (attachedSock?.ev) {
     try { attachedSock.ev.removeListener('connection.update', handleConnectionUpdate); } catch {}

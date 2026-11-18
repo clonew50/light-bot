@@ -4,9 +4,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import { Client } from 'meowsab';
 
 import { renderPublicPortalHtml, ADMIN_PANEL_HTML } from '../system/panelViews.js';
 import { startWebPanel } from '../system/webPanel.js';
+import { buildConfig } from '../system/config.js';
 import {
   normalizePhone,
   generateControlCode,
@@ -15,7 +17,10 @@ import {
   verifySubBotAccess,
   updateSubBotSettings,
   updateMainBotSettings,
-  getMainBotSettings
+  applyMainBotSettingsOnBoot,
+  getMainBotSettings,
+  syncConnectedBotOwner,
+  syncSubBotSelfOwner
 } from '../system/botRegistry.js';
 
 function makeTempDir() {
@@ -264,10 +269,13 @@ test('webPanel public portal & admin fleet routes end-to-end HTTP workflow', asy
     const msRes = await fetch(`${baseUrl}/api/admin/main-settings`, {
       method: 'POST',
       headers: { Cookie: adminCookie, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nameBot: 'Light Admin Edited', prefix: '. $', maintenance: false })
+      body: JSON.stringify({ nameBot: 'Light Admin Edited', prefix: '. $', maintenance: false, fromMeMode: 'both' })
     });
     assert.equal(msRes.status, 200);
-    assert.equal((await msRes.json()).settings.nameBot, 'Light Admin Edited');
+    const msJson = await msRes.json();
+    assert.equal(msJson.settings.nameBot, 'Light Admin Edited');
+    assert.equal(msJson.settings.fromMe, null);
+    assert.equal(msJson.settings.fromMeMode, 'both');
 
     const ctrlRes = await fetch(`${baseUrl}/api/admin/bot-control`, {
       method: 'POST',
@@ -314,3 +322,168 @@ test('webPanel public portal & admin fleet routes end-to-end HTTP workflow', asy
     global.db = prevDb;
   }
 });
+
+test('connected-number self-commands: buildConfig default, legacy migration, owner sync, and meowsab pipeline', async () => {
+  const dir = makeTempDir();
+  const statePath = path.join(dir, 'bots-state.json');
+  const prevState = process.env.BOTS_STATE_FILE;
+  process.env.BOTS_STATE_FILE = statePath;
+  resetStoreCacheForTests();
+
+  try {
+    // 1. buildConfig defaults to fromMe: null so connected number + others can both run commands
+    const cfg = buildConfig({});
+    assert.equal(cfg.fromMe, null);
+
+    // 2. Legacy bots-state.json with fromMe:false (pre-fromMeModeV2) migrates cleanly to null / 'both'
+    fs.writeFileSync(statePath, JSON.stringify({
+      subBots: {},
+      mainBot: { nameBot: 'Legacy Bot', prefix: ['.'], fromMe: false }
+    }));
+    const msMigrated = getMainBotSettings({ config: { ...cfg } });
+    assert.equal(msMigrated.fromMe, null);
+    assert.equal(msMigrated.fromMeMode, 'both');
+
+    // 3. Explicit 3-mode persistence ('others' -> false, 'self' -> true, 'both' -> null)
+    const fakeClient = { config: { ...cfg, info: { ...cfg.info } }, sock: { user: { id: '201055566677:12@s.whatsapp.net', lid: '99887766:1@lid', name: 'Main Phone' } } };
+    updateMainBotSettings(fakeClient, { fromMeMode: 'others' });
+    assert.equal(fakeClient.config.fromMe, false);
+    updateMainBotSettings(fakeClient, { fromMeMode: 'self' });
+    assert.equal(fakeClient.config.fromMe, true);
+    updateMainBotSettings(fakeClient, { fromMeMode: 'both' });
+    assert.equal(fakeClient.config.fromMe, null);
+
+    applyMainBotSettingsOnBoot(fakeClient);
+    assert.equal(fakeClient.config.fromMe, null);
+
+    // 4. Owner sync adds connected JID/LID cleanly without duplicates for both Main Bot and SubBot
+    assert.equal(syncConnectedBotOwner(fakeClient), true);
+    assert.equal(syncConnectedBotOwner(fakeClient), true);
+    const matches = fakeClient.config.owners.filter((o) => o.jid === '201055566677@s.whatsapp.net');
+    assert.equal(matches.length, 1);
+
+    const fakeSub = {
+      cfg: { owners: [], fromMe: undefined },
+      sock: { user: { id: '201144455566:5@s.whatsapp.net', lid: '11223344@lid', name: 'Sub Phone' } }
+    };
+    assert.equal(syncSubBotSelfOwner(fakeSub, fakeSub.sock), true);
+    assert.equal(fakeSub.cfg.fromMe, null);
+    assert.equal(fakeSub.cfg.owners.some((o) => o.jid === '201144455566@s.whatsapp.net'), true);
+
+    // 5. Real meowsab Client message processing pipeline allows self-sent non-3EB0 & other-user commands, ignores 3EB0 replies
+    const { Utils } = await import('meowsab');
+    const prevKc1 = Utils.keyCore1;
+    const prevKc2 = Utils.keyCore2;
+    const prevKm = Utils.keysMessagesObjWA;
+    Utils.keyCore1 = async () => [];
+    Utils.keyCore2 = async () => [];
+    Utils.keysMessagesObjWA = async () => [];
+
+    const createdTimers = [];
+    const origSetInterval = globalThis.setInterval;
+    const origSetTimeout = globalThis.setTimeout;
+    globalThis.setInterval = (...a) => {
+      const t = origSetInterval(...a);
+      t?.unref?.();
+      createdTimers.push({ type: 'interval', t });
+      return t;
+    };
+    globalThis.setTimeout = (...a) => {
+      const t = origSetTimeout(...a);
+      t?.unref?.();
+      createdTimers.push({ type: 'timeout', t });
+      return t;
+    };
+
+    const testClient = new Client({
+      ...cfg,
+      commandsPath: './system/__nonexistent_cmds_dir__',
+      autoReconnect: false,
+      showLogs: false
+    });
+    const mockSock = {
+      user: { id: '201055566677:2@s.whatsapp.net', name: 'ConnectedSelf' },
+      ws: { close() {} },
+      ev: new EventEmitter(),
+      sendMessage: async () => ({}),
+      readMessages: async () => ({})
+    };
+    testClient.sock = mockSock;
+    syncConnectedBotOwner(testClient);
+    testClient.commandSystem.before((m, ctx) => {
+      if (m?.fromMe && testClient.sock?.user?.id) {
+        syncConnectedBotOwner(testClient);
+        m.isOwner = true;
+        if (ctx && typeof ctx === 'object') ctx.isOwner = true;
+      }
+      return false;
+    });
+
+    const executions = [];
+    testClient.registerCommand({
+      command: ['pingtest'],
+      ownerOnly: true,
+      execute: async (m, ctx) => {
+        executions.push({ fromMe: m.fromMe, isOwner: ctx.isOwner, id: m.id, sender: m.sender });
+      }
+    });
+    testClient.setup(async () => {}, false);
+
+    globalThis.setInterval = origSetInterval;
+    globalThis.setTimeout = origSetTimeout;
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    // 5a: Command typed from the connected phone itself (non-3EB0 ID, fromMe: true)
+    mockSock.ev.emit('messages.upsert', {
+      type: 'notify',
+      messages: [{
+        key: { id: '3AA112233445566Self', remoteJid: '201055566677@s.whatsapp.net', fromMe: true },
+        message: { conversation: '.pingtest' },
+        messageTimestamp: nowSec,
+        pushName: 'ConnectedSelf'
+      }]
+    });
+    // 5b: Bot's own Baileys-generated message (ID starts with 3EB0, fromMe: true) -> must be ignored to prevent loops
+    mockSock.ev.emit('messages.upsert', {
+      type: 'notify',
+      messages: [{
+        key: { id: '3EB0LOOPPREVENT123', remoteJid: '201055566677@s.whatsapp.net', fromMe: true },
+        message: { conversation: '.pingtest' },
+        messageTimestamp: nowSec
+      }]
+    });
+    // 5c: Message from another owner (fromMe: false) -> still executes
+    mockSock.ev.emit('messages.upsert', {
+      type: 'notify',
+      messages: [{
+        key: { id: '3AA9988776655Other', remoteJid: '201505362172@s.whatsapp.net', fromMe: false },
+        message: { conversation: '.pingtest' },
+        messageTimestamp: nowSec,
+        pushName: 'OtherOwner'
+      }]
+    });
+
+    await new Promise((r) => setTimeout(r, 80));
+    assert.equal(executions.length, 2, 'Expected self-sent command and other-user command to execute, while 3EB0 reply is ignored');
+    assert.equal(executions[0].id, '3AA112233445566Self');
+    assert.equal(executions[0].fromMe, true);
+    assert.equal(executions[0].isOwner, true);
+    assert.equal(executions[1].id, '3AA9988776655Other');
+    assert.equal(executions[1].fromMe, false);
+
+    for (const item of createdTimers) {
+      if (item.type === 'interval') clearInterval(item.t);
+      else clearTimeout(item.t);
+    }
+    Utils.keyCore1 = prevKc1;
+    Utils.keyCore2 = prevKc2;
+    Utils.keysMessagesObjWA = prevKm;
+    try { await testClient.cleanup(); } catch {}
+  } finally {
+    resetStoreCacheForTests();
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (prevState === undefined) delete process.env.BOTS_STATE_FILE;
+    else process.env.BOTS_STATE_FILE = prevState;
+  }
+});
+

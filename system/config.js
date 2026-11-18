@@ -93,7 +93,7 @@ export function buildConfig(env = process.env) {
   return {
     phoneNumber: env.BOT_PHONE || '', // Bot number (يجب تعيينه عبر BOT_PHONE في البيئة)
     prefix: [".", "/", "!"],
-    fromMe: false,
+    fromMe: null, // null = السماح للرقم المتصل بالبوت وبقية المستخدمين بتشغيل الأوامر
     owners: [
     // Owner 1
       { name: "𝑮𝑶𝑲𝑶", lid: "129723211@lid", jid: "218930171336@s.whatsapp.net" },
