@@ -13,6 +13,7 @@ import { attachSessionBackup, installShutdownHandlers, restoreSessionFromBackup,
 import { createPeriodicRestartScheduler, installPresenceCap } from './system/runtime-controls.js';
 import { pushEvent as pushRuntimeEvent } from './system/events.js';
 import { attachLiveness, isAlive, verifyRestartOutcome } from './system/liveness.js';
+import { applyMainBotSettingsOnBoot } from './system/botRegistry.js';
 
 // أحداث حارس الإقلاع (bootGuard) بتتبعت من هنا بنوع مستقل — نفس الدالة اللي
 // بتترحّل لناقل الأحداث، بس kind='boot' عشان تبان في اللوحة كـ"إقلاع".
@@ -95,6 +96,7 @@ if (!global.db) {
 /* =========== Config ========== */
 const { config } = client;
 config.info = buildInfo();
+applyMainBotSettingsOnBoot(client);
 
 /* =========== Web Panel config ========== */
 // نطبّق إعدادات طريقة الربط (QR / كود) ورقم البوت قبل تشغيل الجلسة

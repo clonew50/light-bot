@@ -1,0 +1,18 @@
+{
+  "subBots": {},
+  "mainBot": {
+    "nameBot": "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻",
+    "prefix": [
+      ".",
+      "/",
+      "!"
+    ],
+    "fromMe": false,
+    "autoRead": false,
+    "maintenance": false,
+    "noSub": false,
+    "allowPublicWebPair": true,
+    "welcomeEnabled": true,
+    "antiLink": false
+  }
+}

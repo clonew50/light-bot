@@ -1,5 +1,13 @@
 import { SubBots } from "meowsab";
 import { pushEvent } from "./system/events.js";
+import {
+  registerBotRegistryHooks,
+  getSubBotSettings,
+  setSubBotModeByUidOrPhone,
+  recordSubPairEvent,
+  recordSubReadyEvent,
+  recordSubStatusEvent
+} from "./system/botRegistry.js";
 
 // خريطة لتخزين حالة الوضع لكل بوت فرعي (المفتاح هو uid أو رقم البوت)
 const subBotModes = new Map();
@@ -45,8 +53,17 @@ async function sub(client) {
     printQR: false
   });
 
+  registerBotRegistryHooks({
+    onSubSettingsChange: (uid, _phone, settings) => {
+      if (uid && settings) {
+        subBotModes.set(uid, settings.mode === 'private');
+      }
+    }
+  });
+
   global.subBots.on('error', (uid, error) => {
     console.error(`❌ [SubBot ${uid}] Error:`, error?.message || error);
+    try { recordSubStatusEvent(uid, 'error', error?.message || String(error), global.subBots); } catch {}
   });
 
   const loadedCount = await global.subBots.load();
@@ -54,10 +71,12 @@ async function sub(client) {
 
   global.subBots.on('ready', async (uid, sock) => {
     console.log(`✅ [SubBot ${uid}] Connected!`);
+    try { recordSubReadyEvent(uid, sock, global.subBots); } catch {}
   });
 
   global.subBots.on('pair', (uid, code) => {
     console.log(`🔐 [SubBot ${uid}] Pairing code: ${code}`);
+    try { recordSubPairEvent(uid, code, global.subBots); } catch {}
     // (todo 31a) الاقتران نجح → الكود اتسهلك: نبطّله ونولّد كود جديد
     // للاقترانات الجاية — الكود المخزّن مبقاش صالح للاستخدام.
     try {
@@ -101,9 +120,11 @@ async function sub(client) {
       ? remoteJid.split('@')[0]
       : (msg.key.participant ? msg.key.participant.split('@')[0] : '');
 
-    // تهيئة الوضع الافتراضي (عام = false) إذا لم يتم تحديده مسبقاً
+    const botSettings = getSubBotSettings(botNumber, global.subBots);
+
+    // تهيئة الوضع الافتراضي من الإعدادات المحفوظة (عام = false)
     if (!subBotModes.has(uid)) {
-      subBotModes.set(uid, false); // false يعني عام، true يعني خاص
+      subBotModes.set(uid, botSettings.mode === 'private'); // false يعني عام، true يعني خاص
     }
 
     const isPrivate = subBotModes.get(uid);
@@ -113,14 +134,20 @@ async function sub(client) {
       if (senderNumber === botNumber) {
         if (body === ".خاص") {
           subBotModes.set(uid, true);
+          setSubBotModeByUidOrPhone(uid, true, global.subBots);
           await sock.sendMessage(remoteJid, { text: "🔒 تم تفعيل وضع (الخاص). البوت سيرد عليك وحدك الآن." }, { quoted: msg });
           return;
         }
         if (body === ".عام") {
           subBotModes.set(uid, false);
+          setSubBotModeByUidOrPhone(uid, false, global.subBots);
           await sock.sendMessage(remoteJid, { text: "🌐 تم تفعيل وضع (العام). البوت سيستجيب للجميع الآن." }, { quoted: msg });
           return;
         }
+      }
+
+      if (botSettings.paused && senderNumber !== botNumber) {
+        return;
       }
 
       // إذا كان البوت في وضع الخاص، يمنع الرد على أي شخص غير صاحب الرقم الفرعي نفسه
@@ -142,6 +169,7 @@ async function sub(client) {
 
   global.subBots.on('close', (uid) => {
     console.log(`🔌 [SubBot ${uid}] Disconnected`);
+    try { recordSubStatusEvent(uid, 'disconnected', null, global.subBots); } catch {}
   });
 
   global.subBots.on('badSession', (uid) => {

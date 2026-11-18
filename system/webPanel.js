@@ -19,12 +19,25 @@ import { createPairingState } from './pairing.js';
 import { pushEvent as busPushEvent, getEvents } from './events.js';
 import { isAlive, livenessStatus } from './liveness.js';
 import { normalizeCommandsList, simulateCommand } from './simulator.js';
+import { renderPublicPortalHtml, renderAdminPanelHtml } from './panelViews.js';
+import {
+  normalizePhone,
+  requestSubBotPairing,
+  verifySubBotAccess,
+  serializeSubBot,
+  updateSubBotSettings,
+  controlSubBot,
+  updateMainBotSettings,
+  getBotFleetOverview
+} from './botRegistry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // hook للاختبارات/التشغيل المعزول: ملف الإعدادات في مكان تاني (افتراضيًا نفس الملف)
-const CONFIG_FILE = process.env.PANEL_CONFIG_FILE
-  ? path.resolve(process.env.PANEL_CONFIG_FILE)
-  : path.join(__dirname, 'panel-config.json');
+function configFilePath() {
+  return process.env.PANEL_CONFIG_FILE
+    ? path.resolve(process.env.PANEL_CONFIG_FILE)
+    : path.join(__dirname, 'panel-config.json');
+}
 
 /* ============ إعدادات محفوظة ============ */
 const DEFAULT_PASSWORD = 'winner'; // كلمة السر القديمة — مش مسموح بيها ككلمة سر فعلية بعد دلوقتي
@@ -45,27 +58,28 @@ function generatePassword(len = 16) {
 }
 
 export function readPanelConfig() {
+  const cfgPath = configFilePath();
   let cfg = { ...fDEFAULT_CONFIG };
   // بصمة كلمة السر كما حفظناها آخر مرة — بنقارن بيها عند الإقلاع عشان نكتشف
   // أي تغيير (env مختلف / توليد جديد / تعديل يدوي في الملف) ونرفع عدّاد rev
   // فسحب كل الكوكيز القديمة فورًا.
   let diskPwHash = null;
   try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      const disk = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    if (fs.existsSync(cfgPath)) {
+      const disk = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
       cfg = { ...cfg, ...disk };
       if (disk && typeof disk.pwHash === 'string') diskPwHash = disk.pwHash;
       // ملف موجود من قبل لازم يفضل بصلاحية 0600 (إصلاح أي ملف قديم أوسع من كده)
       try {
-        if ((fs.statSync(CONFIG_FILE).mode & 0o777) !== 0o600) fs.chmodSync(CONFIG_FILE, 0o600);
+        if ((fs.statSync(cfgPath).mode & 0o777) !== 0o600) fs.chmodSync(cfgPath, 0o600);
       } catch {}
     }
   } catch (e) {
     console.error('⚠️ [WEB] تعذّر قراءة panel-config.json:', e.message);
     // ما نكتبش فوق الملف التالف مباشرة — نحفظه للأرشيف ونتابع بقيم جديدة
     try {
-      const bad = `${CONFIG_FILE}.corrupt-${Date.now()}.json`;
-      fs.renameSync(CONFIG_FILE, bad);
+      const bad = `${cfgPath}.corrupt-${Date.now()}.json`;
+      fs.renameSync(cfgPath, bad);
       console.warn(`🗃️ [WEB] الملف التالف اتنقل إلى ${path.basename(bad)}`);
     } catch {}
   }
@@ -104,12 +118,13 @@ export function readPanelConfig() {
 }
 
 export function savePanelConfig(cfg) {
-  const tmp = `${CONFIG_FILE}.tmp-${process.pid}-${Date.now()}`;
+  const cfgPath = configFilePath();
+  const tmp = `${cfgPath}.tmp-${process.pid}-${Date.now()}`;
   try {
     fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
     // الملف فيه كلمة سر اللوحة ومفتاح توقيع الكوكيز — صلاحية 0600 إجبارية
     fs.chmodSync(tmp, 0o600);
-    fs.renameSync(tmp, CONFIG_FILE);
+    fs.renameSync(tmp, cfgPath);
   } catch (e) {
     try { fs.rmSync(tmp, { force: true }); } catch {}
     console.error('⚠️ [WEB] تعذّر حفظ panel-config.json:', e.message);
@@ -288,6 +303,14 @@ export function getClientInfo(client) {
   try { commands = client.getAllCommands?.().length || 0; } catch {}
   try { errors = client.errors?.() || []; } catch {}
   const mem = process.memoryUsage();
+  let subStats = { totalSubs: 0, connectedSubs: 0 };
+  try {
+    const fleet = getBotFleetOverview(client, global.subBots, computeConnected(client));
+    subStats = {
+      totalSubs: fleet.stats.totalSubs,
+      connectedSubs: fleet.stats.connectedSubs
+    };
+  } catch {}
   return {
     connected: computeConnected(client),
     phone: client?.config?.phoneNumber || '',
@@ -302,6 +325,7 @@ export function getClientInfo(client) {
     pairingCode: state.pairingCode,
     loginMode: panelCfg.loginMode,
     configuredPhone: panelCfg.phone || client?.config?.phoneNumber || '',
+    subStats,
     // فيه إعادة تشغيل كاملة (خروج نظيف) جارٍ بعد أمر تنصيب/تصفير من اللوحة؟
     // الواجهة بتعرض شريط "أعد التشغيل جارٍ..." بدل الرد الصامت.
     pendingRestart: state.pendingRestart,
@@ -466,558 +490,65 @@ function sendHtml(res, code, html) {
   res.end(html);
 }
 
-/* ============ HTML ============ */
-const LOGIN_HTML = (err) => `<!DOCTYPE html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>دخول لوحة التحكم</title>
-<style>
-*{box-sizing:border-box;font-family:system-ui,'Segoe UI',Tahoma,sans-serif}
-body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-background:linear-gradient(135deg,#0f172a,#1e293b);color:#e2e8f0}
-.card{width:min(92vw,380px);background:#111827;border:1px solid #1f2937;border-radius:18px;
-padding:28px;box-shadow:0 20px 50px rgba(0,0,0,.5)}
-h1{margin:0 0 6px;font-size:22px;text-align:center}
-p.sub{margin:0 0 20px;text-align:center;color:#94a3b8;font-size:13px}
-input{width:100%;padding:13px 14px;border-radius:12px;border:1px solid #334155;background:#0b1220;
-color:#e2e8f0;font-size:16px;outline:none}
-input:focus{border-color:#38bdf8}
-button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;cursor:pointer;
-background:#38bdf8;color:#04283a;font-weight:700;font-size:16px}
-button:active{transform:scale(.99)}
-.err{margin-top:14px;background:#3f1d1d;border:1px solid #7f1d1d;color:#fecaca;padding:10px;
-border-radius:10px;font-size:13px;text-align:center}
-.note{margin-top:16px;color:#64748b;font-size:12px;text-align:center}
-</style></head>
-<body>
-<form class="card" method="POST" action="/login">
-  <h1>🔐 لوحة تحكم البوت</h1>
-  <p class="sub">اكتب كلمة السر للدخول</p>
-  <input type="password" name="password" placeholder="كلمة السر" autofocus required>
-  <button type="submit">دخول</button>
-  ${err ? `<div class="err">${err}</div>` : ''}
-  <div class="note">كلمة السر محفوظة في panel-config.json (مش بتتطبع في أي لوج)</div>
-</form>
-</body></html>`;
-
-const PANEL_HTML = `<!DOCTYPE html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>لوحة تحكم لايت بوت التفاعلية</title>
-<style>
-*{box-sizing:border-box;font-family:system-ui,'Segoe UI',Tahoma,sans-serif}
-:root{--bg:#090e1a;--surface:#111827;--surface2:#0b1220;--border:#1f2937;--border2:#334155;--text:#e2e8f0;--muted:#94a3b8;--accent:#38bdf8;--green:#4ade80;--amber:#f59e0b;--red:#ef4444}
-html,body{margin:0;background:var(--bg);color:var(--text);overflow-x:hidden}
-body{padding:16px}
-.wrap{max-width:1240px;margin:0 auto}
-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)}
-.brand{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-h1{font-size:20px;margin:0;letter-spacing:-0.01em}
-.sub-meta{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
-.header-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.badge{padding:6px 12px;border-radius:999px;font-size:13px;font-weight:700}
-.on{background:#052e1a;color:#4ade80;border:1px solid #14532d}
-.off{background:#3f1d1d;color:#fca5a5;border:1px solid #7f1d1d}
-.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
-.tab-btn{border:1px solid var(--border2);background:var(--surface);color:var(--muted);border-radius:10px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer;transition:.15s}
-.tab-btn:hover{color:var(--text);border-color:var(--accent)}
-.tab-btn.active{background:var(--accent);color:#04283a;border-color:var(--accent)}
-.panel{display:none}
-.panel.active{display:block}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;min-width:0}
-.card h2{margin:0 0 12px;font-size:15px;color:#93c5fd;display:flex;gap:8px;align-items:center;justify-content:space-between}
-.row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border);font-size:14px;font-variant-numeric:tabular-nums}
-.row:last-child{border-bottom:0}
-.row span:first-child{color:var(--muted)}
-button{border:0;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;font-size:14px;background:#1f2937;color:var(--text);transition:.15s}
-button:hover{background:#334155}
-button.pri{background:var(--accent);color:#04283a}
-button.pri:hover{background:#7dd3fc}
-button.warn{background:var(--amber);color:#3b2100}
-button.danger{background:var(--red);color:#fff}
-button.ghost{background:transparent;border:1px solid var(--border2)}
-button.sm{padding:6px 10px;font-size:12px;border-radius:8px}
-.actions{display:flex;flex-wrap:wrap;gap:10px}
-input,select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);margin-bottom:10px;font-size:14px}
-input:focus,select:focus{outline:none;border-color:var(--accent)}
-.qrbox{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
-.qrbox img{width:min(100%,280px);background:#fff;padding:10px;border-radius:14px}
-.code{font-size:30px;font-weight:800;letter-spacing:3px;color:#4ade80;direction:ltr;text-align:center;
-background:#052e1a;border:1px solid #14532d;border-radius:12px;padding:14px;margin:8px 0;font-variant-numeric:tabular-nums}
-.hint{color:var(--muted);font-size:13px;line-height:1.7}
-.log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#a5b4fc;
-max-height:220px;overflow:auto;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;white-space:pre-wrap}
-.err-item{background:#2a1414;border:1px solid #7f1d1d;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:13px}
-.msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#052e1a;border:1px solid #14532d;
-color:#86efac;padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;transition:.3s;pointer-events:none;z-index:99}
-.msg.show{opacity:1}
-small.t{color:#64748b}
-
-/* Command Explorer */
-.toolbar{display:grid;grid-template-columns:2fr 1fr auto;gap:10px;margin-bottom:14px;align-items:start}
-.toolbar input,.toolbar select{margin-bottom:0}
-.cmd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
-.cmd-item{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;flex-direction:column;justify-content:space-between;gap:8px}
-.cmd-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.cmd-name{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:700;color:var(--accent);direction:ltr;unicode-bidi:plaintext}
-.cmd-cat{font-size:11px;color:var(--muted)}
-.cmd-desc{font-size:13px;color:#cbd5e1;line-height:1.5;min-height:20px}
-.pager{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;flex-wrap:wrap}
-
-/* Interactive WhatsApp Simulator */
-.sim-layout{display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px;align-items:start}
-.sim-layout > *{min-width:0}
-.preset-list{display:flex;flex-direction:column;gap:8px}
-.preset-btn{text-align:right;display:flex;justify-content:space-between;align-items:center;background:var(--surface2);border:1px solid var(--border)}
-.preset-btn:hover{border-color:var(--accent)}
-.sim-bar{display:flex;gap:8px;margin-bottom:12px}
-.sim-bar input{margin-bottom:0;flex:1;min-width:0;direction:rtl;text-align:right;unicode-bidi:plaintext}
-.wa-chat{background:#0b141a;border:1px solid #1f2c34;border-radius:14px;padding:14px;min-height:420px;max-height:620px;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:12px}
-.wa-msg{max-width:88%;border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.65;word-break:break-word;min-width:0}
-.wa-user{align-self:flex-start;background:#005c4b;color:#e9edef;border-top-right-radius:2px}
-.wa-bot{align-self:flex-end;background:#1f2c34;color:#e9edef;border-top-left-radius:2px;width:min(100%,540px)}
-.wa-body{white-space:pre-wrap}
-.wa-body code{background:#0b141a;padding:2px 6px;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#7dd3fc}
-.wa-body pre{background:#0b141a;padding:10px;border-radius:8px;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#a5b4fc;direction:ltr;text-align:left;margin:6px 0}
-.wa-footer{margin-top:8px;font-size:11px;color:#8696a0}
-.wa-reacts{display:flex;gap:6px;margin-top:4px;font-size:13px}
-.wa-btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;padding-top:8px;border-top:1px solid #2a3942}
-.wa-btn{background:#111b21;color:#53bdeb;border:1px solid #2a3942;border-radius:8px;padding:7px 11px;font-size:13px;font-weight:600;cursor:pointer}
-.wa-btn:hover{background:#18262e;border-color:#53bdeb}
-.wa-select-box{width:100%;margin-top:6px;background:#111b21;border:1px solid #2a3942;border-radius:10px;padding:8px}
-.wa-select-row{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:right;background:transparent;border-bottom:1px solid #1f2c34;border-radius:0;padding:7px 4px;font-size:13px}
-.wa-select-row:last-child{border-bottom:0}
-.wa-poll{background:#111b21;border:1px solid #2a3942;border-radius:10px;padding:10px;margin-top:4px}
-.wa-poll-opt{display:flex;justify-content:space-between;width:100%;margin-top:6px;background:#18262e;border:1px solid #2a3942;text-align:right}
-.wa-poll-opt.voted{border-color:#4ade80;background:#052e1a}
-.wa-carousel{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;margin-top:8px;max-width:100%}
-.wa-car-card{min-width:210px;background:#111b21;border:1px solid #2a3942;border-radius:10px;padding:10px;flex-shrink:0}
-.wa-widget{width:100%;height:265px;border:1px solid #2a3942;border-radius:10px;background:#0f172a;margin-top:6px}
-
-@media (max-width: 820px){
-  body{padding:12px}
-  .toolbar{grid-template-columns:1fr}
-  .sim-layout{grid-template-columns:minmax(0,1fr)}
-  .sim-layout > .card:last-child{order:-1}
-  .preset-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
-  .preset-btn{padding:8px 10px;font-size:12px}
-  .preset-btn small{display:none}
-  .wa-msg{max-width:100%;width:100%}
+function makeSubCookie(phone, days = 30) {
+  const exp = Date.now() + days * 86400000;
+  const payload = `${phone}.${exp}.${Number(panelCfg.rev) || 0}`;
+  return `${payload}.${sign(payload)}`;
 }
-</style></head>
-<body>
-<div class="wrap">
-  <div id="pendingRestart" style="display:none;background:#3b2f05;border:1px solid #f59e0b;color:#fde68a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:14px">♻️ أعد التشغيل جارٍ... الإعداد الجديد بيتطبق لما البوت يرجع يقلع</div>
-  <header>
-    <div class="brand">
-      <h1>🩸 لوحة تحكم لايت بوت</h1>
-      <span class="sub-meta" id="hdr-cmds">جارٍ تحميل الأوامر…</span>
-    </div>
-    <div class="header-actions">
-      <span id="badge" class="badge off">…</span>
-      <button class="ghost" type="button" onclick="doAction('logout')">خروج</button>
-    </div>
-  </header>
-
-  <nav class="tabs" role="tablist" aria-label="أقسام لوحة التحكم">
-    <button type="button" class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">📊 الحالة والربط</button>
-    <button type="button" class="tab-btn" data-tab="commands" onclick="switchTab('commands')">📜 دليل الأوامر (<span id="tab-cmd-count">0</span>)</button>
-    <button type="button" class="tab-btn" data-tab="simulator" onclick="switchTab('simulator')">💬 محاكي التفاعل</button>
-  </nav>
-
-  <!-- TAB 1: Overview & Pairing -->
-  <section id="tab-overview" class="panel active">
-    <div class="grid">
-      <div class="card">
-        <h2>📊 الحالة</h2>
-        <div class="row"><span>الاتصال</span><b id="s-conn">…</b></div>
-        <div class="row"><span>رقم البوت</span><b id="s-phone">…</b></div>
-        <div class="row"><span>الجلسة مُسجّلة</span><b id="s-session">…</b></div>
-        <div class="row"><span>عدد الأوامر</span><b id="s-cmds">…</b></div>
-        <div class="row"><span>الذاكرة</span><b id="s-mem">…</b></div>
-        <div class="row"><span>مدة التشغيل</span><b id="s-up">…</b></div>
-      </div>
-
-      <div class="card" id="installCard">
-        <h2>🔗 تنصيب / ربط واتساب</h2>
-        <div id="installBody"></div>
-      </div>
-
-      <div class="card">
-        <h2>🎛️ التحكم</h2>
-        <div class="actions">
-          <button type="button" class="pri" onclick="doAction('restart')">♻️ إعادة تشغيل</button>
-          <button type="button" class="warn" onclick="doAction('stop')">⏹️ إيقاف</button>
-          <button type="button" onclick="doAction('start')">▶️ تشغيل</button>
-          <button type="button" class="danger" onclick="resetSession()">🗑️ تصفير الجلسة</button>
-        </div>
-        <h2 style="margin-top:16px">✉️ إرسال رسالة</h2>
-        <input id="msgTo" placeholder="رقم واتساب مثال: 2010xxxxxxx">
-        <input id="msgText" placeholder="نص الرسالة">
-        <button type="button" class="pri" onclick="sendMsg()">إرسال</button>
-      </div>
-
-      <div class="card">
-        <h2>📝 سجل الأحداث</h2>
-        <div class="log" id="log">…</div>
-      </div>
-
-      <div class="card">
-        <h2>⚠️ آخر الأخطاء</h2>
-        <div id="errors"><small class="t">لا يوجد</small></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- TAB 2: Command Explorer -->
-  <section id="tab-commands" class="panel">
-    <div class="card">
-      <h2><span>📜 دليل الأوامر التفاعلي</span><small class="t" id="cmdSummary"></small></h2>
-      <div class="toolbar">
-        <input id="cmdSearch" type="search" placeholder="ابحث باسم الأمر أو الوصف (مثال: سورة، زخرفة، تصويت، بطاقتي، دليل)..." oninput="cmdPage=1;renderCommands()">
-        <select id="cmdCat" onchange="cmdPage=1;renderCommands()">
-          <option value="">كل الأقسام</option>
-        </select>
-        <button type="button" class="ghost" onclick="loadCommands(true)">🔄 تحديث</button>
-      </div>
-      <div id="cmdGrid" class="cmd-grid"></div>
-      <div class="pager">
-        <button type="button" class="ghost sm" id="cmdPrev" onclick="changePage(-1)">◀ السابق</button>
-        <span class="hint" id="cmdPageInfo">صفحة 1</span>
-        <button type="button" class="ghost sm" id="cmdNext" onclick="changePage(1)">التالي ▶</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- TAB 3: Interactive Simulator -->
-  <section id="tab-simulator" class="panel">
-    <div class="sim-layout">
-      <div class="card">
-        <h2>⚡ أوامر تفاعلية جاهزة</h2>
-        <div class="preset-list">
-          <button type="button" class="preset-btn" onclick="runSim('.تصفح')"><span>🧭 المتصفح الشامل</span><small>.تصفح</small></button>
-          <button type="button" class="preset-btn" onclick="runSim('.اذكار_الصباح')"><span>🌅 أذكار الصباح</span><small>أزرار + نسخ</small></button>
-          <button type="button" class="preset-btn" onclick="runSim('.سبحة')"><span>📿 السبحة التفاعلية</span><small>حفظ قاعدة</small></button>
-          <button type="button" class="preset-btn" onclick="runSim('.زخرفة1 لايت')"><span>✒️ زخرفة الاسم</span><small>نسخ فوري</small></button>
-          <button type="button" class="preset-btn" onclick="runSim('.لغز_عشوائي')"><span>🧩 لغز تفاعلي</span><small>اختيارات</small></button>
-          <button type="button" class="preset-btn" onclick="runSim('.ابراج')"><span>🔮 قائمة الأبراج</span><small>منسدلة</small></button>
-          <button type="button" class="preset-btn" onclick="runSim('.بطاقتي')"><span>🪪 بطاقتي HTML</span><small>Widget</small></button>
-          <button type="button" class="preset-btn" onclick="runSim('.لوحة_البوت')"><span>📊 لوحة البوت HTML</span><small>Widget</small></button>
-          <button type="button" class="preset-btn" onclick="runSim('.تصويت_سريع')"><span>🗳️ استطلاع رأي</span><small>Poll</small></button>
-          <button type="button" class="preset-btn" onclick="runSim('.معاينة_كاروسيل')"><span>🎠 عرض دوّار</span><small>Carousel</small></button>
-          <button type="button" class="preset-btn" onclick="runSim('.دولة_مصر')"><span>🇪🇬 دليل دولة</span><small>بطاقة</small></button>
-          <button type="button" class="preset-btn" onclick="runSim('.محفظتي')"><span>💳 محفظتي</span><small>بنك</small></button>
-          <button type="button" class="preset-btn" onclick="runSim('.بحث_امر سورة')"><span>🔎 بحث أمر</span><small>فهرس</small></button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2><span>💬 معاينة رسائل واتساب التفاعلية</span><button type="button" class="ghost sm" onclick="clearSim()">🧹 مسح</button></h2>
-        <form class="sim-bar" onsubmit="event.preventDefault();runSim()">
-          <input id="simInput" value=".تصفح" placeholder="اكتب أي أمر مثل .بطاقتي أو .زخرفة1 لايت أو .كم_لميل 10">
-          <button type="submit" class="pri" id="simRunBtn">تنفيذ ▶</button>
-        </form>
-        <div class="wa-chat" id="simChat">
-          <div class="wa-msg wa-bot">
-            <div class="wa-body">👋 مرحباً بك في <strong>محاكي واتساب التفاعلي</strong>!<br>اختر أي أمر من القائمة الجانبية أو اكتب أمراً واضغط <strong>تنفيذ</strong> لمعاينة البطاقات والأزرار والاستطلاعات وودجت HTML مباشرة.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-</div>
-<div class="msg" id="msg"></div>
-
-<script>
-function toast(t){const m=document.getElementById('msg');m.textContent=t;m.classList.add('show');setTimeout(()=>m.classList.remove('show'),2500);}
-function fmt(s){s=Math.floor(s);const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return (d?d+'ي ':'')+(h?h+'س ':'')+m+'د';}
-function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-
-function switchTab(name){
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
-  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='tab-'+name));
-  if(name==='commands' && !allCommands.length) loadCommands();
+function verifySubCookie(cookie) {
+  if (!cookie) return '';
+  const parts = cookie.split('.');
+  if (parts.length !== 4) return '';
+  const [phone, expStr, revStr, sig] = parts;
+  if (!phone || !expStr || !revStr || !sig) return '';
+  if (!/^\d{8,15}$/.test(phone)) return '';
+  const expect = sign(`${phone}.${expStr}.${revStr}`);
+  if (sig.length !== expect.length) return '';
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return '';
+  if (Number(revStr) !== (Number(panelCfg.rev) || 0)) return '';
+  if (!(Number(expStr) > Date.now())) return '';
+  return phone;
+}
+function secureCookieFlag(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  return proto === 'https' ? '; Secure' : '';
 }
 
-async function refresh(){
-  try{
-    const r=await fetch('/api/status');if(r.status===401){location.reload();return;}
-    const d=await r.json();
-    const b=document.getElementById('badge');
-    b.textContent=d.connected?'متصل ✅':'غير متصل ❌';
-    b.className='badge '+(d.connected?'on':'off');
-    document.getElementById('s-conn').textContent=d.connected?'مفتوح':'مغلق';
-    document.getElementById('s-phone').textContent=d.phone||'—';
-    document.getElementById('s-session').textContent=d.sessionRegistered?'نعم':'لا';
-    document.getElementById('s-cmds').textContent=d.commands;
-    document.getElementById('tab-cmd-count').textContent=d.commands;
-    document.getElementById('hdr-cmds').textContent=d.commands+' أمر جاهز';
-    document.getElementById('s-mem').textContent=d.memoryMB+' MB';
-    document.getElementById('s-up').textContent=fmt(d.uptimeSec);
-    document.getElementById('log').textContent=(d.events||[]).map(e=>e&&e.line?e.line:(e&&e.text?e.text:String(e||''))).join('\\n')||'—';
-    const eb=document.getElementById('errors');
-    eb.innerHTML=(d.errors&&d.errors.length)?d.errors.map(e=>'<div class="err-item"><b>'+esc(e.command||'')+'</b><br>'+esc((e.error||'').slice(0,200))+'<br><small class="t">'+esc(e.time||'')+'</small></div>').join(''):'<small class="t">لا يوجد</small>';
-    const pr=document.getElementById('pendingRestart');
-    if(pr)pr.style.display=d.pendingRestart?'':'none';
-    renderInstall(d);
-  }catch(e){}
-}
-
+/* ============ HTML (الواجهة الافتراضية + لوحة الأدمن) ============ */
+const LOGIN_HTML = (err) => renderPublicPortalHtml(err);
+const INSTALL_RENDER_JS = `let lastInstallSig='';
 function renderInstall(d){
   const box=document.getElementById('installBody');
+  const activeId=document.activeElement?document.activeElement.id:'';
+  if(activeId==='lm' || activeId==='ph') return;
+  const sig=[!!d.connected,d.pairingCode||'',d.qr?'1':'0',d.loginMode||'',d.configuredPhone||''].join('|');
+  if(sig===lastInstallSig) return;
+  lastInstallSig=sig;
   if(d.connected){
-    box.innerHTML='<div class="hint">✅ البوت متصل بواتساب بالفعل.<br>لو عايز تربطه برقم تاني اضغط <b>تصفير الجلسة</b> ثم أعد التنصيب.</div>';
+    box.innerHTML='<div class="hint">البوت الرئيسي متصل بواتساب بالفعل. لتغييره برقم آخر استخدم <b>تصفير الجلسة</b> ثم أعد الربط.</div>';
     return;
   }
   let html='';
   if(d.pairingCode){
-    html+='<div class="hint">افتح واتساب → الأجهزة المرتبطة → الربط برقم الهاتف، واكتب الكود:</div><div class="code">'+esc(d.pairingCode)+'</div>';
+    html+='<div class="hint">افتح واتساب ← الأجهزة المرتبطة ← الربط برقم الهاتف واكتب الكود:</div><div class="code">'+esc(d.pairingCode)+'</div>';
   }
   if(d.qr){
-    html+='<div class="qrbox"><div class="hint">امسح رمز QR من واتساب (الأجهزة المرتبطة → ربط جهاز):</div><img src="'+d.qr+'" alt="QR"></div>';
+    html+='<div class="qrbox"><div class="hint">امسح رمز QR من واتساب:</div><img src="'+d.qr+'" alt="QR"></div>';
   }
   if(!d.pairingCode && !d.qr){
-    html+='<div class="hint">⏳ في انتظار صدور QR / كود الربط... (قد يستغرق ثوانٍ)</div>';
+    html+='<div class="hint">في انتظار صدور QR أو كود الربط للبوت الرئيسي...</div>';
   }
-  html+='<div style="margin-top:14px">'
-     +'<label class="hint">طريقة الربط</label>'
+  html+='<div style="margin-top:12px">'
+     +'<label class="lbl">طريقة الربط</label>'
      +'<select id="lm"><option value="code"'+(d.loginMode==='code'?' selected':'')+'>كود ربط (برقم الهاتف)</option>'
      +'<option value="qr"'+(d.loginMode==='qr'?' selected':'')+'>رمز QR</option></select>'
-     +'<label class="hint">رقم البوت</label>'
-     +'<input id="ph" value="'+esc(d.configuredPhone)+'" placeholder="2010xxxxxxx">'
+     +'<label class="lbl">رقم البوت الرئيسي</label>'
+     +'<input id="ph" class="ltr mono" value="'+esc(d.configuredPhone)+'" placeholder="2010xxxxxxx">'
      +'<div class="actions"><button type="button" class="pri" onclick="applyLogin()">حفظ وإعادة التشغيل</button>'
-     +'<button type="button" class="ghost" onclick="refresh()">🔄 تحديث</button></div></div>';
+     +'<button type="button" class="ghost" onclick="refresh()">تحديث</button></div></div>';
   box.innerHTML=html;
-}
-
-async function applyLogin(){
-  const loginMode=document.getElementById('lm').value;
-  const phone=document.getElementById('ph').value.trim();
-  const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action:'set-login',loginMode,phone})});
-  const d=await r.json();toast(d.message||'تم');
-  setTimeout(refresh,1500);
-}
-async function doAction(a){
-  const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a})});
-  const d=await r.json();toast(d.message||'تم');
-  if(a==='logout'){setTimeout(()=>location.reload(),800);return;}
-  setTimeout(refresh,1500);
-}
-async function resetSession(){
-  if(!confirm('سيتم نقل الجلسة الحالية لنسخة احتياطية (session.bak-*) والخروج لإقلاع جديد غير مُقرن. متأكد؟'))return;
-  const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'reset-session'})});
-  const d=await r.json();toast(d.message||'تم');setTimeout(refresh,2500);
-}
-async function sendMsg(){
-  const to=document.getElementById('msgTo').value.trim();
-  const text=document.getElementById('msgText').value.trim();
-  if(!to||!text){toast('اكتب الرقم والنص');return;}
-  const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'send',to,text})});
-  const d=await r.json();toast(d.message||'تم');
-}
-
-/* Command Explorer */
-let allCommands=[],cmdPage=1;
-const PAGE_SIZE=24;
-async function loadCommands(force){
-  try{
-    const r=await fetch('/api/commands');
-    if(r.status===401){location.reload();return;}
-    const d=await r.json();
-    allCommands=d.commands||[];
-    const sel=document.getElementById('cmdCat');
-    const prev=sel.value;
-    sel.innerHTML='<option value="">كل الأقسام ('+allCommands.length+')</option>'
-      +(d.categories||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.emoji+' '+c.label+' ('+c.count+')')+'</option>').join('');
-    if(prev)sel.value=prev;
-    renderCommands();
-    if(force)toast('تم تحديث الفهرس: '+allCommands.length+' أمر');
-  }catch(e){toast('تعذّر تحميل الأوامر');}
-}
-
-function getFilteredCommands(){
-  const q=(document.getElementById('cmdSearch').value||'').trim().toLowerCase();
-  const cat=document.getElementById('cmdCat').value;
-  return allCommands.filter(c=>{
-    if(cat && c.category!==cat) return false;
-    if(!q) return true;
-    return c.primary.toLowerCase().includes(q)
-      || (c.description||'').toLowerCase().includes(q)
-      || (c.categoryLabel||'').toLowerCase().includes(q)
-      || (c.triggers||[]).some(t=>String(t).toLowerCase().includes(q));
-  });
-}
-
-function renderCommands(){
-  const items=getFilteredCommands();
-  const pages=Math.max(1,Math.ceil(items.length/PAGE_SIZE));
-  if(cmdPage>pages)cmdPage=pages;
-  const start=(cmdPage-1)*PAGE_SIZE;
-  const slice=items.slice(start,start+PAGE_SIZE);
-  document.getElementById('cmdSummary').textContent='عرض '+slice.length+' من '+items.length+' أمر';
-  document.getElementById('cmdPageInfo').textContent='صفحة '+cmdPage+' من '+pages;
-  document.getElementById('cmdPrev').disabled=cmdPage<=1;
-  document.getElementById('cmdNext').disabled=cmdPage>=pages;
-  const grid=document.getElementById('cmdGrid');
-  if(!slice.length){
-    grid.innerHTML='<div class="hint">لا توجد أوامر مطابقة لبحثك.</div>';
-    return;
-  }
-  grid.innerHTML=slice.map(c=>{
-    const sample='.'+(c.usages&&c.usages[0]?c.usages[0].split(' ')[0]:c.primary);
-    return '<div class="cmd-item">'
-      +'<div><div class="cmd-head"><span class="cmd-name">.'+esc(c.primary)+'</span><span class="cmd-cat">'+esc(c.categoryEmoji+' '+c.categoryLabel)+'</span></div>'
-      +'<div class="cmd-desc">'+esc(c.description||'أمر متاح للتشغيل')+'</div></div>'
-      +'<button type="button" class="pri sm" data-cmd="'+esc(sample)+'" onclick="tryInSimulator(this.dataset.cmd)">جرب في المحاكي ▶</button>'
-      +'</div>';
-  }).join('');
-}
-function changePage(delta){cmdPage=Math.max(1,cmdPage+delta);renderCommands();}
-function tryInSimulator(cmd){switchTab('simulator');runSim(cmd);}
-
-/* Interactive Simulator */
-function clearSim(){
-  document.getElementById('simChat').innerHTML='<div class="wa-msg wa-bot"><div class="wa-body">تم مسح المحادثة. اكتب أي أمر لتجربته الآن!</div></div>';
-}
-function formatWaText(raw){
-  let s=esc(raw||'');
-  s=s.replace(/\\\`\\\`\\\`([\\s\\S]*?)\\\`\\\`\\\`/g,(_,c)=>'<pre>'+c.trim()+'</pre>');
-  s=s.replace(/\\\`([^\\\`\\n]+)\\\`/g,'<code>$1</code>');
-  s=s.replace(/\\*([^\\*\\n]+)\\*/g,'<strong>$1</strong>');
-  s=s.replace(/(^|\\s)_([^_\\n]+)_(\\s|$)/g,'$1<em>$2</em>$3');
-  return s;
-}
-function appendChatNode(node){
-  const chat=document.getElementById('simChat');
-  chat.appendChild(node);
-  chat.scrollTop=chat.scrollHeight;
-}
-function copyValue(val){
-  if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(val).then(()=>toast('تم النسخ: '+val.slice(0,30))).catch(()=>toast('القيمة: '+val));
-  }else{toast('القيمة: '+val);}
-}
-function renderButtons(btns){
-  if(!btns||!btns.length)return null;
-  const wrap=document.createElement('div');
-  wrap.className='wa-btns';
-  for(const b of btns){
-    if(b.name==='single_select'&&b.params&&Array.isArray(b.params.sections)){
-      const box=document.createElement('div');box.className='wa-select-box';
-      const title=document.createElement('div');title.className='hint';title.textContent='📜 '+(b.params.display_title||b.params.title||'قائمة اختيار');
-      box.appendChild(title);
-      for(const sec of b.params.sections){
-        for(const row of (sec.rows||[])){
-          const rbtn=document.createElement('button');rbtn.type='button';rbtn.className='wa-select-row';
-          rbtn.innerHTML='<span>'+esc(row.title)+'</span><small class="t">'+esc(row.id||'')+'</small>';
-          rbtn.onclick=()=>{if(row.id)runSim(row.id);};
-          box.appendChild(rbtn);
-        }
-      }
-      wrap.appendChild(box);
-      continue;
-    }
-    const btn=document.createElement('button');btn.type='button';btn.className='wa-btn';
-    if(b.name==='cta_copy'){
-      btn.textContent=(b.params&&b.params.display_text)||'📋 نسخ';
-      btn.onclick=()=>copyValue((b.params&&b.params.copy_code)||'');
-    }else if(b.name==='cta_url'){
-      btn.textContent=(b.params&&b.params.display_text)||'🔗 رابط';
-      btn.onclick=()=>toast('الرابط: '+((b.params&&b.params.url)||''));
-    }else{
-      const label=(b.params&&b.params.display_text)||b.displayText||b.id||'زر';
-      const cmdId=(b.params&&b.params.id)||b.id||'';
-      btn.textContent=label;
-      btn.onclick=()=>{if(cmdId)runSim(cmdId);};
-    }
-    wrap.appendChild(btn);
-  }
-  return wrap;
-}
-async function runSim(presetCmd){
-  const inp=document.getElementById('simInput');
-  const cmd=(typeof presetCmd==='string'?presetCmd:inp.value).trim();
-  if(!cmd){toast('اكتب أمراً أولاً');return;}
-  if(typeof presetCmd==='string')inp.value=cmd;
-
-  const uNode=document.createElement('div');
-  uNode.className='wa-msg wa-user';
-  uNode.innerHTML='<div class="wa-body">'+esc(cmd)+'</div>';
-  appendChatNode(uNode);
-
-  try{
-    const r=await fetch('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:cmd})});
-    if(r.status===401){location.reload();return;}
-    const d=await r.json();
-    if(!d.ok){
-      const eNode=document.createElement('div');eNode.className='wa-msg wa-bot';
-      eNode.innerHTML='<div class="wa-body">⚠️ '+esc(d.error||'تعذّر تنفيذ الأمر')+'</div>';
-      appendChatNode(eNode);
-      return;
-    }
-    const outs=(d.outputs&&d.outputs.length)?d.outputs:[{type:'text',text:'✅ تم التنفيذ بدون نص إضافي ('+d.durationMs+'ms)'}];
-    for(const out of outs){
-      const bNode=document.createElement('div');bNode.className='wa-msg wa-bot';
-      if(out.type==='widget'){
-        const hdr=document.createElement('div');hdr.innerHTML='<strong>🧩 '+esc(out.title||'Widget')+'</strong>';
-        const ifr=document.createElement('iframe');
-        ifr.className='wa-widget';
-        ifr.setAttribute('sandbox','allow-scripts');
-        ifr.srcdoc=out.html||'';
-        bNode.appendChild(hdr);bNode.appendChild(ifr);
-      }else if(out.type==='poll'){
-        const pBox=document.createElement('div');pBox.className='wa-poll';
-        pBox.innerHTML='<strong>📊 '+esc(out.name)+'</strong>';
-        for(const v of (out.values||[])){
-          const ob=document.createElement('button');ob.type='button';ob.className='wa-poll-opt';
-          ob.innerHTML='<span>'+esc(v)+'</span><span>0</span>';
-          ob.onclick=()=>{
-            pBox.querySelectorAll('.wa-poll-opt').forEach(x=>{x.classList.remove('voted');x.lastChild.textContent='0';});
-            ob.classList.add('voted');ob.lastChild.textContent='1 ✓';
-            toast('تم التصويت: '+v);
-          };
-          pBox.appendChild(ob);
-        }
-        bNode.appendChild(pBox);
-      }else if(out.type==='carousel'){
-        const h=document.createElement('div');h.className='wa-body';h.innerHTML=formatWaText(out.headerText||'');
-        bNode.appendChild(h);
-        const track=document.createElement('div');track.className='wa-carousel';
-        for(const c of (out.cards||[])){
-          const cc=document.createElement('div');cc.className='wa-car-card';
-          cc.innerHTML='<strong>'+esc(c.title||'')+'</strong><div class="hint" style="margin:6px 0">'+esc(c.body||'')+'</div>';
-          const btns=renderButtons(c.buttons||[]);
-          if(btns)cc.appendChild(btns);
-          track.appendChild(cc);
-        }
-        bNode.appendChild(track);
-      }else{
-        const body=document.createElement('div');body.className='wa-body';body.innerHTML=formatWaText(out.text||'');
-        bNode.appendChild(body);
-        const btns=renderButtons(out.buttons||[]);
-        if(btns)bNode.appendChild(btns);
-      }
-      if(out.footer){
-        const f=document.createElement('div');f.className='wa-footer';f.textContent=out.footer+' • '+d.durationMs+'ms';
-        bNode.appendChild(f);
-      }
-      if(d.reactions&&d.reactions.length){
-        const rx=document.createElement('div');rx.className='wa-reacts';rx.textContent='تفاعل: '+d.reactions.join(' ');
-        bNode.appendChild(rx);
-      }
-      appendChatNode(bNode);
-    }
-  }catch(e){
-    toast('خطأ في الاتصال بالمحاكي');
-  }
-}
-
-refresh();setInterval(refresh,3000);
-loadCommands();
-</script>
-</body></html>`;
+}`;
+const PANEL_HTML = renderAdminPanelHtml(INSTALL_RENDER_JS);
 
 /* ============ معالجة الطلبات ============ */
 // تهيئة مبدئية: getClientInfo ممكن يتنده قبل startWebPanel (اختبارات) —
@@ -1030,7 +561,7 @@ async function handle(req, res, client) {
   const cookies = parseCookies(req);
   const authed = verifyCookie(cookies.pw);
 
-  // صفحة تسجيل الدخول
+  // الشاشة الافتراضية للزوار (ربط واتساب + التحكم بالكود المحفوظ) أو لوحة الأدمن للمسجلين
   if (req.method === 'GET' && url.pathname === '/') {
     if (authed) return sendHtml(res, 200, PANEL_HTML);
     return sendHtml(res, 200, LOGIN_HTML(''));
@@ -1050,13 +581,89 @@ async function handle(req, res, client) {
     resetFail(ip);
     // SameSite=Strict بدل Lax — والكوكي Secure بس لما الطلب جه على TLS
     // (ورا reverse proxy: X-Forwarded-Proto: https).
-    const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
-    const secure = proto === 'https' ? '; Secure' : '';
+    const secure = secureCookieFlag(req);
     res.writeHead(302, { 'Set-Cookie': `pw=${makeCookie()}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Strict${secure}`, Location: '/' });
     return res.end();
   }
 
-  // كل ما بعد كده يحتاج تسجيل دخول
+  /* ============ مسارات المستخدم الافتراضية (ربط البوت والتحكم بالكود المحفوظ) ============ */
+  if (req.method === 'POST' && url.pathname === '/api/public/sub/pair') {
+    const blocked = loginBlocked(`subpair:${ip}`);
+    if (blocked) return sendJson(res, 429, { ok: false, error: 'محاولات كثيرة، انتظر ' + blocked + ' ثانية' });
+    const { json } = await readBody(req);
+    const result = await requestSubBotPairing(json?.phone, { subBots: global.subBots, isAdmin: false });
+    if (!result.ok && !result.controlCode) {
+      registerFail(`subpair:${ip}`);
+      return sendJson(res, result.statusCode || 400, result);
+    }
+    resetFail(`subpair:${ip}`);
+    const secure = secureCookieFlag(req);
+    const tok = makeSubCookie(result.phone);
+    res.writeHead(200, {
+      'Set-Cookie': `sub_tok=${tok}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Strict${secure}`,
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store'
+    });
+    return res.end(JSON.stringify(result));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/public/sub/auth') {
+    const blocked = loginBlocked(`subauth:${ip}`);
+    if (blocked) return sendJson(res, 429, { ok: false, error: 'محاولات كثيرة، انتظر ' + blocked + ' ثانية' });
+    const { json } = await readBody(req);
+    const v = verifySubBotAccess(json?.phone, json?.code);
+    if (!v.ok) {
+      registerFail(`subauth:${ip}`);
+      return sendJson(res, 401, { ok: false, error: v.error });
+    }
+    resetFail(`subauth:${ip}`);
+    const secure = secureCookieFlag(req);
+    const tok = makeSubCookie(v.phone);
+    res.writeHead(200, {
+      'Set-Cookie': `sub_tok=${tok}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Strict${secure}`,
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store'
+    });
+    return res.end(JSON.stringify({ ok: true, bot: serializeSubBot(v.phone, global.subBots) }));
+  }
+
+  if (url.pathname.startsWith('/api/public/sub/')) {
+    const subPhone = verifySubCookie(cookies.sub_tok);
+    if (req.method === 'GET' && url.pathname === '/api/public/sub/me') {
+      if (!subPhone) {
+        return sendJson(res, 200, { ok: false, authenticated: false, bot: null });
+      }
+      return sendJson(res, 200, { ok: true, authenticated: true, bot: serializeSubBot(subPhone, global.subBots) });
+    }
+    if (!subPhone) {
+      return sendJson(res, 401, { ok: false, error: 'أدخل رقمك والكود المحفوظ أولاً للتحكم في بوتك' });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/public/sub/settings') {
+      const { json } = await readBody(req);
+      const upd = updateSubBotSettings(subPhone, json || {}, global.subBots);
+      return sendJson(res, upd.ok ? 200 : 400, upd);
+    }
+    if (req.method === 'POST' && url.pathname === '/api/public/sub/action') {
+      const { json } = await readBody(req);
+      const act = String(json?.action || '');
+      if (act === 'logout') {
+        res.writeHead(200, {
+          'Set-Cookie': 'sub_tok=; HttpOnly; Path=/; Max-Age=0; SameSite=Strict',
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store'
+        });
+        return res.end(JSON.stringify({ ok: true, message: 'تم إغلاق جلسة البوت من هذا المتصفح' }));
+      }
+      if (!['reconnect', 'regenerate-code', 'unlink', 'pause', 'resume'].includes(act)) {
+        return sendJson(res, 400, { ok: false, error: 'إجراء غير مسموح' });
+      }
+      const resAct = await controlSubBot(subPhone, act, {}, global.subBots);
+      return sendJson(res, resAct.ok ? 200 : 400, resAct);
+    }
+    return sendJson(res, 404, { ok: false, error: 'المسار غير موجود' });
+  }
+
+  // كل ما بعد كده يحتاج تسجيل دخول الأدمن
   if (!authed) {
     if (url.pathname.startsWith('/api/')) return sendJson(res, 401, { ok: false, message: 'غير مصرح' });
     res.writeHead(302, { Location: '/' });
@@ -1112,6 +719,73 @@ async function handle(req, res, client) {
     }
     const result = await simulateCommand(client, input);
     return sendJson(res, 200, result);
+  }
+
+  /* ============ مسارات الأدمن: إدارة البوتات والإعدادات وتوليد كلمة السر ============ */
+  if (req.method === 'GET' && url.pathname === '/api/admin/bots') {
+    const fleet = getBotFleetOverview(client, global.subBots, computeConnected(client));
+    return sendJson(res, 200, { ok: true, ...fleet });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/admin/main-settings') {
+    const { json } = await readBody(req);
+    const updated = updateMainBotSettings(client, json || {});
+    pushEvent('تحديث إعدادات البوت الرئيسي من لوحة الأدمن');
+    return sendJson(res, 200, { ok: true, settings: updated, message: 'تم حفظ وتطبيق إعدادات البوت الرئيسي' });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/admin/bot-control') {
+    const { json } = await readBody(req);
+    const action = String(json?.action || '');
+    const phone = normalizePhone(json?.phone);
+
+    if (action === 'add-sub') {
+      const r = await requestSubBotPairing(json?.phone, { subBots: global.subBots, isAdmin: true });
+      pushEvent(`طلب الأدمن ربط بوت فرعي: ${r.phone || json?.phone}`);
+      return sendJson(res, r.ok || r.controlCode ? 200 : 400, r);
+    }
+
+    if (action === 'approve' || action === 'deny') {
+      if (!phone) return sendJson(res, 400, { ok: false, error: 'رقم الهاتف غير صالح' });
+      global.db = global.db || {};
+      const allow = (global.db.subPairAllow = global.db.subPairAllow || {});
+      if (action === 'approve') {
+        allow[phone] = { at: Date.now(), by: 'web-admin' };
+        pushEvent(`الأدمن أضاف الرقم ${phone} لقائمة سماح التنصيب`);
+        return sendJson(res, 200, { ok: true, message: `تم السماح للرقم ${phone}` });
+      }
+      delete allow[phone];
+      pushEvent(`الأدمن أزال الرقم ${phone} من قائمة سماح التنصيب`);
+      return sendJson(res, 200, { ok: true, message: `تمت إزالة ${phone} من قائمة السماح` });
+    }
+
+    if (action === 'update-settings') {
+      if (!phone) return sendJson(res, 400, { ok: false, error: 'رقم الهاتف غير صالح' });
+      const upd = updateSubBotSettings(phone, json?.settings || {}, global.subBots);
+      pushEvent(`الأدمن عدّل إعدادات البوت الفرعي ${phone}`);
+      return sendJson(res, upd.ok ? 200 : 400, { ...upd, message: 'تم تحديث إعدادات البوت بنجاح' });
+    }
+
+    if (!phone) return sendJson(res, 400, { ok: false, error: 'رقم الهاتف غير صالح' });
+    const resAct = await controlSubBot(phone, action, json || {}, global.subBots);
+    pushEvent(`تنفيذ إجراء (${action}) على البوت الفرعي ${phone}`);
+    return sendJson(res, resAct.ok ? 200 : 400, resAct);
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/admin/rotate-password') {
+    const nextPass = generatePassword(16);
+    panelCfg.password = nextPass;
+    panelCfg.pwHash = crypto.createHash('sha256').update(nextPass).digest('hex');
+    panelCfg.rev = (Number(panelCfg.rev) || 0) + 1;
+    savePanelConfig(panelCfg);
+    pushEvent('تم توليد كلمة سر عشوائية جديدة للوحة الأدمن');
+    const secure = secureCookieFlag(req);
+    res.writeHead(200, {
+      'Set-Cookie': `pw=${makeCookie()}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Strict${secure}`,
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store'
+    });
+    return res.end(JSON.stringify({ ok: true, password: nextPass, message: 'تم توليد كلمة سر عشوائية جديدة' }));
   }
 
   if (req.method === 'POST' && url.pathname === '/api/action') {
@@ -1257,8 +931,9 @@ export function startWebPanel(client, options = {}) {
     console.log(`\n🌐 [WEB] لوحة التحكم شغالة على: http://${host}:${port}`);
     // ممنوع نطبع كلمة السر في stdout — اللوج بيتخزن وبيتشارك. بنكتفى بمسار
     // الملف (نفس الصيغة المطلوبة: 🔑 كلمة السر محفوظة في system/panel-config.json)
-    const cfgRel = path.isAbsolute(CONFIG_FILE) ? path.relative(process.cwd(), CONFIG_FILE) : CONFIG_FILE;
-    console.log(`   🔑 كلمة السر محفوظة في ${cfgRel || CONFIG_FILE} (مش بتتطبع في اللوج لأسباب أمنية)`);
+    const cfgPath = configFilePath();
+    const cfgRel = path.isAbsolute(cfgPath) ? path.relative(process.cwd(), cfgPath) : cfgPath;
+    console.log(`   🔑 كلمة السر محفوظة في ${cfgRel || cfgPath} (مش بتتطبع في اللوج لأسباب أمنية)`);
     console.log(`   طريقة الربط الحالية: ${panelCfg.loginMode}\n`);
     pushEvent('تم تشغيل لوحة التحكم على المنفذ ' + port);
   });
