@@ -273,3 +273,60 @@ test('quran: arabic search is accent-insensitive', async () => {
     const { allRows } = sendButtonPayload(conn);
     assert.ok(/getsurah\|1\|/.test(allRows[0].id));
 });
+
+test('quran: reciters list shows all 10 sheikhs within WhatsApp single_select row cap', async () => {
+    const { m, conn } = await run('شيوخ');
+    const { payload, btn, allRows } = sendButtonPayload(conn);
+    assert.equal(allRows.length, 10);
+    assert.equal(btn.params.sections.length, 1);
+    assert.ok(btn.params.sections[0].rows.length <= ROW_CAP);
+    assert.ok(payload.caption.includes('قائمة كبار القراء'));
+    assert.ok(allRows.some(r => r.id.includes('setreciter|afs')));
+    assert.ok(allRows.some(r => r.id.includes('setreciter|basit')));
+    assert.ok(allRows.some(r => r.id.includes('setreciter|hssr')));
+    assert.ok(allRows.some(r => r.id.includes('setreciter|minsh')));
+});
+
+test('quran: setreciter updates user preference and immediately opens page 1 with chosen sheikh', async () => {
+    seedFreshCache();
+    const user = '254700000099@s.whatsapp.net';
+    const { m, conn } = await run('setreciter|hssr', user);
+    assert.ok(m.replies[0].includes('محمود خليل الحصري'));
+    assert.equal(quranInternals.getUserReciter(user), 'hssr');
+    assert.equal(conn.payloads.length, 1, 'opens page 1');
+    assert.ok(conn.payloads[0].payload.caption.includes('محمود خليل الحصري'));
+});
+
+test('quran: direct sheikh name switches reciter and opens page 1', async () => {
+    seedFreshCache();
+    const user = '254700000088@s.whatsapp.net';
+    const { m, conn } = await run('عبد الباسط', user);
+    assert.ok(m.replies[0].includes('عبد الباسط عبد الصمد'));
+    assert.equal(quranInternals.getUserReciter(user), 'basit');
+    assert.equal(conn.payloads.length, 1);
+    assert.ok(conn.payloads[0].payload.caption.includes('عبد الباسط عبد الصمد'));
+});
+
+test('quran: combined search finds surah with specific reciter', async () => {
+    seedFreshCache();
+    const user = '254700000077@s.whatsapp.net';
+    const { m, conn } = await run('تجربة 5 المنشاوي', user);
+    const { btn, allRows } = sendButtonPayload(conn);
+    assert.equal(allRows.length, 1);
+    assert.ok(/getsurah\|5\|.*\|minsh/.test(allRows[0].id));
+    assert.equal(quranInternals.getUserReciter(user), 'minsh');
+});
+
+test('quran: reciter builder routes each sheikh to their designated MP3Quran server', () => {
+    assert.equal(quranInternals.buildAudioUrl(1, 'afs'), 'https://server8.mp3quran.net/afs/001.mp3');
+    assert.equal(quranInternals.buildAudioUrl(2, 'basit'), 'https://server7.mp3quran.net/basit/002.mp3');
+    assert.equal(quranInternals.buildAudioUrl(2, 'hssr'), 'https://server13.mp3quran.net/hssr/002.mp3');
+    assert.equal(quranInternals.buildAudioUrl(3, 'minsh'), 'https://server10.mp3quran.net/minsh/003.mp3');
+    assert.equal(quranInternals.buildAudioUrl(4, 'maher'), 'https://server12.mp3quran.net/maher/004.mp3');
+    assert.equal(quranInternals.buildAudioUrl(5, 's_gmd'), 'https://server7.mp3quran.net/s_gmd/005.mp3');
+    assert.equal(quranInternals.buildAudioUrl(6, 'yasser'), 'https://server11.mp3quran.net/yasser/006.mp3');
+    assert.equal(quranInternals.buildAudioUrl(7, 'ajm'), 'https://server10.mp3quran.net/ajm/007.mp3');
+    assert.equal(quranInternals.buildAudioUrl(8, 'sds'), 'https://server11.mp3quran.net/sds/008.mp3');
+    assert.equal(quranInternals.buildAudioUrl(9, 'shur'), 'https://server7.mp3quran.net/shur/009.mp3');
+});
+
