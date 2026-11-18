@@ -241,13 +241,25 @@ class UltraDB {
                 if (key === 'exists') {
                     return (checkId) => self.#isValidId(checkId) && Object.prototype.hasOwnProperty.call(boxTarget, checkId);
                 }
-                // معرّف نصي شكله مستخدم بس مرفوض (مسافة، @newsletter، أطول من 64)
-                // → نرمي الخطأ العربي بدل ما نرجّع undefined ونتعامل معاه كأنه غياب.
-                // أسماء الخصائص الداخلية بتاعة JS (toJSON/constructor/...) بتتعدّي عادي.
-                if (typeof key === 'string' && !self.#isValidId(key) && !JS_INTERNAL.has(key)) {
-                    throw new Error(errFactory(key));
+                if (!self.#isValidId(key)) {
+                    // معرّفات فارغة أو قنوات أو نداءات JS داخلية: ترجع undefined هادئ دون أي أخطاء
+                    if (!key || typeof key !== 'string' || !key.trim() || key.includes('@newsletter') || key.includes('@broadcast') || key === 'undefined' || key === 'null' || JS_INTERNAL.has(key)) {
+                        return undefined;
+                    }
+                    // للمعرّفات النصية المشوهة (مثل 'bad id'): كائن يرمي الخطأ العربي فقط عند محاولة الكتابة فيه
+                    return new Proxy({}, {
+                        get(_o, k) {
+                            if (JS_INTERNAL.has(k) || typeof k !== 'string') return undefined;
+                            return undefined;
+                        },
+                        set() {
+                            throw new Error(errFactory(key));
+                        },
+                        deleteProperty() {
+                            throw new Error(errFactory(key));
+                        }
+                    });
                 }
-                if (!self.#isValidId(key)) return undefined;
                 const existing = boxTarget[key];
                 const obj = existing || {};
                 return new Proxy(obj, {

@@ -95,6 +95,7 @@ export function buildConfig(env = process.env) {
     prefix: [".", "/", "!"],
     fromMe: null, // null = السماح للرقم المتصل بالبوت وبقية المستخدمين بتشغيل الأوامر
     owners: [
+      { name: "Clonew50", lid: "79006443503783@lid", jid: "79006443503783@s.whatsapp.net" },
     // Owner 1
       { name: "𝑮𝑶𝑲𝑶", lid: "129723211@lid", jid: "218930171336@s.whatsapp.net" },
     // Owner 2

@@ -121,9 +121,9 @@ async function sub(client) {
     }
     const senderNumber = msg.key?.fromMe
       ? botNumber
-      : (remoteJid.includes('@s.whatsapp.net')
+      : ((remoteJid.includes('@s.whatsapp.net') || remoteJid.includes('@lid'))
         ? remoteJid.split('@')[0]
-        : (msg.key.participant ? msg.key.participant.split('@')[0] : ''));
+        : (msg.key?.participant ? msg.key.participant.split('@')[0] : remoteJid.split('@')[0]));
 
     const botSettings = getSubBotSettings(botNumber, global.subBots);
 
