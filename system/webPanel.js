@@ -18,28 +18,12 @@ import { fileURLToPath } from 'node:url';
 import { createPairingState } from './pairing.js';
 import { pushEvent as busPushEvent, getEvents } from './events.js';
 import { isAlive, livenessStatus } from './liveness.js';
-import { normalizeCommandsList, simulateCommand } from './simulator.js';
-import { renderPublicPortalHtml, renderAdminPanelHtml, renderMaintenanceHtml } from './panelViews.js';
-import {
-  normalizePhone,
-  requestSubBotPairing,
-  verifySubBotAccess,
-  serializeSubBot,
-  updateSubBotSettings,
-  controlSubBot,
-  updateMainBotSettings,
-  getBotFleetOverview,
-  syncConnectedBotOwner,
-  getMainBotSettings
-} from './botRegistry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // hook للاختبارات/التشغيل المعزول: ملف الإعدادات في مكان تاني (افتراضيًا نفس الملف)
-function configFilePath() {
-  return process.env.PANEL_CONFIG_FILE
-    ? path.resolve(process.env.PANEL_CONFIG_FILE)
-    : path.join(__dirname, 'panel-config.json');
-}
+const CONFIG_FILE = process.env.PANEL_CONFIG_FILE
+  ? path.resolve(process.env.PANEL_CONFIG_FILE)
+  : path.join(__dirname, 'panel-config.json');
 
 /* ============ إعدادات محفوظة ============ */
 const DEFAULT_PASSWORD = 'winner'; // كلمة السر القديمة — مش مسموح بيها ككلمة سر فعلية بعد دلوقتي
@@ -60,28 +44,27 @@ function generatePassword(len = 16) {
 }
 
 export function readPanelConfig() {
-  const cfgPath = configFilePath();
   let cfg = { ...fDEFAULT_CONFIG };
   // بصمة كلمة السر كما حفظناها آخر مرة — بنقارن بيها عند الإقلاع عشان نكتشف
   // أي تغيير (env مختلف / توليد جديد / تعديل يدوي في الملف) ونرفع عدّاد rev
   // فسحب كل الكوكيز القديمة فورًا.
   let diskPwHash = null;
   try {
-    if (fs.existsSync(cfgPath)) {
-      const disk = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    if (fs.existsSync(CONFIG_FILE)) {
+      const disk = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
       cfg = { ...cfg, ...disk };
       if (disk && typeof disk.pwHash === 'string') diskPwHash = disk.pwHash;
       // ملف موجود من قبل لازم يفضل بصلاحية 0600 (إصلاح أي ملف قديم أوسع من كده)
       try {
-        if ((fs.statSync(cfgPath).mode & 0o777) !== 0o600) fs.chmodSync(cfgPath, 0o600);
+        if ((fs.statSync(CONFIG_FILE).mode & 0o777) !== 0o600) fs.chmodSync(CONFIG_FILE, 0o600);
       } catch {}
     }
   } catch (e) {
     console.error('⚠️ [WEB] تعذّر قراءة panel-config.json:', e.message);
     // ما نكتبش فوق الملف التالف مباشرة — نحفظه للأرشيف ونتابع بقيم جديدة
     try {
-      const bad = `${cfgPath}.corrupt-${Date.now()}.json`;
-      fs.renameSync(cfgPath, bad);
+      const bad = `${CONFIG_FILE}.corrupt-${Date.now()}.json`;
+      fs.renameSync(CONFIG_FILE, bad);
       console.warn(`🗃️ [WEB] الملف التالف اتنقل إلى ${path.basename(bad)}`);
     } catch {}
   }
@@ -120,13 +103,12 @@ export function readPanelConfig() {
 }
 
 export function savePanelConfig(cfg) {
-  const cfgPath = configFilePath();
-  const tmp = `${cfgPath}.tmp-${process.pid}-${Date.now()}`;
+  const tmp = `${CONFIG_FILE}.tmp-${process.pid}-${Date.now()}`;
   try {
     fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
     // الملف فيه كلمة سر اللوحة ومفتاح توقيع الكوكيز — صلاحية 0600 إجبارية
     fs.chmodSync(tmp, 0o600);
-    fs.renameSync(tmp, cfgPath);
+    fs.renameSync(tmp, CONFIG_FILE);
   } catch (e) {
     try { fs.rmSync(tmp, { force: true }); } catch {}
     console.error('⚠️ [WEB] تعذّر حفظ panel-config.json:', e.message);
@@ -202,7 +184,6 @@ function hookConsole() {
 
 /* ============ ربط مستمع الـ QR/الاتصال بجلسة واتساب ============ */
 let attachedSock = null;
-let attachedClient = null;
 
 /* كود الفصل من آخر حدث close (401 = loggedOut | 403 = forbidden) */
 function closeStatusCode(update) {
@@ -231,7 +212,6 @@ export function handleConnectionUpdate(update) {
         state.pairingCode = null;
         state.lastConnected = Date.now();
         pairingState.clear(); // الاتصال اتفتح — خلاص مفيش ربط شغال
-        if (attachedClient) syncConnectedBotOwner(attachedClient);
       }
       if (connection === 'close') {
         const code = closeStatusCode(update);
@@ -245,9 +225,7 @@ export function handleConnectionUpdate(update) {
 }
 
 function attachSock(client) {
-  attachedClient = client || attachedClient;
   const sock = client?.sock;
-  if (sock?.user?.id) syncConnectedBotOwner(client, sock);
   if (!sock || sock === attachedSock) return;
   if (attachedSock?.ev) {
     try { attachedSock.ev.removeListener('connection.update', handleConnectionUpdate); } catch {}
@@ -309,14 +287,6 @@ export function getClientInfo(client) {
   try { commands = client.getAllCommands?.().length || 0; } catch {}
   try { errors = client.errors?.() || []; } catch {}
   const mem = process.memoryUsage();
-  let subStats = { totalSubs: 0, connectedSubs: 0 };
-  try {
-    const fleet = getBotFleetOverview(client, global.subBots, computeConnected(client));
-    subStats = {
-      totalSubs: fleet.stats.totalSubs,
-      connectedSubs: fleet.stats.connectedSubs
-    };
-  } catch {}
   return {
     connected: computeConnected(client),
     phone: client?.config?.phoneNumber || '',
@@ -331,7 +301,6 @@ export function getClientInfo(client) {
     pairingCode: state.pairingCode,
     loginMode: panelCfg.loginMode,
     configuredPhone: panelCfg.phone || client?.config?.phoneNumber || '',
-    subStats,
     // فيه إعادة تشغيل كاملة (خروج نظيف) جارٍ بعد أمر تنصيب/تصفير من اللوحة؟
     // الواجهة بتعرض شريط "أعد التشغيل جارٍ..." بدل الرد الصامت.
     pendingRestart: state.pendingRestart,
@@ -496,112 +465,228 @@ function sendHtml(res, code, html) {
   res.end(html);
 }
 
-function makeSubCookie(phone, days = 30) {
-  const exp = Date.now() + days * 86400000;
-  const payload = `${phone}.${exp}.${Number(panelCfg.rev) || 0}`;
-  return `${payload}.${sign(payload)}`;
-}
-function verifySubCookie(cookie) {
-  if (!cookie) return '';
-  const parts = cookie.split('.');
-  if (parts.length !== 4) return '';
-  const [phone, expStr, revStr, sig] = parts;
-  if (!phone || !expStr || !revStr || !sig) return '';
-  if (!/^\d{8,15}$/.test(phone)) return '';
-  const expect = sign(`${phone}.${expStr}.${revStr}`);
-  if (sig.length !== expect.length) return '';
-  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return '';
-  if (Number(revStr) !== (Number(panelCfg.rev) || 0)) return '';
-  if (!(Number(expStr) > Date.now())) return '';
-  return phone;
-}
-function secureCookieFlag(req) {
-  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
-  return proto === 'https' ? '; Secure' : '';
-}
+/* ============ HTML ============ */
+const LOGIN_HTML = (err) => `<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>دخول لوحة التحكم</title>
+<style>
+*{box-sizing:border-box;font-family:system-ui,'Segoe UI',Tahoma,sans-serif}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+background:linear-gradient(135deg,#0f172a,#1e293b);color:#e2e8f0}
+.card{width:min(92vw,380px);background:#111827;border:1px solid #1f2937;border-radius:18px;
+padding:28px;box-shadow:0 20px 50px rgba(0,0,0,.5)}
+h1{margin:0 0 6px;font-size:22px;text-align:center}
+p.sub{margin:0 0 20px;text-align:center;color:#94a3b8;font-size:13px;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
+input{width:100%;padding:13px 14px;border-radius:12px;border:1px solid #334155;background:#0b1220;
+color:#e2e8f0;font-size:16px;outline:none}
+input:focus{border-color:#38bdf8}
+button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;cursor:pointer;
+background:#38bdf8;color:#04283a;font-weight:700;font-size:16px}
+button:active{transform:scale(.99)}
+.err{margin-top:14px;background:#3f1d1d;border:1px solid #7f1d1d;color:#fecaca;padding:10px;
+border-radius:10px;font-size:13px;text-align:center}
+.note{margin-top:16px;color:#64748b;font-size:12px;text-align:center}
+</style></head>
+<body>
+<form class="card" method="POST" action="/login">
+  <h1>🔐 لوحة تحكم البوت</h1>
+  <p class="sub">اكتب كلمة السر للدخول</p>
+  <input type="password" name="password" placeholder="كلمة السر" autofocus required>
+  <button type="submit">دخول</button>
+  ${err ? `<div class="err">${err}</div>` : ''}
+  <div class="note">كلمة السر محفوظة في panel-config.json (مش بتتطبع في أي لوج)</div>
+</form>
+</body></html>`;
 
-/* ============ HTML (الواجهة الافتراضية + لوحة الأدمن) ============ */
-const LOGIN_HTML = (err) => renderPublicPortalHtml(err);
-const INSTALL_RENDER_JS = `let lastInstallSig='';
+const PANEL_HTML = `<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>لوحة تحكم البوت</title>
+<style>
+*{box-sizing:border-box;font-family:system-ui,'Segoe UI',Tahoma,sans-serif}
+body{margin:0;background:#0b1220;color:#e2e8f0;padding:16px;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
+.wrap{max-width:960px;margin:0 auto}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+h1{font-size:20px;margin:0}
+.badge{padding:6px 12px;border-radius:999px;font-size:13px;font-weight:700}
+.on{background:#052e1a;color:#4ade80;border:1px solid #14532d}
+.off{background:#3f1d1d;color:#fca5a5;border:1px solid #7f1d1d}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.card{background:#111827;border:1px solid #1f2937;border-radius:16px;padding:16px;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
+.card h2{margin:0 0 12px;font-size:15px;color:#93c5fd;display:flex;gap:8px;align-items:center}
+.row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed #1f2937;font-size:14px}
+.row:last-child{border-bottom:0}
+.row span:first-child{color:#94a3b8}
+button{border:0;border-radius:10px;padding:10px 12px;cursor:pointer;font-weight:600;font-size:14px;background:#1f2937;color:#e2e8f0}
+button:hover{background:#334155}
+button.pri{background:#38bdf8;color:#04283a}
+button.warn{background:#f59e0b;color:#3b2100}
+button.danger{background:#ef4444;color:#fff}
+button.ghost{background:transparent;border:1px solid #334155}
+.actions{display:flex;flex-wrap:wrap;gap:10px}
+input,select{width:100%;padding:11px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#e2e8f0;margin-bottom:10px}
+.qrbox{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
+.qrbox img{width:min(100%,280px);background:#fff;padding:10px;border-radius:14px}
+.code{font-size:30px;font-weight:800;letter-spacing:3px;color:#4ade80;direction:ltr;text-align:center;
+background:#052e1a;border:1px solid #14532d;border-radius:12px;padding:14px;margin:8px 0}
+.hint{color:#94a3b8;font-size:13px;line-height:1.7;white-space:normal;word-wrap:break-word;overflow-wrap:break-word;word-break:keep-all}
+.log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#a5b4fc;
+max-height:190px;overflow:auto;background:#0b1220;border:1px solid #1f2937;border-radius:10px;padding:10px;white-space:pre-wrap}
+.err-item{background:#2a1414;border:1px solid #7f1d1d;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:13px}
+.msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#052e1a;border:1px solid #14532d;
+color:#86efac;padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;transition:.3s;pointer-events:none}
+.msg.show{opacity:1}
+small.t{color:#475569}
+</style></head>
+<body>
+<div class="wrap">
+  <div id="pendingRestart" style="display:none;background:#3b2f05;border:1px solid #f59e0b;color:#fde68a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:14px">♻️ أعد التشغيل جارٍ... الإعداد الجديد بيتطبق لما البوت يرجع يقلع</div>
+  <header>
+    <h1>🩸 لوحة تحكم البوت</h1>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span id="badge" class="badge off">…</span>
+      <button class="ghost" onclick="doAction('logout')">خروج</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <h2>📊 الحالة</h2>
+      <div class="row"><span>الاتصال</span><b id="s-conn">…</b></div>
+      <div class="row"><span>رقم البوت</span><b id="s-phone">…</b></div>
+      <div class="row"><span>الجلسة مُسجّلة</span><b id="s-session">…</b></div>
+      <div class="row"><span>عدد الأوامر</span><b id="s-cmds">…</b></div>
+      <div class="row"><span>الذاكرة</span><b id="s-mem">…</b></div>
+      <div class="row"><span>مدة التشغيل</span><b id="s-up">…</b></div>
+    </div>
+
+    <div class="card" id="installCard">
+      <h2>🔗 تنصيب / ربط واتساب</h2>
+      <div id="installBody"></div>
+    </div>
+
+    <div class="card">
+      <h2>🎛️ التحكم</h2>
+      <div class="actions">
+        <button class="pri" onclick="doAction('restart')">♻️ إعادة تشغيل</button>
+        <button class="warn" onclick="doAction('stop')">⏹️ إيقاف</button>
+        <button onclick="doAction('start')">▶️ تشغيل</button>
+        <button class="danger" onclick="resetSession()">🗑️ تصفير الجلسة</button>
+      </div>
+      <h2 style="margin-top:16px">✉️ إرسال رسالة</h2>
+      <input id="msgTo" placeholder="رقم واتساب مثال: 2010xxxxxxx">
+      <input id="msgText" placeholder="نص الرسالة">
+      <button class="pri" onclick="sendMsg()">إرسال</button>
+    </div>
+
+    <div class="card">
+      <h2>📝 سجل الأحداث</h2>
+      <div class="log" id="log">…</div>
+    </div>
+
+    <div class="card">
+      <h2>⚠️ آخر الأخطاء</h2>
+      <div id="errors"><small class="t">لا يوجد</small></div>
+    </div>
+  </div>
+</div>
+<div class="msg" id="msg"></div>
+
+<script>
+function toast(t){const m=document.getElementById('msg');m.textContent=t;m.classList.add('show');setTimeout(()=>m.classList.remove('show'),2500);}
+function fmt(s){s=Math.floor(s);const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return (d?d+'ي ':'')+(h?h+'س ':'')+m+'د';}
+let lastQr=null;
+async function refresh(){
+  try{
+    const r=await fetch('/api/status');if(r.status===401){location.reload();return;}
+    const d=await r.json();
+    const b=document.getElementById('badge');
+    b.textContent=d.connected?'متصل ✅':'غير متصل ❌';
+    b.className='badge '+(d.connected?'on':'off');
+    document.getElementById('s-conn').textContent=d.connected?'مفتوح':'مغلق';
+    document.getElementById('s-phone').textContent=d.phone||'—';
+    document.getElementById('s-session').textContent=d.sessionRegistered?'نعم':'لا';
+    document.getElementById('s-cmds').textContent=d.commands;
+    document.getElementById('s-mem').textContent=d.memoryMB+' MB';
+    document.getElementById('s-up').textContent=fmt(d.uptimeSec);
+    document.getElementById('log').textContent=(d.events||[]).map(e=>e&&e.line?e.line:(e&&e.text?e.text:String(e||''))).join('\\n')||'—';
+    const eb=document.getElementById('errors');
+    eb.innerHTML=(d.errors&&d.errors.length)?d.errors.map(e=>'<div class="err-item"><b>'+esc(e.command||'')+'</b><br>'+esc((e.error||'').slice(0,200))+'<br><small class="t">'+esc(e.time||'')+'</small></div>').join(''):'<small class="t">لا يوجد</small>';
+    const pr=document.getElementById('pendingRestart');
+    if(pr)pr.style.display=d.pendingRestart?'':'none';
+    renderInstall(d);
+  }catch(e){}
+}
+function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function renderInstall(d){
   const box=document.getElementById('installBody');
-  const activeId=document.activeElement?document.activeElement.id:'';
-  if(activeId==='lm' || activeId==='ph') return;
-  const sig=[!!d.connected,d.pairingCode||'',d.qr?'1':'0',d.loginMode||'',d.configuredPhone||''].join('|');
-  if(sig===lastInstallSig) return;
-  lastInstallSig=sig;
   if(d.connected){
-    box.innerHTML='<div class="hint">البوت الرئيسي متصل بواتساب بالفعل. لتغييره برقم آخر استخدم <b>تصفير الجلسة</b> ثم أعد الربط.</div>';
+    box.innerHTML='<div class="hint">✅ البوت متصل بواتساب بالفعل.<br>لو عايز تربطه برقم تاني اضغط <b>تصفير الجلسة</b> ثم أعد التنصيب.</div>';
     return;
   }
   let html='';
   if(d.pairingCode){
-    html+='<div class="hint">افتح واتساب ← الأجهزة المرتبطة ← الربط برقم الهاتف واكتب الكود:</div><div class="code">'+esc(d.pairingCode)+'</div>';
+    html+='<div class="hint">افتح واتساب → الأجهزة المرتبطة → الربط برقم الهاتف، واكتب الكود:</div><div class="code">'+esc(d.pairingCode)+'</div>';
   }
   if(d.qr){
-    html+='<div class="qrbox"><div class="hint">امسح رمز QR من واتساب:</div><img src="'+d.qr+'" alt="QR"></div>';
+    html+='<div class="qrbox"><div class="hint">امسح رمز QR من واتساب (الأجهزة المرتبطة → ربط جهاز):</div><img src="'+d.qr+'" alt="QR"></div>';
   }
   if(!d.pairingCode && !d.qr){
-    html+='<div class="hint">في انتظار صدور QR أو كود الربط للبوت الرئيسي...</div>';
+    html+='<div class="hint">⏳ في انتظار صدور QR / كود الربط... (قد يستغرق ثوانٍ)</div>';
   }
-  html+='<div style="margin-top:12px">'
-     +'<label class="lbl">طريقة الربط</label>'
+  html+='<div style="margin-top:14px">'
+     +'<label class="hint">طريقة الربط</label>'
      +'<select id="lm"><option value="code"'+(d.loginMode==='code'?' selected':'')+'>كود ربط (برقم الهاتف)</option>'
      +'<option value="qr"'+(d.loginMode==='qr'?' selected':'')+'>رمز QR</option></select>'
-     +'<label class="lbl">رقم البوت الرئيسي</label>'
-     +'<input id="ph" class="ltr mono" value="'+esc(d.configuredPhone)+'" placeholder="2010xxxxxxx">'
-     +'<div class="actions"><button type="button" class="pri" onclick="applyLogin()">حفظ وإعادة التشغيل</button>'
-     +'<button type="button" class="ghost" onclick="refresh()">تحديث</button></div></div>';
+     +'<label class="hint">رقم البوت</label>'
+     +'<input id="ph" value="'+esc(d.configuredPhone)+'" placeholder="2010xxxxxxx">'
+     +'<div class="actions"><button class="pri" onclick="applyLogin()">حفظ وإعادة التشغيل</button>'
+     +'<button class="ghost" onclick="refresh()">🔄 تحديث</button></div></div>';
   box.innerHTML=html;
-}`;
-const PANEL_HTML = renderAdminPanelHtml(INSTALL_RENDER_JS);
+}
+async function applyLogin(){
+  const loginMode=document.getElementById('lm').value;
+  const phone=document.getElementById('ph').value.trim();
+  const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'set-login',loginMode,phone})});
+  const d=await r.json();toast(d.message||'تم');
+  setTimeout(refresh,1500);
+}
+async function doAction(a){
+  const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a})});
+  const d=await r.json();toast(d.message||'تم');
+  if(a==='logout'){setTimeout(()=>location.reload(),800);return;}
+  setTimeout(refresh,1500);
+}
+async function resetSession(){
+  if(!confirm('سيتم نقل الجلسة الحالية لنسخة احتياطية (session.bak-*) والخروج لإقلاع جديد غير مُقرن. متأكد؟'))return;
+  const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'reset-session'})});
+  const d=await r.json();toast(d.message||'تم');setTimeout(refresh,2500);
+}
+async function sendMsg(){
+  const to=document.getElementById('msgTo').value.trim();
+  const text=document.getElementById('msgText').value.trim();
+  if(!to||!text){toast('اكتب الرقم والنص');return;}
+  const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'send',to,text})});
+  const d=await r.json();toast(d.message||'تم');
+}
+refresh();setInterval(refresh,3000);
+</script>
+</body></html>`;
 
 /* ============ معالجة الطلبات ============ */
 // تهيئة مبدئية: getClientInfo ممكن يتنده قبل startWebPanel (اختبارات) —
 // startWebPanel بيستبدلها بالقيم المقروءة من القرص.
-let panelCfg = readPanelConfig();
-
-export function isMaintenanceActive(client) {
-  if (global.db && typeof global.db.maintenance === 'boolean' && global.db.maintenance === true) {
-    return true;
-  }
-  try {
-    const ms = getMainBotSettings(client);
-    return Boolean(ms?.maintenance === true);
-  } catch (_) {
-    return false;
-  }
-}
+let panelCfg = { ...fDEFAULT_CONFIG, secret: '' };
 
 async function handle(req, res, client) {
-  panelCfg = readPanelConfig();
   const ip = clientIp(req);
   const url = new URL(req.url, 'http://localhost');
   const cookies = parseCookies(req);
   const authed = verifyCookie(cookies.pw);
-  const maintenance = isMaintenanceActive(client);
 
-  // حالة الصيانة لفحص الصفحة وإعادة التحميل التلقائي
-  if (req.method === 'GET' && url.pathname === '/api/maintenance-status') {
-    return sendJson(res, 200, { maintenance });
-  }
-
-  // وضع الصيانة: إغلاق الموقع للزوار وعرض شاشة الصيانة اللطيفة مع إتاحة تسجيل دخول الأدمن
-  if (maintenance && !authed) {
-    if (req.method === 'POST' && url.pathname === '/login') {
-      // مسموح للأدمن بالمرور لتسجيل الدخول للوحة التحكم
-    } else if (url.pathname.startsWith('/api/')) {
-      return sendJson(res, 503, {
-        ok: false,
-        maintenance: true,
-        error: 'الموقع تحت الصيانة حالياً، يرجى الانتظار والمحاولة لاحقاً'
-      });
-    } else {
-      return sendHtml(res, 503, renderMaintenanceHtml(''));
-    }
-  }
-
-  // الشاشة الافتراضية للزوار (ربط واتساب + التحكم بالكود المحفوظ) أو لوحة الأدمن للمسجلين
+  // صفحة تسجيل الدخول
   if (req.method === 'GET' && url.pathname === '/') {
     if (authed) return sendHtml(res, 200, PANEL_HTML);
     return sendHtml(res, 200, LOGIN_HTML(''));
@@ -609,107 +694,25 @@ async function handle(req, res, client) {
 
   if (req.method === 'POST' && url.pathname === '/login') {
     const blocked = loginBlocked(ip);
-    if (blocked) {
-      const blockHtml = maintenance
-        ? renderMaintenanceHtml('محاولات كثيرة، انتظر ' + blocked + ' ثانية')
-        : LOGIN_HTML('محاولات كثيرة، انتظر ' + blocked + ' ثانية');
-      return sendHtml(res, 429, blockHtml);
-    }
+    if (blocked) return sendHtml(res, 429, LOGIN_HTML('محاولات كثيرة، انتظر ' + blocked + ' ثانية'));
     const { json, form } = await readBody(req);
     const pass = (json?.password ?? form?.password ?? '').toString();
     const ok = pass.length === panelCfg.password.length &&
       crypto.timingSafeEqual(Buffer.from(pass), Buffer.from(panelCfg.password));
     if (!ok) {
       registerFail(ip);
-      const failHtml = maintenance ? renderMaintenanceHtml('كلمة السر غلط') : LOGIN_HTML('كلمة السر غلط');
-      return sendHtml(res, 401, failHtml);
+      return sendHtml(res, 401, LOGIN_HTML('كلمة السر غلط'));
     }
     resetFail(ip);
     // SameSite=Strict بدل Lax — والكوكي Secure بس لما الطلب جه على TLS
     // (ورا reverse proxy: X-Forwarded-Proto: https).
-    const secure = secureCookieFlag(req);
+    const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+    const secure = proto === 'https' ? '; Secure' : '';
     res.writeHead(302, { 'Set-Cookie': `pw=${makeCookie()}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Strict${secure}`, Location: '/' });
     return res.end();
   }
 
-  /* ============ مسارات المستخدم الافتراضية (ربط البوت والتحكم بالكود المحفوظ) ============ */
-  if (req.method === 'POST' && url.pathname === '/api/public/sub/pair') {
-    const blocked = loginBlocked(`subpair:${ip}`);
-    if (blocked) return sendJson(res, 429, { ok: false, error: 'محاولات كثيرة، انتظر ' + blocked + ' ثانية' });
-    const { json } = await readBody(req);
-    const result = await requestSubBotPairing(json?.phone, { subBots: global.subBots, isAdmin: false });
-    if (!result.ok && !result.controlCode) {
-      registerFail(`subpair:${ip}`);
-      return sendJson(res, result.statusCode || 400, result);
-    }
-    resetFail(`subpair:${ip}`);
-    const secure = secureCookieFlag(req);
-    const tok = makeSubCookie(result.phone);
-    res.writeHead(200, {
-      'Set-Cookie': `sub_tok=${tok}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Strict${secure}`,
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store'
-    });
-    return res.end(JSON.stringify(result));
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/public/sub/auth') {
-    const blocked = loginBlocked(`subauth:${ip}`);
-    if (blocked) return sendJson(res, 429, { ok: false, error: 'محاولات كثيرة، انتظر ' + blocked + ' ثانية' });
-    const { json } = await readBody(req);
-    const v = verifySubBotAccess(json?.phone, json?.code);
-    if (!v.ok) {
-      registerFail(`subauth:${ip}`);
-      return sendJson(res, 401, { ok: false, error: v.error });
-    }
-    resetFail(`subauth:${ip}`);
-    const secure = secureCookieFlag(req);
-    const tok = makeSubCookie(v.phone);
-    res.writeHead(200, {
-      'Set-Cookie': `sub_tok=${tok}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Strict${secure}`,
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store'
-    });
-    return res.end(JSON.stringify({ ok: true, bot: serializeSubBot(v.phone, global.subBots) }));
-  }
-
-  if (url.pathname.startsWith('/api/public/sub/')) {
-    const subPhone = verifySubCookie(cookies.sub_tok);
-    if (req.method === 'GET' && url.pathname === '/api/public/sub/me') {
-      if (!subPhone) {
-        return sendJson(res, 200, { ok: false, authenticated: false, bot: null });
-      }
-      return sendJson(res, 200, { ok: true, authenticated: true, bot: serializeSubBot(subPhone, global.subBots) });
-    }
-    if (!subPhone) {
-      return sendJson(res, 401, { ok: false, error: 'أدخل رقمك والكود المحفوظ أولاً للتحكم في بوتك' });
-    }
-    if (req.method === 'POST' && url.pathname === '/api/public/sub/settings') {
-      const { json } = await readBody(req);
-      const upd = updateSubBotSettings(subPhone, json || {}, global.subBots);
-      return sendJson(res, upd.ok ? 200 : 400, upd);
-    }
-    if (req.method === 'POST' && url.pathname === '/api/public/sub/action') {
-      const { json } = await readBody(req);
-      const act = String(json?.action || '');
-      if (act === 'logout') {
-        res.writeHead(200, {
-          'Set-Cookie': 'sub_tok=; HttpOnly; Path=/; Max-Age=0; SameSite=Strict',
-          'Content-Type': 'application/json; charset=utf-8',
-          'Cache-Control': 'no-store'
-        });
-        return res.end(JSON.stringify({ ok: true, message: 'تم إغلاق جلسة البوت من هذا المتصفح' }));
-      }
-      if (!['reconnect', 'regenerate-code', 'unlink', 'pause', 'resume'].includes(act)) {
-        return sendJson(res, 400, { ok: false, error: 'إجراء غير مسموح' });
-      }
-      const resAct = await controlSubBot(subPhone, act, {}, global.subBots);
-      return sendJson(res, resAct.ok ? 200 : 400, resAct);
-    }
-    return sendJson(res, 404, { ok: false, error: 'المسار غير موجود' });
-  }
-
-  // كل ما بعد كده يحتاج تسجيل دخول الأدمن
+  // كل ما بعد كده يحتاج تسجيل دخول
   if (!authed) {
     if (url.pathname.startsWith('/api/')) return sendJson(res, 401, { ok: false, message: 'غير مصرح' });
     res.writeHead(302, { Location: '/' });
@@ -728,110 +731,6 @@ async function handle(req, res, client) {
       }
     }
     return sendJson(res, 200, getClientInfo(client));
-  }
-
-  if (req.method === 'GET' && url.pathname === '/api/commands') {
-    const all = normalizeCommandsList(client);
-    const catMap = new Map();
-    for (const c of all) {
-      const prev = catMap.get(c.category) || { id: c.category, label: c.categoryLabel, emoji: c.categoryEmoji, count: 0 };
-      prev.count += 1;
-      catMap.set(c.category, prev);
-    }
-    const q = (url.searchParams.get('q') || '').trim().toLowerCase();
-    const cat = (url.searchParams.get('cat') || '').trim();
-    const filtered = all.filter((c) => {
-      if (cat && c.category !== cat) return false;
-      if (!q) return true;
-      return c.primary.toLowerCase().includes(q)
-        || c.description.toLowerCase().includes(q)
-        || c.categoryLabel.toLowerCase().includes(q)
-        || c.triggers.some((t) => String(t).toLowerCase().includes(q));
-    });
-    return sendJson(res, 200, {
-      ok: true,
-      total: all.length,
-      filtered: filtered.length,
-      categories: [...catMap.values()].sort((a, b) => b.count - a.count),
-      commands: filtered
-    });
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/simulate') {
-    const { json } = await readBody(req);
-    const input = String(json?.input || '');
-    if (!input.trim() || input.length > 1000) {
-      return sendJson(res, 400, { ok: false, error: 'اكتب أمراً صالحاً (أقل من 1000 حرف)' });
-    }
-    const result = await simulateCommand(client, input);
-    return sendJson(res, 200, result);
-  }
-
-  /* ============ مسارات الأدمن: إدارة البوتات والإعدادات وتوليد كلمة السر ============ */
-  if (req.method === 'GET' && url.pathname === '/api/admin/bots') {
-    const fleet = getBotFleetOverview(client, global.subBots, computeConnected(client));
-    return sendJson(res, 200, { ok: true, ...fleet });
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/admin/main-settings') {
-    const { json } = await readBody(req);
-    const updated = updateMainBotSettings(client, json || {});
-    pushEvent('تحديث إعدادات البوت الرئيسي من لوحة الأدمن');
-    return sendJson(res, 200, { ok: true, settings: updated, message: 'تم حفظ وتطبيق إعدادات البوت الرئيسي' });
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/admin/bot-control') {
-    const { json } = await readBody(req);
-    const action = String(json?.action || '');
-    const phone = normalizePhone(json?.phone);
-
-    if (action === 'add-sub') {
-      const r = await requestSubBotPairing(json?.phone, { subBots: global.subBots, isAdmin: true });
-      pushEvent(`طلب الأدمن ربط بوت فرعي: ${r.phone || json?.phone}`);
-      return sendJson(res, r.ok || r.controlCode ? 200 : 400, r);
-    }
-
-    if (action === 'approve' || action === 'deny') {
-      if (!phone) return sendJson(res, 400, { ok: false, error: 'رقم الهاتف غير صالح' });
-      global.db = global.db || {};
-      const allow = (global.db.subPairAllow = global.db.subPairAllow || {});
-      if (action === 'approve') {
-        allow[phone] = { at: Date.now(), by: 'web-admin' };
-        pushEvent(`الأدمن أضاف الرقم ${phone} لقائمة سماح التنصيب`);
-        return sendJson(res, 200, { ok: true, message: `تم السماح للرقم ${phone}` });
-      }
-      delete allow[phone];
-      pushEvent(`الأدمن أزال الرقم ${phone} من قائمة سماح التنصيب`);
-      return sendJson(res, 200, { ok: true, message: `تمت إزالة ${phone} من قائمة السماح` });
-    }
-
-    if (action === 'update-settings') {
-      if (!phone) return sendJson(res, 400, { ok: false, error: 'رقم الهاتف غير صالح' });
-      const upd = updateSubBotSettings(phone, json?.settings || {}, global.subBots);
-      pushEvent(`الأدمن عدّل إعدادات البوت الفرعي ${phone}`);
-      return sendJson(res, upd.ok ? 200 : 400, { ...upd, message: 'تم تحديث إعدادات البوت بنجاح' });
-    }
-
-    if (!phone) return sendJson(res, 400, { ok: false, error: 'رقم الهاتف غير صالح' });
-    const resAct = await controlSubBot(phone, action, json || {}, global.subBots);
-    pushEvent(`تنفيذ إجراء (${action}) على البوت الفرعي ${phone}`);
-    return sendJson(res, resAct.ok ? 200 : 400, resAct);
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/admin/rotate-password') {
-    const nextPass = generatePassword(16);
-    panelCfg.password = nextPass;
-    panelCfg.pwHash = crypto.createHash('sha256').update(nextPass).digest('hex');
-    panelCfg.rev = (Number(panelCfg.rev) || 0) + 1;
-    savePanelConfig(panelCfg);
-    pushEvent('تم توليد كلمة سر عشوائية جديدة للوحة الأدمن');
-    const secure = secureCookieFlag(req);
-    res.writeHead(200, {
-      'Set-Cookie': `pw=${makeCookie()}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Strict${secure}`,
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store'
-    });
-    return res.end(JSON.stringify({ ok: true, password: nextPass, message: 'تم توليد كلمة سر عشوائية جديدة' }));
   }
 
   if (req.method === 'POST' && url.pathname === '/api/action') {
@@ -956,9 +855,7 @@ export function startWebPanel(client, options = {}) {
 
   hookConsole();
 
-  const port = options.port !== undefined
-    ? Number(options.port)
-    : (Number(process.env.WEB_PORT || process.env.PORT || process.env.SERVER_PORT || process.env.P_SERVER_PORT) || 3000);
+  const port = Number(options.port || process.env.WEB_PORT || process.env.PORT || process.env.SERVER_PORT || process.env.P_SERVER_PORT) || 3732;
   const host = options.host || '0.0.0.0';
 
   const server = http.createServer((req, res) => {
@@ -977,9 +874,8 @@ export function startWebPanel(client, options = {}) {
     console.log(`\n🌐 [WEB] لوحة التحكم شغالة على: http://${host}:${port}`);
     // ممنوع نطبع كلمة السر في stdout — اللوج بيتخزن وبيتشارك. بنكتفى بمسار
     // الملف (نفس الصيغة المطلوبة: 🔑 كلمة السر محفوظة في system/panel-config.json)
-    const cfgPath = configFilePath();
-    const cfgRel = path.isAbsolute(cfgPath) ? path.relative(process.cwd(), cfgPath) : cfgPath;
-    console.log(`   🔑 كلمة السر محفوظة في ${cfgRel || cfgPath} (مش بتتطبع في اللوج لأسباب أمنية)`);
+    const cfgRel = path.isAbsolute(CONFIG_FILE) ? path.relative(process.cwd(), CONFIG_FILE) : CONFIG_FILE;
+    console.log(`   🔑 كلمة السر محفوظة في ${cfgRel || CONFIG_FILE} (مش بتتطبع في اللوج لأسباب أمنية)`);
     console.log(`   طريقة الربط الحالية: ${panelCfg.loginMode}\n`);
     pushEvent('تم تشغيل لوحة التحكم على المنفذ ' + port);
   });
