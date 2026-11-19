@@ -281,7 +281,7 @@ export function renderPublicPortalHtml(err = '') {
         <div class="code-vault">
           <div class="split-row">
             <span style="font-weight:700;color:#bbf7d0">كود ربط واتساب</span>
-            <button type="button" class="ghost sm" onclick="copyText(currentPairCode)">نسخ كود الربط</button>
+            <button type="button" class="ghost sm" onclick="copyText(currentPairCode,'pairCodeDisplay')">نسخ كود الربط</button>
           </div>
           <div class="code-big" id="pairCodeDisplay">—</div>
           <div class="hint" id="pairHintText">افتح واتساب ← الأجهزة المرتبطة ← ربط جهاز ← الربط برقم الهاتف واكتب الكود.</div>
@@ -290,7 +290,7 @@ export function renderPublicPortalHtml(err = '') {
         <div class="code-vault" style="border-color:rgba(56,189,248,0.38);background:linear-gradient(135deg,rgba(56,189,248,0.12),rgba(13,20,36,0.9))">
           <div class="split-row">
             <span style="font-weight:700;color:#bae6fd">كود التحكم المحفوظ لبوتك</span>
-            <button type="button" class="sky sm" onclick="copyText(currentControlCode)">نسخ الكود المحفوظ</button>
+            <button type="button" class="sky sm" onclick="copyText(currentControlCode,'controlCodeDisplay')">نسخ الكود المحفوظ</button>
           </div>
           <div class="code-big" style="color:#7dd3fc" id="controlCodeDisplay">—</div>
           <div class="hint">تم حفظ هذا الكود على السيرفر وفي متصفحك. احتفظ به للرجوع لاحقاً والتحكم في إعدادات بوتك من هنا.</div>
@@ -326,7 +326,7 @@ export function renderPublicPortalHtml(err = '') {
           <span>الكود المحفوظ</span>
           <span class="actions">
             <strong class="mono ltr" style="color:#7dd3fc" id="mb-code">—</strong>
-            <button type="button" class="ghost sm" onclick="copyText(currentControlCode)">نسخ</button>
+            <button type="button" class="ghost sm" onclick="copyText(currentControlCode,'mb-code')">نسخ</button>
           </span>
         </div>
 
@@ -407,11 +407,27 @@ function fmt(s){
   const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);
   return (d?d+'ي ':'')+(h?h+'س ':'')+m+'د';
 }
-function copyText(val){
-  if(!val){toast('لا يوجد كود لنسخه');return;}
+function copyText(val, fallbackId){
+  let text=val;
+  if(!text && fallbackId){
+    const el=document.getElementById(fallbackId);
+    if(el) text=(el.textContent||'').trim();
+  }
+  text=(text||'').trim();
+  if(!text || text==='—' || text.includes('جاري')){toast('الكود لسه قيد الإصدار');return;}
   if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(val).then(()=>toast('تم نسخ الكود: '+val)).catch(()=>toast('الكود: '+val));
-  }else{toast('الكود: '+val);}
+    navigator.clipboard.writeText(text).then(()=>toast('تم النسخ: '+text)).catch(()=>doExecCopy(text));
+  }else{doExecCopy(text);}
+}
+function doExecCopy(text){
+  try{
+    const ta=document.createElement('textarea');
+    ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();
+    const ok=document.execCommand('copy');
+    document.body.removeChild(ta);
+    toast(ok?'تم النسخ: '+text:'الكود: '+text);
+  }catch(e){toast('الكود: '+text);}
 }
 function openAdminModal(){
   document.getElementById('adminLoginModal').classList.add('open');
