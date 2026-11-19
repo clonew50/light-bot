@@ -1,12 +1,12 @@
 /*
   ═══════════════════════════════════════════
   💻 مساعد كود AI — لغات وعمليات تفاعلية
-  الأمر: .codex / .كود / .برمجة
+  الأمر: .codex / .برمجة / .code
   ═══════════════════════════════════════════
 */
-import axios from 'axios'
-
-const AI_API = 'https://nour-dev.dyz/api/ai/claude?text='
+import { askAI } from '../../system/aiService.js';
+import { pruneCooldown } from '../../system/cooldowns.js';
+import { splitText } from '../../system/text-chunks.js';
 
 const LANGUAGES = [
   { id: 'js', name: '🟨 JavaScript', ext: 'js' },
@@ -21,7 +21,7 @@ const LANGUAGES = [
   { id: 'swift', name: '🍎 Swift', ext: 'swift' },
   { id: 'kt', name: '💜 Kotlin', ext: 'kt' },
   { id: 'dart', name: '🎯 Dart', ext: 'dart' },
-]
+];
 
 const ACTIONS = [
   { id: 'explain', name: '📖 شرح', desc: 'شرح الكود سطر بسطر', emoji: '📖' },
@@ -32,130 +32,138 @@ const ACTIONS = [
   { id: 'doc', name: '📝 توثيق', desc: 'إضافة تعليقات/JSDoc', emoji: '📝' },
   { id: 'refactor', name: '🔧 إعادة هيكلة', desc: 'تنظيف وتنظيم الكود', emoji: '🔧' },
   { id: 'review', name: '👀 مراجعة', desc: 'مراجعة شاملة + نصائح', emoji: '👀' },
-]
+];
 
-const cooldown = new Map()
-const COOLDOWN_MS = 5000
-const userLang = new Map()
-const userAction = new Map()
+const cooldown = new Map();
+const COOLDOWN_MS = 5000;
+const userLang = new Map();
+const userAction = new Map();
 
-const handler = async (m, { conn, text, args, usedPrefix }) => {
+const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
-    const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
+    const now = Date.now();
+    const last = cooldown.get(m.sender) || 0;
     if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
+      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`);
     }
 
-    const subCmd = args[0]?.toLowerCase()
-    const code = m.quoted?.text || m.quoted?.msg?.conversation || text?.replace(/^(كود|codex|برمجة)\s*/i, '').trim()
+    const subCmd = args[0]?.toLowerCase();
 
-    // اختيار اللغة
     if (subCmd === 'لغة' || subCmd === 'lang') {
-      const langId = args[1]
+      const langId = args[1]?.toLowerCase();
       if (!langId) {
-        const sections = [{ title: '💻 اختر اللغة', rows: LANGUAGES.map(l => ({
-          title: l.name, description: `امتداد: .${l.ext}`, id: `.codex لغة ${l.id}`
-        })) }]
+        const sections = [{
+          title: '💻 اختر اللغة',
+          rows: LANGUAGES.map((l) => ({
+            title: l.name,
+            description: `امتداد: .${l.ext}`,
+            id: `${usedPrefix}codex لغة ${l.id}`
+          }))
+        }];
         return conn.sendMessage(m.chat, {
           text: '💻 *اختر لغة البرمجة:*',
           footer: 'LIGHT BOT • Codex',
           buttons: [{ name: 'single_select', params: { title: 'اللغات', sections } }]
-        }, { quoted: m })
+        }, { quoted: m });
       }
-      const lang = LANGUAGES.find(l => l.id === langId)
-      if (!lang) return m.reply('❌ لغة غير موجودة')
-      userLang.set(m.sender, langId)
-      return m.reply(`${lang.name} *تم اختيار اللغة*`)
+      const lang = LANGUAGES.find((l) => l.id === langId);
+      if (!lang) return m.reply('❌ لغة غير موجودة');
+      userLang.set(m.sender, langId);
+      return m.reply(`${lang.name} *تم اختيار اللغة*`);
     }
 
-    // اختيار العملية
     if (subCmd === 'عملية' || subCmd === 'action') {
-      const actId = args[1]
+      const actId = args[1]?.toLowerCase();
       if (!actId) {
         return conn.sendMessage(m.chat, {
           text: '🔧 *اختر العملية:*',
           footer: 'LIGHT BOT • Codex',
-          buttons: ACTIONS.map(a => ({
+          buttons: ACTIONS.map((a) => ({
             name: 'quick_reply',
-            params: { display_text: `${a.emoji} ${a.name}`, id: `.codex عملية ${a.id}` }
+            params: { display_text: a.name, id: `${usedPrefix}codex عملية ${a.id}` }
           }))
-        }, { quoted: m })
+        }, { quoted: m });
       }
-      const action = ACTIONS.find(a => a.id === actId)
-      if (!action) return m.reply('❌ عملية غير موجودة')
-      userAction.set(m.sender, actId)
-      return m.reply(`${action.emoji} *تم اختيار:* ${action.name}`)
+      const action = ACTIONS.find((a) => a.id === actId);
+      if (!action) return m.reply('❌ عملية غير موجودة');
+      userAction.set(m.sender, actId);
+      return m.reply(`${action.emoji} *تم اختيار:* ${action.name}`);
     }
 
-    // الإعدادات الحالية
-    if (subCmd === 'إعدادات' || subCmd === 'settings' || subCmd === 'current') {
-      const lang = LANGUAGES.find(l => l.id === userLang.get(m.sender)) || { name: '🔍 كشف تلقائي' }
-      const action = ACTIONS.find(a => a.id === userAction.get(m.sender)) || { name: '📖 شرح', emoji: '📖' }
+    if (subCmd === 'إعدادات' || subCmd === 'اعدادات' || subCmd === 'settings' || subCmd === 'current') {
+      const lang = LANGUAGES.find((l) => l.id === userLang.get(m.sender)) || { name: '🔍 كشف تلقائي' };
+      const action = ACTIONS.find((a) => a.id === userAction.get(m.sender)) || ACTIONS[0];
       return m.reply(
         `⚙️ *إعدادات Codex:*\n\n` +
         `${lang.name} كلغة\n` +
-        `${action.emoji} ${action.name} كعملية\n\n` +
-        `استخدم: \`.codex لغة <كود>\` / \`.codex عملية <نوع>\``
-      )
+        `${action.name} كعملية\n\n` +
+        `استخدم: \`${usedPrefix}codex لغة <id>\` / \`${usedPrefix}codex عملية <id>\``
+      );
     }
 
-    // تحقق من وجود كود
+    const code = (m.quoted?.text || m.quoted?.msg?.conversation || text || '').trim();
     if (!code) {
       return conn.sendMessage(m.chat, {
         text: `💻 *مساعد كود AI*\n\n` +
-          `✍️ أرسل الكود، أو رد على رسالة تحتوي كود:\n` +
-          `\`${usedPrefix}codex دالة جمع رقمين\`\n\n` +
-          `الإعدادات: ${(userLang.get(m.sender) ? LANGUAGES.find(l => l.id === userLang.get(m.sender))?.name : '🔍 تلقائي')} • ${(userAction.get(m.sender) ? ACTIONS.find(a => a.id === userAction.get(m.sender))?.name : '📖 شرح')}`,
+          `✍️ أرسل طلبك أو الكود، أو رد على رسالة تحتوي كود:\n` +
+          `\`${usedPrefix}codex دالة جمع رقمين في بايثون\`\n\n` +
+          `الإعدادات: ${(userLang.get(m.sender) ? LANGUAGES.find((l) => l.id === userLang.get(m.sender))?.name : '🔍 تلقائي')} • ${(userAction.get(m.sender) ? ACTIONS.find((a) => a.id === userAction.get(m.sender))?.name : '📖 شرح')}`,
         footer: 'LIGHT BOT • Codex',
         buttons: [
           { name: 'quick_reply', params: { display_text: '💻 لغة', id: `${usedPrefix}codex لغة` } },
           { name: 'quick_reply', params: { display_text: '🔧 عملية', id: `${usedPrefix}codex عملية` } },
           { name: 'quick_reply', params: { display_text: '⚙️ إعدادات', id: `${usedPrefix}codex إعدادات` } }
         ]
-      }, { quoted: m })
+      }, { quoted: m });
     }
 
-    if (code.length < 10) {
-      return m.reply('❌ الكود قصير جداً')
+    if (code.length < 3) {
+      return m.reply('❌ الطلب قصير جداً');
     }
 
-    cooldown.set(m.sender, now)
-    await m.react('💻')
+    pruneCooldown(cooldown, COOLDOWN_MS);
+    cooldown.set(m.sender, now);
+    await m.react?.('💻');
 
-    const lang = LANGUAGES.find(l => l.id === userLang.get(m.sender)) || { name: 'كشف تلقائي' }
-    const action = ACTIONS.find(a => a.id === userAction.get(m.sender)) || { id: 'explain', name: 'شرح', emoji: '📖' }
+    const lang = LANGUAGES.find((l) => l.id === userLang.get(m.sender)) || { name: 'كشف تلقائي', ext: '' };
+    const action = ACTIONS.find((a) => a.id === userAction.get(m.sender)) || ACTIONS[0];
 
     const prompts = {
-      explain: `اشرح الكود التالي بلغة ${lang.name} سطر بسطر ب العربية:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
-      debug: `افحص الكود التالي بلغة ${lang.name} لإيجاد الأخطاء المحتملة واقترح الإصلاح:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
+      explain: `اشرح أو اكتب الكود التالي بلغة ${lang.name} بالعربية بوضوح:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
+      debug: `افحص الكود التالي بلغة ${lang.name} لإيجاد الأخطاء واقترح الإصلاح:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
       optimize: `حسّن الكود التالي بلغة ${lang.name} للأداء والوضوح:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
-      convert: `حوّل الكود التالي من ${lang.name} للغة أخرى (حدد الهدف):\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
-      test: `اكتب unit tests شاملة للكود التالي بلغة ${lang.name}:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
-      doc: `أضف توثيق شامل (JSDoc/docstrings) للكود التالي بلغة ${lang.name}:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
-      refactor: `أعد هيكلة الكود التالي بلغة ${lang.name} للنظافة والصيانة:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
-      review: `راجع الكود التالي بلغة ${lang.name} وقدم ملاحظات شاملة:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
+      convert: `حوّل الكود التالي مع الحفاظ على المنطق واذكر اللغة الهدف:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
+      test: `اكتب اختبارات وحدات (unit tests) شاملة للكود التالي:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
+      doc: `أضف توثيقاً وتعليقات واضحة للكود التالي:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
+      refactor: `أعد هيكلة الكود التالي ليكون أنظف وأسهل صيانة:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
+      review: `راجع الكود التالي مراجعة شاملة وقدم نصائح عملية:\n\`\`\`${lang.ext}\n${code}\n\`\`\``,
+    };
+
+    const res = await askAI({
+      prompt: prompts[action.id] || prompts.explain,
+      system: 'أنت مهندس برمجيات خبير. اكتب كوداً دقيقاً وآمناً مع شرح عربي موجز.',
+      timeoutMs: 40_000
+    });
+
+    if (!res.ok || !res.text) {
+      await m.react?.('❌');
+      return m.reply('❌ تعذر تحليل الكود حالياً، جرب مرة أخرى.');
     }
 
-    const prompt = prompts[action.id] || prompts.explain
-
-    const { data } = await axios.get(AI_API + encodeURIComponent(prompt), { timeout: 45000 })
-    const answer = data?.response || data?.text || '❌ فشل المعالجة'
-
-    await m.reply(
-      `${action.emoji} *${action.name} (${lang.name}):*\n\n${answer}`
-    )
-    await m.react('✅')
-
+    const fullMsg = `${action.name} (${lang.name}):\n\n${res.text}`;
+    for (const part of splitText(fullMsg)) {
+      await m.reply(part);
+    }
+    await m.react?.('✅');
   } catch (e) {
-    console.error('codex:', e?.message || e)
-    await m.react('❌')
-    m.reply('❌ فشل المعالجة، جرب كود أصغر')
+    console.error('codex:', e?.message || e);
+    await m.react?.('❌');
+    return m.reply('❌ فشل المعالجة، جرب نصاً أو كوداً أبسط');
   }
-}
+};
 
-handler.command = ['codex', 'كود', 'برمجة', 'code']
-handler.usage = ['codex <كود>', 'codex لغة <js|ts|py|java|...>', 'codex عملية <explain|debug|optimize|convert|test|doc|refactor|review>', 'codex إعدادات']
-handler.category = 'ai'
-handler.cooldown = 5
-export default handler
+handler.command = ['codex', 'برمجة', 'code'];
+handler.usage = ['codex <كود>', 'codex لغة <js|ts|py|java|...>', 'codex عملية <explain|debug|optimize|convert|test|doc|refactor|review>', 'codex إعدادات'];
+handler.category = 'ai';
+handler.cooldown = 5;
+export default handler;

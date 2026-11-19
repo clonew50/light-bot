@@ -5,6 +5,8 @@
   ═══════════════════════════════════════════
 */
 
+import { pruneCooldown } from '../../system/cooldowns.js'
+
 const cooldown = new Map()
 const COOLDOWN_MS = 5000
 
@@ -115,6 +117,7 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     const sender = m.sender
     const subCmd = args[0]?.toLowerCase()
     const game = getGame(chatId)
+    pruneCooldown(cooldown, COOLDOWN_MS)
 
     // تخمين حرف
     if (subCmd === 'حرف' || subCmd === 'letter') {

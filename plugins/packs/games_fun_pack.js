@@ -148,9 +148,8 @@ const QUIZZES = [
   ['اختبار_ايموجي5', 'تحدي الإيموجي 5', '🏴‍☠️👒⛵ ما اسم الأنمي؟', 'ون بيس', ['ون بيس', 'بليتش', 'ناروتو', 'هنتر']]
 ];
 
-const QUIZ_MAP = new Map();
+const QUIZ_MAP = Object.fromEntries(QUIZZES.map((q) => [q[0], q]));
 for (const q of QUIZZES) {
-  QUIZ_MAP.set(q[0], q);
   const [cmd, title, question, answer, choices] = q;
   add(cmd, title, async (m, ctx) => {
     await sendInteractiveCard(m, ctx, {
@@ -167,7 +166,7 @@ for (const q of QUIZZES) {
 add('تحقق_لعبة', 'التحقق من إجابة الألغاز والاختبارات التفاعلية', async (m, ctx) => {
   const raw = String(ctx.text || '');
   const [qIdRaw, ansRaw] = raw.split('|').map((s) => s.trim());
-  const q = QUIZ_MAP.get(qIdRaw);
+  const q = QUIZ_MAP[qIdRaw];
   if (!q) {
     return await sendInteractiveCard(m, ctx, {
       title: 'اختر سؤالاً أولاً',

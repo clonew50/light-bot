@@ -626,4 +626,5 @@ const handler = async (m, { conn, command, args }) => {
 handler.command = ['يوت_اغنيه', 'ytmp3', 'يوتيوب', 'يوت_فيديو', 'ytmp4', 'yt'];
 handler.usage = ['يوتيوب <رابط>', 'يوت_اغنيه <رابط>'];
 handler.category = 'downloads';
+export { extractVideoId, getMetadata, getDownload };
 export default handler;

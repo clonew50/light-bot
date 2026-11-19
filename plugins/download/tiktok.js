@@ -6,6 +6,7 @@
 //                    الآن: مهلة + حد حجم + try/catch + رسالة عربية واضحة + رفض الملفات الضخمة.
 
 import cheerio from 'cheerio';
+import { downloadTikTokViaRuhend } from '../../system/mediaService.js';
 
 const SSSTIK = 'https://ssstik.io/abc?url=dl';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -142,7 +143,16 @@ const ff = async (m, { text, conn }) => {
   if (!text) return m.reply("*❌: حط رابط الفيديو بعد الأمر*");
 
   try {
-    const videoData = await downloadTikTok(text);
+    let videoData;
+    try {
+      videoData = await downloadTikTok(text);
+    } catch (primaryErr) {
+      try {
+        videoData = await downloadTikTokViaRuhend(text);
+      } catch {
+        throw primaryErr;
+      }
+    }
 
     if (!videoData.videoUrl && !videoData.audioUrl) {
       throw new UpstreamError('empty', 'ما في روابط تحميل');

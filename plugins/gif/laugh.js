@@ -1,4 +1,4 @@
-import { Scrapy } from "meowsab";
+import { fetchAnimeGif } from "../../system/mediaService.js";
 import { gifToMp4 } from "../../system/utils.js";
 
 let handler = async (m, { conn, command }) => {
@@ -6,26 +6,27 @@ let handler = async (m, { conn, command }) => {
         let target = m.mentionedJid?.[0] || m.quoted?.sender;
         if (!target) return m.reply(`*منشن شخص مثل /${command} @${m.sender.split('@')[0]}*`);
 
-        let group = await conn.groupMetadata(m.chat);
-        if (!group.participants.find(p => p.id === target)) {
-            return m.reply(`*العضو ليس في المجموعة*`);
+        if (m.isGroup) {
+            let group = await conn.groupMetadata(m.chat);
+            if (!group.participants.find(p => p.id === target)) {
+                return m.reply(`*العضو ليس في المجموعة*`);
+            }
         }
 
-        const res = await Scrapy.AnimeGif("laugh");
-        const { url, anime_name } = res.results[0];
+        const { url, anime_name } = await fetchAnimeGif("laugh");
         const video = await gifToMp4(url);
-        
+
         await conn.sendMessage(m.chat, {
             caption: `*_@${m.sender.split('@')[0]} بيضحك عليك يا @${target.split('@')[0]}_*\n> *_الانمي: ${anime_name}_*`,
-            video: video,
+            video,
             gifPlayback: true,
             mentions: [target, m.sender]
         });
-
     } catch (e) {
-        m.reply(e.message);
+        m.reply(`❌ ${e?.message || 'تعذر جلب الأنيمي GIF'}`);
     }
-}
+};
+
 handler.usage = ["ضحك @منشن"];
 handler.category = "gif";
 handler.command = ["ضحك"];

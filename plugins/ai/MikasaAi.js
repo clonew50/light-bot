@@ -1,33 +1,37 @@
-import { Scrapy } from "meowsab";
+import { askAI } from "../../system/aiService.js";
 
-const handler = async (m, { conn, text, bot }) => {
+const handler = async (m, { conn, text }) => {
   if (!text) return m.reply("*اكتب سوألك بعد الامر🧣*");
 
-  const loadingMsg = await conn.sendMessage(m.chat, {
-    contextInfo: context(m.sender, "https://qu.ax/x/heoyu.jpg"),
-    text: "```⏳ جـاري تـجـهـيـز الـرد يـا إيـريـن,...```"
-  }, { quoted: m});
-
-  const prompt = `
-انت بوت واتساب بـ اسم [ميكاسا، Mikasa] تجسيد لـ شخصية Mikasa Ackerman من انمي [Attack on Titan] وتكلم بـ لجهة عربية
-طريقة كلامك: جادة، قصيرة، مباشرة، بتحمي اللي قدامها، كلامها قليل بس قوي، واثقة، بتعبر عن مشاعرها بأقل الكلمات
-و انا اسمي هيكون [ ${m.name || "مز"} ] 
-رد علي رسالتي دي:
-${text}
-`;
-
-  let res;
+  let loadingMsg = null;
   try {
-    ({ data: res } = await Scrapy.ZeroAI(text, prompt));
-  } catch (e) {
-    return m.reply(`❌ حدث خطأ: ${(e && e.message) || e}`);
+    loadingMsg = await conn.sendMessage(m.chat, {
+      contextInfo: context(m.sender),
+      text: "```⏳ جـاري تـجـهـيـز الـرد يـا إيـريـن,...```"
+    }, { quoted: m });
+  } catch {}
+
+  const system = `
+انت بوت واتساب بـ اسم [ميكاسا، Mikasa] تجسيد لـ شخصية Mikasa Ackerman من انمي [Attack on Titan] وتكلم بـ لهجة عربية.
+طريقة كلامك: جادة، قصيرة، مباشرة، حامية، كلامها قليل بس قوي وواثق.
+اسم المستخدم: ${m.name || "صديقي"}
+`.trim();
+
+  const res = await askAI({ prompt: text, system, timeoutMs: 30_000 });
+  if (!res.ok || !res.text) {
+    return m.reply("❌ تعذر الرد حالياً، حاول مرة أخرى بعد قليل.");
   }
 
-  await conn.sendMessage(m.chat, {
-    text: res.answer,
-    edit: loadingMsg.key,
-    contextInfo: context(m.sender, "https://qu.ax/x/heoyu.jpg")
-  });
+  if (loadingMsg?.key) {
+    try {
+      return await conn.sendMessage(m.chat, {
+        text: res.text,
+        edit: loadingMsg.key,
+        contextInfo: context(m.sender)
+      });
+    } catch {}
+  }
+  return m.reply(res.text);
 };
 
 handler.usage = ["ميكاسا"];
@@ -36,21 +40,19 @@ handler.command = ["ميكاسا", "mikasa"];
 
 export default handler;
 
-const context = (jid, img) => ({
-    mentionedJid: [jid],
-    isForwarded: true,
-    forwardingScore: 1,
-    forwardedNewsletterMessageInfo: {
-        newsletterJid: (process.env.BOT_NEWSLETTER_JID || ''),
-        newsletterName: '𝑴𝑰𝑲𝑨𝑺𝑨 ┇🧣┇ 𝑨𝑰',
-        serverMessageId: 0
-    },
-    externalAdReply: {
-        title: "𝑴𝑰𝑲𝑨𝑺𝑨 𝑭𝑹𝑶𝑴 𝑨𝑻𝑻𝑨𝑪𝑲 𝑶𝑵 𝑻𝑰𝑻𝑻𝑬𝑵 🧣",
-        body: "𝙸'𝚕𝚕 𝚙𝚛𝚘𝚝𝚎𝚌𝚝 𝚢𝚘𝚞 🧣 𝙽𝚘 𝚖𝚘𝚛𝚎 𝚠𝚘𝚛𝚍𝚜",
-        thumbnailUrl: img,
-        sourceUrl: '',
-        mediaType: 1,
-        renderLargerThumbnail: true
-    }
+const context = (jid) => ({
+  mentionedJid: [jid],
+  isForwarded: true,
+  forwardingScore: 1,
+  forwardedNewsletterMessageInfo: {
+    newsletterJid: (process.env.BOT_NEWSLETTER_JID || ''),
+    newsletterName: '𝑴𝑰𝑲𝑨𝑺𝑨 ┇🧣┇ 𝑨𝑰',
+    serverMessageId: 0
+  },
+  externalAdReply: {
+    title: "𝑴𝑰𝑲𝑨𝑺𝑨 𝑭𝑹𝑶𝑴 𝑨𝑻𝑻𝑨𝑪𝑲 𝑶𝑵 𝑻𝑰𝑻𝑨𝑵 🧣",
+    body: "𝙸'𝚕𝚕 𝚙𝚛𝚘𝚝𝚎𝚌𝚝 𝚢𝚘𝚞 🧣",
+    sourceUrl: '',
+    mediaType: 1
+  }
 });

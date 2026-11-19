@@ -42,7 +42,7 @@ async function gifToMp4(url) {
   const mp4Path = path.join(tmp, `${id}.mp4`);
   
   const writer = fs.createWriteStream(gifPath);
-  const res = await axios({ url, responseType: 'stream', timeout: HTTP_TIMEOUT });
+  const res = await axios({ url, responseType: 'stream', headers: { 'User-Agent': 'LightBot/1.0' }, timeout: HTTP_TIMEOUT });
   res.data.pipe(writer);
   // مشاكل قديمة: ملفات كانت بتفضل عالقة في tmp لو ffmpeg فشل، وأخطاء الستريم
   // كانت ممكن تعمل uncaught أو pending promise للأبد

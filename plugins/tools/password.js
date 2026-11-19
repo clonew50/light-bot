@@ -5,6 +5,8 @@
   ═══════════════════════════════════════════
 */
 
+import { pruneCooldown } from '../../system/cooldowns.js'
+
 const cooldown = new Map()
 const COOLDOWN_MS = 3000
 const userPrefs = new Map()
@@ -95,6 +97,8 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     if (now - last < COOLDOWN_MS) {
       return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
     }
+    pruneCooldown(cooldown, COOLDOWN_MS)
+    if (userPrefs.size > 2000) userPrefs.delete(userPrefs.keys().next().value)
 
     const subCmd = args[0]?.toLowerCase()
     const prefs = userPrefs.get(m.sender) || {

@@ -1,22 +1,21 @@
-async function test(m, { conn, bot, text }) {
+import { searchPinterestImages } from "../../system/mediaService.js";
+
+async function handler(m, { conn, text }) {
   try {
-    if (!text) return m.reply("*اكتب اسم الصورة بالانجليزي عشان تظهر لك📸*");
-    
-    const res = await bot.Api.search.pinterestImages({ q: text });
-    const arr = res.data;
-    
+    if (!text) return m.reply("*اكتب اسم الصورة عشان تظهر لك 📸*\nمثال: `.بينترست انمي ليفاي`");
+
+    await m.react("🔍").catch(() => {});
+    const arr = await searchPinterestImages(text, 12);
+
     if (!arr || arr.length === 0) {
-      return m.reply("*⚠️ لا توجد نتائج*");
+      return m.reply("*⚠️ لا توجد نتائج لهذه الكلمة، جرب كلمة أبسط*");
     }
-    
-    // حرس slice (todo 29f): قديم كان Math.random بحاصل سالب
-    // لما arr.length < 10 فيجيب من آخر القائمة بالغلط.
+
     const start = arr.length > 10 ? Math.floor(Math.random() * (arr.length - 10)) : 0;
     const selectedImages = arr.slice(start, start + 10);
 
     const cards = selectedImages.map((item, index) => {
       const title = item.title && item.title !== 'No title' ? item.title : `Image ~ ${index + 1}`;
-      
       return {
         imageUrl: item.url,
         bodyText: `*${title}*`,
@@ -28,24 +27,32 @@ async function test(m, { conn, bot, text }) {
       };
     });
 
-    return await conn.sendCarousel(m.chat, {
-      headerText: `📸 البحث الخاص بك → *[ ${text} ]* `,
-      globalFooterText: 'اسحب لروئية المزيد من الصور',
-      cards: cards,
-      mentions: [m.sender],
-      newsletter: {
-      name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-      jid: (process.env.BOT_NEWSLETTER_JID || '')
-    },
-    }, global.reply_status);
-    
+    try {
+      return await conn.sendCarousel(m.chat, {
+        headerText: `📸 البحث الخاص بك → *[ ${text} ]* `,
+        globalFooterText: 'اسحب لرؤية المزيد من الصور',
+        cards,
+        mentions: [m.sender],
+        newsletter: {
+          name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
+          jid: (process.env.BOT_NEWSLETTER_JID || '')
+        }
+      }, global.reply_status);
+    } catch {
+      const first = selectedImages[0];
+      return await conn.sendMessage(m.chat, {
+        image: { url: first.url },
+        caption: `📸 *نتائج البحث عن:* ${text}\n\n` + selectedImages.slice(0, 5).map((i, idx) => `${idx + 1}. ${i.url}`).join('\n')
+      }, { quoted: m });
+    }
   } catch (error) {
-    console.error(error.message);
-    m.react("❌")
+    console.error('pinterest:', error?.message || error);
+    await m.react("❌").catch(() => {});
+    return m.reply(`❌ تعذر البحث في بينتريست: ${error?.message || 'خطأ غير معروف'}`);
   }
 }
 
-test.category = "search";
-test.usage = ["بينترست"];
-test.command = ["بين", "بينترست", "pinterest"];
-export default test;
+handler.category = "search";
+handler.usage = ["بينترست"];
+handler.command = ["بين", "بينترست", "pinterest"];
+export default handler;

@@ -1,40 +1,30 @@
-import fetch from 'node-fetch';
 import { Sticker } from 'wa-sticker-formatter';
+import { createEmojiMixPng } from '../../system/mediaService.js';
 
 const run = async (m, { conn, text, command }) => {
-    // فصل الإيموجيين باستخدام علامة +
-    let [emo1, emo2] = text.split('+');
-    
-    // التحقق من إدخال الإيموجيات بشكل صحيح
-    if (!(emo1 && emo2)) {
-        return m.reply(`*⚠️ طـريـقـة الاسـتـخـدام:* \n- أرسل الأمر متبوعاً بإيموجيين بينهما علامة (+)\n\n*مثال:* \n\`.${command} 🗿+🔥\``);
-    }
+  const parts = String(text || '').split('+').map((s) => s.trim()).filter(Boolean);
+  const [emo1, emo2] = parts;
 
-    try {
-        let url = `https://tenor.googleapis.com/v2/featured?key=AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ&contentfilter=high&media_filter=png_transparent&component=proactive&collection=emoji_kitchen_v5&q=${emo1.trim()}_${emo2.trim()}`;
-        
-        let response = await fetch(url);
-        let res = await response.json();
-        
-        if (!res.results || !res.results.length) {
-            return m.reply('❌ *عذراً، هذا الدمج غير مدعوم في مطبخ الإيموجيات، جرب دمجاً آخر!*');
-        }
+  if (!(emo1 && emo2)) {
+    return m.reply(`*⚠️ طـريـقـة الاسـتـخـدام:*\n- أرسل الأمر متبوعاً بإيموجيين بينهما علامة (+)\n\n*مثال:*\n\`.${command} 🗿+🔥\``);
+  }
 
-        // تحويل النتيجة لملصق وإرسالها
-        for (let x of res.results) {
-            let stiker = await (new Sticker(x.url, { 
-                type: 'full', 
-                categories: x.tags,
-                pack: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻', 
-                author: '𝑬𝑴𝑶𝑱𝑰 𝑴𝑰𝑿' 
-            })).toMessage();
-            
-            await conn.sendMessage(m.chat, stiker, { quoted: m });
-        }
+  try {
+    await m.react?.('⏳');
+    const pngBuffer = await createEmojiMixPng(emo1, emo2);
+    const stiker = await new Sticker(pngBuffer, {
+      type: 'full',
+      categories: [emo1, emo2],
+      pack: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻',
+      author: '𝑬𝑴𝑶𝑱𝑰 𝑴𝑰𝑿'
+    }).toMessage();
 
-    } catch (error) {
-        await m.reply(`❌ *حدث خطأ أثناء دمج الإيموجيات:* ${error.message}`);
-    }
+    await conn.sendMessage(m.chat, stiker, { quoted: m });
+    await m.react?.('✅');
+  } catch (error) {
+    await m.react?.('❌');
+    await m.reply(`❌ *تعذر دمج الإيموجيات:* ${error?.message || 'جرب إيموجيات أخرى'}`);
+  }
 };
 
 run.command = ['مكس', 'ملصق-ايموجي', 'emojimix'];

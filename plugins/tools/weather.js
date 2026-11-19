@@ -5,7 +5,7 @@
   ═══════════════════════════════════════════
 */
 import axios from 'axios'
-import { pruneCooldown } from '../../system/cooldowns.js'
+import { pruneCooldown } from "../../system/cooldowns.js";
 
 const GEOCODE = 'https://geocoding-api.open-meteo.com/v1/search'
 const FORECAST = 'https://api.open-meteo.com/v1/forecast'

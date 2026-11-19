@@ -5,6 +5,8 @@
   ═══════════════════════════════════════════
 */
 
+import { pruneCooldown } from '../../system/cooldowns.js'
+
 const cooldown = new Map()
 const COOLDOWN_MS = 5000
 const userBalance = new Map()
@@ -36,6 +38,15 @@ function setBalance(sender, amount) {
 function getStats(sender) {
   if (!userStats.has(sender)) userStats.set(sender, { spins: 0, won: 0, lost: 0, biggestWin: 0, jackpots: 0 })
   return userStats.get(sender)
+}
+
+function formatStats(stats) {
+  return (
+    `📊 *إحصائياتك:*\n` +
+    `🎰 دورات: ${stats.spins}\n` +
+    `✅ فاز: ${stats.won} | ❌ خسر: ${stats.lost}\n` +
+    `🏆 أكبر ربح: ${stats.biggestWin} | 🎁 جاكبوت: ${stats.jackpots}`
+  )
 }
 
 function spin() {
@@ -74,7 +85,7 @@ function formatReels(reels) {
 }
 
 function buildBetButtons(balance) {
-  const bets = [10, 25, 50, 100, 250, 500].filter(b => b <= balance)
+  let bets = [10, 25, 50, 100, 250, 500].filter(b => b <= balance)
   if (bets.length === 0) bets = [10]
   return bets.map(b => ({
     name: 'quick_reply',
@@ -90,6 +101,10 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     const balance = getBalance(sender)
     const stats = getStats(sender)
     const last = cooldown.get(sender) || 0
+    pruneCooldown(cooldown, COOLDOWN_MS)
+    for (const map of [userBalance, userStats]) {
+      if (map.size > 2000) map.delete(map.keys().next().value)
+    }
 
     // رصيد
     if (subCmd === 'رصيد' || subCmd === 'balance' || subCmd === 'فلوس') {

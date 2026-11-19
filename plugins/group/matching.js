@@ -1,45 +1,68 @@
-const handler = async (m, { conn, args }) => {
+import { searchPinterestImages } from "../../system/mediaService.js";
+
+const handler = async (m, { conn }) => {
   if (!m.isGroup) return m.reply('❌ الأمر ده داخل الجروبات بس');
-const res = await (await import("meowsab")).Scrapy.Matching();
-const { data } = JSON.parse(res);
 
+  try {
+    let boyUrl = null;
+    let girlUrl = null;
 
- await conn.sendButtonNormal(m.chat, {
-  media: { url: data.boy },
-  mediaType: 'image', 
-  caption: `# Boy 🚹`,
-  buttons: [
+    try {
+      const { Scrapy } = await import("meowsab");
+      const res = await Scrapy.Matching();
+      const parsed = typeof res === "string" ? JSON.parse(res) : res;
+      if (parsed?.data?.boy && parsed?.data?.girl) {
+        boyUrl = parsed.data.boy;
+        girlUrl = parsed.data.girl;
+      }
+    } catch {}
 
-        { name: "cta_url", params: { display_text: "📎╎ مــســتــودع الـبــوت ", url: "https://github.com/clonew50/light-bot" } },
+    if (!boyUrl || !girlUrl) {
+      const [boys, girls] = await Promise.all([
+        searchPinterestImages("anime boy matching pfp icon", 6),
+        searchPinterestImages("anime girl matching pfp icon", 6)
+      ]);
+      boyUrl = boys[Math.floor(Math.random() * Math.max(boys.length, 1))]?.url || null;
+      girlUrl = girls[Math.floor(Math.random() * Math.max(girls.length, 1))]?.url || null;
+    }
 
-  ], 
-  mentions: [m.sender],
-  newsletter: {
+    if (!boyUrl || !girlUrl) {
+      return m.reply("❌ تعذر جلب صور التطقيم حالياً، حاول مجدداً.");
+    }
+
+    const newsletter = {
       name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
       jid: (process.env.BOT_NEWSLETTER_JID || '')
-    },
-}, global.reply_status)
+    };
 
+    await conn.sendButtonNormal(m.chat, {
+      media: { url: boyUrl },
+      mediaType: 'image',
+      caption: `# Boy 🚹`,
+      buttons: [
+        { name: "cta_url", params: { display_text: "📎╎ مــســتــودع الـبــوت ", url: "https://github.com/clonew50/light-bot" } }
+      ],
+      mentions: [m.sender],
+      newsletter
+    }, global.reply_status);
 
-
-return await conn.sendButtonNormal(m.chat, {
-  media: { url: data.girl },
-  mediaType: 'image', 
-  caption: `# girl 🚺`,
-  buttons: [
-
-        { name: "quick_reply", params: { display_text: "▶️ ╎ الـتـالـي ", id: ".تطقيم" } },
-
-  ], 
-  mentions: [m.sender],
-  newsletter: {
-      name: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑪𝑯𝑨𝑵𝑵𝑬𝑳',
-      jid: (process.env.BOT_NEWSLETTER_JID || '')
-    },
-}, global.reply_status)
-
+    return await conn.sendButtonNormal(m.chat, {
+      media: { url: girlUrl },
+      mediaType: 'image',
+      caption: `# Girl 🚺`,
+      buttons: [
+        { name: "quick_reply", params: { display_text: "▶️ ╎ الـتـالـي ", id: ".تطقيم" } }
+      ],
+      mentions: [m.sender],
+      newsletter
+    }, global.reply_status);
+  } catch (e) {
+    console.error("matching:", e?.message || e);
+    return m.reply(`❌ تعذر جلب التطقيم: ${e?.message || "خطأ غير معروف"}`);
+  }
 };
-handler.usage =  ["تطقيم"];
+
+handler.usage = ["تطقيم"];
 handler.category = "group";
 handler.group = true;
 handler.command = ["ماتشينج", "تطقيم"];

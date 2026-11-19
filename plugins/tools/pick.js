@@ -18,7 +18,7 @@ const handler = async (m, { conn, text }) => {
   }
 }
 
-handler.command = ['اختر', 'pick', 'choose']
-handler.usage = ['اختر خيار1, خيار2, خيار3']
+handler.command = ['pick', 'choose', 'اختار']
+handler.usage = ['اختار خيار1, خيار2, خيار3']
 handler.category = 'tools'
 export default handler

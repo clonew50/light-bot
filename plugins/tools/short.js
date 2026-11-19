@@ -5,6 +5,7 @@
   ═══════════════════════════════════════════
 */
 import axios from 'axios'
+import { pruneCooldown } from '../../system/cooldowns.js'
 
 const SERVICES = [
   { id: 'tinyurl', name: '🔗 TinyURL', api: 'https://tinyurl.com/api-create.php?url=', emoji: '🔗' },
@@ -17,30 +18,31 @@ const cooldown = new Map()
 const COOLDOWN_MS = 5000
 const userService = new Map()
 
-function buildServiceList() {
+function buildServiceList(usedPrefix = '.') {
   return SERVICES.map(s => ({
     title: `${s.emoji} ${s.name}`,
     description: `اختصار عبر ${s.name}`,
-    id: `.short خدمة ${s.id}`
+    id: `${usedPrefix}short خدمة ${s.id}`
   }))
 }
 
-const handler = async (m, { conn, text, args, usedPrefix }) => {
+const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now()
     const last = cooldown.get(m.sender) || 0
     if (now - last < COOLDOWN_MS) {
       return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
     }
+    pruneCooldown(cooldown, COOLDOWN_MS)
+    if (userService.size > 2000) userService.delete(userService.keys().next().value)
 
     const subCmd = args[0]?.toLowerCase()
-    const url = text?.replace(/^(قصير|short|مختصر)\s*/i, '').trim()
+    const url = (text || '').trim()
 
-    // اختيار الخدمة
     if (subCmd === 'خدمة' || subCmd === 'service') {
       const svcId = args[1]
       if (!svcId) {
-        const sections = [{ title: '🔗 اختر خدمة الاختصار', rows: buildServiceList() }]
+        const sections = [{ title: '🔗 اختر خدمة الاختصار', rows: buildServiceList(usedPrefix) }]
         return conn.sendMessage(m.chat, {
           text: '🔗 *اختر خدمة مختصر الروابط:*',
           footer: 'LIGHT BOT • URL Shortener',
@@ -54,18 +56,16 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       return m.reply(`${svc.emoji} *تم اختيار:* ${svc.name}`)
     }
 
-    // الخدمات الحالية
     if (subCmd === 'إعدادات' || subCmd === 'settings' || subCmd === 'current') {
       const svc = SERVICES.find(s => s.id === userService.get(m.sender)) || SERVICES[0]
       return m.reply(`⚙️ *الخدمة الحالية:* ${svc.emoji} ${svc.name}`)
     }
 
-    // تحقق من وجود رابط
     if (!url) {
       return conn.sendMessage(m.chat, {
-        text: `🔗 *مختصر روابط*\\n\\n` +
-          `أرسل رابط للاختصار:\\n` +
-          `\`${usedPrefix}short https://example.com/very/long/url\`\\n\\n` +
+        text: `🔗 *مختصر روابط*\n\n` +
+          `أرسل رابط للاختصار:\n` +
+          `\`${usedPrefix}short https://example.com/very/long/url\`\n\n` +
           `الخدمة الحالية: ${(userService.get(m.sender) ? SERVICES.find(s => s.id === userService.get(m.sender))?.name : 'TinyURL')}`,
         footer: 'LIGHT BOT • URL Shortener',
         buttons: [
@@ -75,7 +75,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       }, { quoted: m })
     }
 
-    // التحقق من صحة الرابط
     if (!/^https?:\/\/.+/.test(url)) {
       return m.reply('❌ رابط غير صالح، يجب أن يبدأ بـ http:// أو https://')
     }
@@ -88,28 +87,27 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     try {
       const { data } = await axios.get(svc.api + encodeURIComponent(url), { timeout: 15000 })
-      const shortUrl = data.trim()
+      const shortUrl = String(data || '').trim()
 
       if (!shortUrl || shortUrl === url || shortUrl.includes('Error')) {
         throw new Error('Service returned error')
       }
 
       await m.reply(
-        `${svc.emoji} *تم الاختصار بنجاح!*\\n\\n` +
-        `📎 *الأصلي:* ${url}\\n` +
-        `✂️ *المختصر:* ${shortUrl}\\n\\n` +
+        `${svc.emoji} *تم الاختصار بنجاح!*\n\n` +
+        `📎 *الأصلي:* ${url}\n` +
+        `✂️ *المختصر:* ${shortUrl}\n\n` +
         `📊 *الخدمة:* ${svc.name}`
       )
       await m.react('✅')
     } catch (e) {
-      // محاولة خدمة بديلة
       const fallback = SERVICES.find(s => s.id !== svcId)
       if (fallback) {
         try {
           const { data } = await axios.get(fallback.api + encodeURIComponent(url), { timeout: 15000 })
-          const shortUrl = data.trim()
+          const shortUrl = String(data || '').trim()
           await m.reply(
-            `⚠️ ${svc.name} فشل، تم استخدام ${fallback.name}\\n\\n` +
+            `⚠️ ${svc.name} فشل، تم استخدام ${fallback.name}\n\n` +
             `✂️ *المختصر:* ${shortUrl}`
           )
           await m.react('✅')

@@ -5,6 +5,7 @@
   ═══════════════════════════════════════════
 */
 import crypto from 'crypto'
+import { pruneCooldown } from '../../system/cooldowns.js'
 
 const ALGORITHMS = [
   { id: 'md5', name: 'MD5', desc: '128-bit، سريع، غير آمن', emoji: '🔴' },
@@ -21,19 +22,14 @@ const cooldown = new Map()
 const COOLDOWN_MS = 3000
 const userAlgo = new Map()
 
-function buildAlgoButtons() {
+function buildAlgoButtons(usedPrefix = '.') {
   return ALGORITHMS.map(a => ({
     name: 'quick_reply',
-    params: { display_text: `${a.emoji} ${a.name}`, id: `.hash خوارزمية ${a.id}` }
+    params: { display_text: `${a.emoji} ${a.name}`, id: `${usedPrefix}hash خوارزمية ${a.id}` }
   }))
 }
 
 function hashText(text, algo) {
-  if (algo === 'bcrypt') {
-    // bcrypt يحتاج مكتبة خارجية، نستخدم sha512 كبديل مع salt
-    const salt = crypto.randomBytes(16).toString('hex')
-    return crypto.createHash('sha512').update(text + salt).digest('hex') + ':' + salt
-  }
   try {
     return crypto.createHash(algo).update(text).digest('hex')
   } catch {
@@ -41,33 +37,26 @@ function hashText(text, algo) {
   }
 }
 
-function hashFile(buffer, algo) {
-  try {
-    return crypto.createHash(algo).update(buffer).digest('hex')
-  } catch {
-    return null
-  }
-}
-
-const handler = async (m, { conn, text, args, usedPrefix }) => {
+const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now()
     const last = cooldown.get(m.sender) || 0
     if (now - last < COOLDOWN_MS) {
       return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
     }
+    pruneCooldown(cooldown, COOLDOWN_MS)
+    if (userAlgo.size > 2000) userAlgo.delete(userAlgo.keys().next().value)
 
     const subCmd = args[0]?.toLowerCase()
-    const inputText = text?.replace(/^(هاش|hash)\s*/i, '').trim()
+    const inputText = (text || '').trim()
 
-    // اختيار الخوارزمية
     if (subCmd === 'خوارزمية' || subCmd === 'algo' || subCmd === 'algorithm') {
       const algoId = args[1]
       if (!algoId) {
         return conn.sendMessage(m.chat, {
           text: '#️⃣ *اختر خوارزمية الهاش:*',
           footer: 'LIGHT BOT • Hash Generator',
-          buttons: buildAlgoButtons()
+          buttons: buildAlgoButtons(usedPrefix)
         }, { quoted: m })
       }
       const algo = ALGORITHMS.find(a => a.id === algoId)
@@ -76,37 +65,34 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       return m.reply(`${algo.emoji} *تم اختيار:* ${algo.name} (${algo.desc})`)
     }
 
-    // الخوارزمية الحالية
     if (subCmd === 'إعدادات' || subCmd === 'settings' || subCmd === 'current') {
       const algo = ALGORITHMS.find(a => a.id === userAlgo.get(m.sender)) || ALGORITHMS[2]
       return m.reply(`⚙️ *الخوارزمية الحالية:* ${algo.emoji} ${algo.name}`)
     }
 
-    // قائمة الكل
     if (subCmd === 'الكل' || subCmd === 'all') {
-      const target = inputText || m.quoted?.text
+      const target = args.slice(1).join(' ').trim() || m.quoted?.text
       if (!target) return m.reply('❌ اكتب نص أو رد على رسالة')
       cooldown.set(m.sender, now)
       await m.react('#️⃣')
-      let out = `📋 *هاش لجميع الخوارزميات:*\\n\\n\`${target.slice(0, 50)}\`\\n\\n`
+      let out = `📋 *هاش لجميع الخوارزميات:*\n\n\`${target.slice(0, 50)}\`\n\n`
       for (const a of ALGORITHMS) {
         const h = hashText(target, a.id)
-        out += `${a.emoji} *${a.name}:*\\n\`${h}\`\\n\\n`
+        out += `${a.emoji} *${a.name}:*\n\`${h}\`\n\n`
       }
       return m.reply(out)
     }
 
-    // تحقق من وجود نص
     if (!inputText && !m.quoted?.text && !m.quoted?.msg?.conversation) {
       return conn.sendMessage(m.chat, {
-        text: `#️⃣ *مولد هاش*\\n\\n` +
-          `أرسل نص، أو رد على رسالة:\\n` +
-          `\`${usedPrefix}hash نص للتشفير\`\\n\\n` +
+        text: `#️⃣ *مولد هاش*\n\n` +
+          `أرسل نص، أو رد على رسالة:\n` +
+          `\`${usedPrefix}hash نص للتشفير\`\n\n` +
           `الخوارزمية الحالية: ${(userAlgo.get(m.sender) ? ALGORITHMS.find(a => a.id === userAlgo.get(m.sender))?.name : 'SHA-256')}`,
         footer: 'LIGHT BOT • Hash Generator',
         buttons: [
-          ...buildAlgoButtons().slice(0, 4),
-          { name: 'quick_reply', params: { display_text: '📋 الكل', id: `${usedPrefix}hash الكل` } },
+          ...buildAlgoButtons(usedPrefix).slice(0, 4),
+          { name: 'quick_reply', params: { display_text: '📋 الكل', id: `${usedPrefix}hash الكل ` } },
           { name: 'quick_reply', params: { display_text: '⚙️ إعدادات', id: `${usedPrefix}hash إعدادات` } }
         ]
       }, { quoted: m })
@@ -126,9 +112,9 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     }
 
     await m.reply(
-      `${algo.emoji} *${algo.name} Hash:*\\n\\n` +
-      `\`${hash}\`\\n\\n` +
-      `📝 *النص:* ${targetText.slice(0, 100)}${targetText.length > 100 ? '...' : ''}\\n` +
+      `${algo.emoji} *${algo.name} Hash:*\n\n` +
+      `\`${hash}\`\n\n` +
+      `📝 *النص:* ${targetText.slice(0, 100)}${targetText.length > 100 ? '...' : ''}\n` +
       `📏 *الطول:* ${targetText.length} حرف → ${hash.length} حرف هكس`
     )
     await m.react('✅')

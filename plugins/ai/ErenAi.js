@@ -1,33 +1,37 @@
-import { Scrapy } from "meowsab";
+import { askAI } from "../../system/aiService.js";
 
-const handler = async (m, { conn, text, bot }) => {
+const handler = async (m, { conn, text }) => {
   if (!text) return m.reply("*اكتب سوألك بعد الامر🏰*");
 
-  const loadingMsg = await conn.sendMessage(m.chat, {
-    contextInfo: context(m.sender, "https://qu.ax/x/4Hnbh.jpg"),
-    text: "```⏳ جـاري الـتـحـضـيـر يـا حـر...```"
-  }, { quoted: m});
-
-  const prompt = `
-انت بوت واتساب بـ اسم [إيرن، Eren] تجسيد لـ شخصية Eren Yeager من انمي [Attack on Titan] وتكلم بـ لجهة عربية
-طريقة كلامك: غاضب، ثائر، متحمس بقوة، عصب سريع، كلامك ناري ومليان حماس للحرية، شايف إن العنف حل، بتصوت عالي وبتحط ! كتير
-و انا اسمي هيكون [ ${m.name || "مز"} ] 
-رد علي رسالتي دي:
-${text}
-`;
-
-  let res;
+  let loadingMsg = null;
   try {
-    ({ data: res } = await Scrapy.ZeroAI(text, prompt));
-  } catch (e) {
-    return m.reply(`❌ حدث خطأ: ${(e && e.message) || e}`);
+    loadingMsg = await conn.sendMessage(m.chat, {
+      contextInfo: context(m.sender),
+      text: "```⏳ جـاري الـتـحـضـيـر يـا حـر...```"
+    }, { quoted: m });
+  } catch {}
+
+  const system = `
+انت بوت واتساب بـ اسم [إيرن، Eren] تجسيد لـ شخصية Eren Yeager من انمي [Attack on Titan] وتكلم بـ لهجة عربية.
+طريقة كلامك: غاضب، ثائر، متحمس بقوة، كلامك ناري ومليان حماس للحرية، بتحط ! كتير.
+اسم المستخدم: ${m.name || "صديقي"}
+`.trim();
+
+  const res = await askAI({ prompt: text, system, timeoutMs: 30_000 });
+  if (!res.ok || !res.text) {
+    return m.reply("❌ تعذر الرد حالياً، حاول مرة أخرى بعد قليل.");
   }
 
-  await conn.sendMessage(m.chat, {
-    text: res.answer,
-    edit: loadingMsg.key,
-    contextInfo: context(m.sender, "https://qu.ax/x/4Hnbh.jpg")
-  });
+  if (loadingMsg?.key) {
+    try {
+      return await conn.sendMessage(m.chat, {
+        text: res.text,
+        edit: loadingMsg.key,
+        contextInfo: context(m.sender)
+      });
+    } catch {}
+  }
+  return m.reply(res.text);
 };
 
 handler.usage = ["إيرن"];
@@ -36,21 +40,19 @@ handler.command = ["إيرن", "eren"];
 
 export default handler;
 
-const context = (jid, img) => ({
-    mentionedJid: [jid],
-    isForwarded: true,
-    forwardingScore: 1,
-    forwardedNewsletterMessageInfo: {
-        newsletterJid: (process.env.BOT_NEWSLETTER_JID || ''),
-        newsletterName: '𝑬𝑹𝑬𝑵 ┇🏰┇ 𝑨𝑰',
-        serverMessageId: 0
-    },
-    externalAdReply: {
-        title: "𝑬𝑹𝑬𝑵 𝑭𝑹𝑶𝑴 𝑨𝑻𝑨𝑲 𝑶𝑵 𝑻𝑰𝑻𝑻𝑬𝑵",
-        body: "𝙵𝚁𝙴𝙴𝙳𝙾𝙼 🏰 𝙸'𝚕𝚕 𝚔𝚎𝚎𝚙 𝚖𝚘𝚟𝚒𝚗𝚐 𝚏𝚘𝚛𝚠𝚊𝚛𝚍",
-        thumbnailUrl: img,
-        sourceUrl: '',
-        mediaType: 1,
-        renderLargerThumbnail: true
-    }
+const context = (jid) => ({
+  mentionedJid: [jid],
+  isForwarded: true,
+  forwardingScore: 1,
+  forwardedNewsletterMessageInfo: {
+    newsletterJid: (process.env.BOT_NEWSLETTER_JID || ''),
+    newsletterName: '𝑬𝑹𝑬𝑵 ┇🏰┇ 𝑨𝑰',
+    serverMessageId: 0
+  },
+  externalAdReply: {
+    title: "𝑬𝑹𝑬𝑵 𝑭𝑹𝑶𝑴 𝑨𝑻𝑻𝑨𝑪𝑲 𝑶𝑵 𝑻𝑰𝑻𝑨𝑵",
+    body: "𝙵𝚁𝙴𝙴𝙳𝙾𝙼 🏰 𝙸'𝚕𝚕 𝚔𝚎𝚎𝚙 𝚖𝚘𝚟𝚒𝚗𝚐 𝚏𝚘𝚛𝚠𝚊𝚛𝚍",
+    sourceUrl: '',
+    mediaType: 1
+  }
 });

@@ -4,6 +4,7 @@
   الأمر: .time / .وقت / .توقيت <منطقة>
   ═══════════════════════════════════════════
 */
+import { pruneCooldown } from '../../system/cooldowns.js'
 
 const TIMEZONES = [
   { id: 'UTC', name: '🌍 UTC', offset: 0, cities: ['غرينتش', 'لندن (شتاء)'] },
@@ -39,11 +40,11 @@ const TIMEZONES = [
 ]
 
 const FORMATS = [
-  { id: 'full', name: '📅 كامل', example: 'الجمعة، ١٨ نوفمبر ٢٠٢٦ ١٠:٣٠:٤٥ ص' },
-  { id: 'short', name: '📝 قصير', example: '١٨/١١/٢٠٢٦، ١٠:٣٠ ص' },
-  { id: 'time', name: '🕐 وقت فقط', example: '١٠:٣٠:٤٥ ص' },
-  { id: 'iso', name: '📋 ISO 8601', example: '2026-11-18T10:30:45+03:00' },
-  { id: 'relative', name: '⏱️ نسبي', example: 'منذ ساعتان' },
+  { id: 'full', name: '📅 كامل' },
+  { id: 'short', name: '📝 قصير' },
+  { id: 'time', name: '🕐 وقت فقط' },
+  { id: 'iso', name: '📋 ISO 8601' },
+  { id: 'relative', name: '⏱️ نسبي' },
 ]
 
 const cooldown = new Map()
@@ -52,11 +53,11 @@ const userFrom = new Map()
 const userTo = new Map()
 const userFormat = new Map()
 
-function buildTzList() {
+function buildTzList(direction = 'من', usedPrefix = '.') {
   return TIMEZONES.map(t => ({
     title: `${t.name}`,
     description: t.cities.join('، '),
-    id: `.time من ${t.id}`
+    id: `${usedPrefix}time ${direction} ${t.id}`
   }))
 }
 
@@ -77,12 +78,13 @@ function formatTime(date, tz, format) {
         break
       case 'iso':
         return date.toLocaleString('sv-SE', { timeZone: tz }).replace(' ', 'T')
-      case 'relative':
+      case 'relative': {
         const diff = Math.round((Date.now() - date.getTime()) / 1000)
         if (diff < 60) return `منذ ${diff} ثانية`
         if (diff < 3600) return `منذ ${Math.round(diff / 60)} دقيقة`
         if (diff < 86400) return `منذ ${Math.round(diff / 3600)} ساعة`
         return `منذ ${Math.round(diff / 86400)} يوم`
+      }
     }
     return date.toLocaleString('ar-EG', opts)
   } catch {
@@ -98,21 +100,24 @@ function getOffsetString(tz) {
   return `UTC${sign}${tzData.offset}`
 }
 
-const handler = async (m, { conn, text, args, usedPrefix }) => {
+const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now()
     const last = cooldown.get(m.sender) || 0
     if (now - last < COOLDOWN_MS) {
       return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
     }
+    pruneCooldown(cooldown, COOLDOWN_MS)
+    for (const map of [userFrom, userTo, userFormat]) {
+      if (map.size > 2000) map.delete(map.keys().next().value)
+    }
 
     const subCmd = args[0]?.toLowerCase()
 
-    // المنطقة المصدر
     if (subCmd === 'من' || subCmd === 'from') {
       const tz = args[1]
       if (!tz) {
-        const sections = [{ title: '🌍 اختر المنطقة المصدر', rows: buildTzList() }]
+        const sections = [{ title: '🌍 اختر المنطقة المصدر', rows: buildTzList('من', usedPrefix) }]
         return conn.sendMessage(m.chat, {
           text: '🌍 *اختر المنطقة الزمنية المصدر:*',
           footer: 'LIGHT BOT • Time Converter',
@@ -120,17 +125,16 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
           mentions: [m.sender]
         }, { quoted: m })
       }
-      if (!TIMEZONES.find(x => x.id === tz)) return m.reply('❌ منطقة غير موجودة')
+      const found = TIMEZONES.find(x => x.id === tz)
+      if (!found) return m.reply('❌ منطقة غير موجودة')
       userFrom.set(m.sender, tz)
-      const t = TIMEZONES.find(x => x.id === tz)
-      return m.reply(`${t.name} *تم تعيين المنطقة المصدر* ${getOffsetString(tz)}`)
+      return m.reply(`${found.name} *تم تعيين المنطقة المصدر* ${getOffsetString(tz)}`)
     }
 
-    // المنطقة الهدف
     if (subCmd === 'إلى' || subCmd === 'الى' || subCmd === 'to') {
       const tz = args[1]
       if (!tz) {
-        const sections = [{ title: '🎯 اختر المنطقة الهدف', rows: buildTzList() }]
+        const sections = [{ title: '🎯 اختر المنطقة الهدف', rows: buildTzList('إلى', usedPrefix) }]
         return conn.sendMessage(m.chat, {
           text: '🎯 *اختر المنطقة الزمنية الهدف:*',
           footer: 'LIGHT BOT • Time Converter',
@@ -138,13 +142,12 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
           mentions: [m.sender]
         }, { quoted: m })
       }
-      if (!TIMEZONES.find(x => x.id === tz)) return m.reply('❌ منطقة غير موجودة')
+      const found = TIMEZONES.find(x => x.id === tz)
+      if (!found) return m.reply('❌ منطقة غير موجودة')
       userTo.set(m.sender, tz)
-      const t = TIMEZONES.find(x => x.id === tz)
-      return m.reply(`${t.name} *تم تعيين المنطقة الهدف* ${getOffsetString(tz)}`)
+      return m.reply(`${found.name} *تم تعيين المنطقة الهدف* ${getOffsetString(tz)}`)
     }
 
-    // التنسيق
     if (subCmd === 'تنسيق' || subCmd === 'format') {
       const fmt = args[1]
       if (!fmt) {
@@ -153,7 +156,7 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
           footer: 'LIGHT BOT • Time Converter',
           buttons: FORMATS.map(f => ({
             name: 'quick_reply',
-            params: { display_text: `${f.name}`, id: `.time تنسيق ${f.id}` }
+            params: { display_text: `${f.name}`, id: `${usedPrefix}time تنسيق ${f.id}` }
           }))
         }, { quoted: m })
       }
@@ -162,19 +165,14 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       return m.reply(`📋 *تم اختيار:* ${FORMATS.find(f => f.id === fmt)?.name}`)
     }
 
-    // تبديل
     if (subCmd === 'تبديل' || subCmd === 'swap') {
-      const from = userFrom.get(m.sender)
-      const to = userTo.get(m.sender)
-      if (from && to) {
-        userFrom.set(m.sender, to)
-        userTo.set(m.sender, from)
-        return m.reply(`🔄 *تم التبديل:* ${TIMEZONES.find(x => x.id === to)?.name} ↔ ${TIMEZONES.find(x => x.id === from)?.name}`)
-      }
-      return m.reply('❌ عين المنطقتين أولاً')
+      const from = userFrom.get(m.sender) || 'UTC'
+      const to = userTo.get(m.sender) || 'Asia/Riyadh'
+      userFrom.set(m.sender, to)
+      userTo.set(m.sender, from)
+      return m.reply(`🔄 *تم التبديل:* ${TIMEZONES.find(x => x.id === to)?.name} ↔ ${TIMEZONES.find(x => x.id === from)?.name}`)
     }
 
-    // الإعدادات
     if (subCmd === 'إعدادات' || subCmd === 'settings' || subCmd === 'current') {
       const from = userFrom.get(m.sender) || 'UTC'
       const to = userTo.get(m.sender) || 'Asia/Riyadh'
@@ -183,15 +181,14 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       const t = TIMEZONES.find(x => x.id === to)
       const fmtObj = FORMATS.find(x => x.id === fmt)
       return m.reply(
-        `⚙️ *إعدادات المحول:*\\n\\n` +
-        `${f?.name || '🌍 UTC'} ${getOffsetString(from)}\\n` +
-        `➡️\\n` +
-        `${t?.name || '🇸🇦 الرياض'} ${getOffsetString(to)}\\n\\n` +
+        `⚙️ *إعدادات المحول:*\n\n` +
+        `${f?.name || '🌍 UTC'} ${getOffsetString(from)}\n` +
+        `➡️\n` +
+        `${t?.name || '🇸🇦 الرياض'} ${getOffsetString(to)}\n\n` +
         `📋 تنسيق: ${fmtObj?.name}`
       )
     }
 
-    // الآن
     if (subCmd === 'الآن' || subCmd === 'now') {
       cooldown.set(m.sender, now)
       const date = new Date()
@@ -199,39 +196,39 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       const to = userTo.get(m.sender) || 'Asia/Riyadh'
       const fmt = userFormat.get(m.sender) || 'full'
 
-      const fromStr = formatTime(date, from, fmt)
-      const toStr = formatTime(date, to, fmt)
-
       await m.react('🕐')
       return m.reply(
-        `🕐 *الوقت الحالي:*\\n\\n` +
-        `${TIMEZONES.find(x => x.id === from)?.name}: ${fromStr}\\n` +
-        `➡️\\n` +
-        `${TIMEZONES.find(x => x.id === to)?.name}: ${toStr}`
+        `🕐 *الوقت الحالي:*\n\n` +
+        `${TIMEZONES.find(x => x.id === from)?.name}: ${formatTime(date, from, fmt)}\n` +
+        `➡️\n` +
+        `${TIMEZONES.find(x => x.id === to)?.name}: ${formatTime(date, to, fmt)}`
       )
     }
 
-    // تحويل وقت محدد
     if (subCmd === 'تحويل' || subCmd === 'convert') {
       const timeStr = args.slice(1).join(' ')
-      if (!timeStr) return m.reply('❌ أدخل وقت: `.time تحويل 10:30 PM`')
+      if (!timeStr) return m.reply('❌ أدخل وقت: `.time تحويل 2026-11-18 22:30`')
       const from = userFrom.get(m.sender) || 'UTC'
       const to = userTo.get(m.sender) || 'Asia/Riyadh'
       const fmt = userFormat.get(m.sender) || 'full'
 
-      // محاولة تحليل الوقت
       let date
       try {
-        // إذا كان فيه تاريخ
         if (/\d{4}-\d{2}-\d{2}/.test(timeStr)) {
           date = new Date(timeStr)
         } else {
-          // وقت فقط، استخدم تاريخ اليوم في المنطقة المصدر
-          const now = new Date()
-          const fromTime = now.toLocaleString('en-US', { timeZone: from, hour12: false })
-          const [, , , hour, minute, second] = fromTime.match(/(\d+)\/(\d+)\/(\d+), (\d+):(\d+):(\d+)/) || []
+          const hm = timeStr.match(/(\d{1,2}):(\d{2})(?:\s*(am|pm))?/i)
           date = new Date()
-          if (hour) date.setUTCHours(parseInt(hour), parseInt(minute), parseInt(second || 0))
+          if (hm) {
+            let h = parseInt(hm[1], 10)
+            const min = parseInt(hm[2], 10)
+            const ampm = hm[3]?.toLowerCase()
+            if (ampm === 'pm' && h < 12) h += 12
+            if (ampm === 'am' && h === 12) h = 0
+            date.setHours(h, min, 0, 0)
+          } else {
+            date = new Date(timeStr)
+          }
         }
         if (isNaN(date.getTime())) throw new Error()
       } catch {
@@ -239,26 +236,37 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       }
 
       cooldown.set(m.sender, now)
-      const fromStr = formatTime(date, from, fmt)
-      const toStr = formatTime(date, to, fmt)
-
       await m.react('🔄')
       return m.reply(
-        `🔄 *تحويل الوقت:*\\n\\n` +
-        `${TIMEZONES.find(x => x.id === from)?.name}: ${fromStr}\\n` +
-        `➡️\\n` +
-        `${TIMEZONES.find(x => x.id === to)?.name}: ${toStr}`
+        `🔄 *تحويل الوقت:*\n\n` +
+        `${TIMEZONES.find(x => x.id === from)?.name}: ${formatTime(date, from, fmt)}\n` +
+        `➡️\n` +
+        `${TIMEZONES.find(x => x.id === to)?.name}: ${formatTime(date, to, fmt)}`
       )
     }
 
-    // قائمة سريعة
+    // بحث سريع بالمدينة إذا كتب المستخدم اسم دولة/مدينة بعد الأمر مباشرة
+    const query = (text || '').trim().toLowerCase()
+    if (query) {
+      const match = TIMEZONES.find(t =>
+        t.id.toLowerCase().includes(query) ||
+        t.name.toLowerCase().includes(query) ||
+        t.cities.some(c => c.toLowerCase().includes(query))
+      )
+      if (match) {
+        cooldown.set(m.sender, now)
+        const fmt = userFormat.get(m.sender) || 'full'
+        return m.reply(`🕐 *${match.name}:*\n${formatTime(new Date(), match.id, fmt)}`)
+      }
+    }
+
     cooldown.set(m.sender, now)
     const from = userFrom.get(m.sender) || 'UTC'
     const to = userTo.get(m.sender) || 'Asia/Riyadh'
 
     return conn.sendMessage(m.chat, {
-      text: `🕐 *محول المناطق الزمنية*\\n\\n` +
-        `${TIMEZONES.find(x => x.id === from)?.name} ➡️ ${TIMEZONES.find(x => x.id === to)?.name}\\n\\n` +
+      text: `🕐 *محول المناطق الزمنية*\n\n` +
+        `${TIMEZONES.find(x => x.id === from)?.name} ➡️ ${TIMEZONES.find(x => x.id === to)?.name}\n\n` +
         `اختر إجراء:`,
       footer: 'LIGHT BOT • Time Converter',
       buttons: [
@@ -280,7 +288,7 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 }
 
 handler.command = ['time', 'وقت', 'توقيت', 'timezone', 'tz']
-handler.usage = ['time', 'time الآن', 'time تحويل <وقت>', 'time من <منطقة>', 'time إلى <منطقة>', 'time تنسيق <full|short|time|iso|relative>', 'time تبديل', 'time إعدادات']
+handler.usage = ['time', 'time الآن', 'time <مدينة>', 'time تحويل <وقت>', 'time من <منطقة>', 'time إلى <منطقة>', 'time تنسيق <full|short|time|iso|relative>', 'time تبديل', 'time إعدادات']
 handler.category = 'tools'
 handler.cooldown = 3
 export default handler
