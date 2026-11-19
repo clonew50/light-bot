@@ -477,7 +477,7 @@ background:linear-gradient(135deg,#0f172a,#1e293b);color:#e2e8f0}
 .card{width:min(92vw,380px);background:#111827;border:1px solid #1f2937;border-radius:18px;
 padding:28px;box-shadow:0 20px 50px rgba(0,0,0,.5)}
 h1{margin:0 0 6px;font-size:22px;text-align:center}
-p.sub{margin:0 0 20px;text-align:center;color:#94a3b8;font-size:13px}
+p.sub{margin:0 0 20px;text-align:center;color:#94a3b8;font-size:13px;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
 input{width:100%;padding:13px 14px;border-radius:12px;border:1px solid #334155;background:#0b1220;
 color:#e2e8f0;font-size:16px;outline:none}
 input:focus{border-color:#38bdf8}
@@ -505,7 +505,7 @@ const PANEL_HTML = `<!DOCTYPE html>
 <title>لوحة تحكم البوت</title>
 <style>
 *{box-sizing:border-box;font-family:system-ui,'Segoe UI',Tahoma,sans-serif}
-body{margin:0;background:#0b1220;color:#e2e8f0;padding:16px}
+body{margin:0;background:#0b1220;color:#e2e8f0;padding:16px;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
 .wrap{max-width:960px;margin:0 auto}
 header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 h1{font-size:20px;margin:0}
@@ -513,7 +513,7 @@ h1{font-size:20px;margin:0}
 .on{background:#052e1a;color:#4ade80;border:1px solid #14532d}
 .off{background:#3f1d1d;color:#fca5a5;border:1px solid #7f1d1d}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
-.card{background:#111827;border:1px solid #1f2937;border-radius:16px;padding:16px}
+.card{background:#111827;border:1px solid #1f2937;border-radius:16px;padding:16px;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
 .card h2{margin:0 0 12px;font-size:15px;color:#93c5fd;display:flex;gap:8px;align-items:center}
 .row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed #1f2937;font-size:14px}
 .row:last-child{border-bottom:0}
@@ -526,11 +526,11 @@ button.danger{background:#ef4444;color:#fff}
 button.ghost{background:transparent;border:1px solid #334155}
 .actions{display:flex;flex-wrap:wrap;gap:10px}
 input,select{width:100%;padding:11px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#e2e8f0;margin-bottom:10px}
-.qrbox{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+.qrbox{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
 .qrbox img{width:min(100%,280px);background:#fff;padding:10px;border-radius:14px}
 .code{font-size:30px;font-weight:800;letter-spacing:3px;color:#4ade80;direction:ltr;text-align:center;
 background:#052e1a;border:1px solid #14532d;border-radius:12px;padding:14px;margin:8px 0}
-.hint{color:#94a3b8;font-size:13px;line-height:1.7}
+.hint{color:#94a3b8;font-size:13px;line-height:1.7;white-space:normal;word-wrap:break-word;overflow-wrap:break-word;word-break:keep-all}
 .log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#a5b4fc;
 max-height:190px;overflow:auto;background:#0b1220;border:1px solid #1f2937;border-radius:10px;padding:10px;white-space:pre-wrap}
 .err-item{background:#2a1414;border:1px solid #7f1d1d;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:13px}
