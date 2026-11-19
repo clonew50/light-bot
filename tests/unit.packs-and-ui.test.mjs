@@ -26,7 +26,17 @@ const PACK_FILES = [
   'games_fun_pack.js',
   'knowledge_edu_pack.js',
   'economy_social_pack.js',
-  'interactive_admin_pack.js'
+  'interactive_admin_pack.js',
+  'chronos_time_pack.js',
+  'detective_mystery_pack.js',
+  'empire_realm_pack.js',
+  'mind_psych_pack.js',
+  'cosmos_science_pack.js',
+  'creator_studio_pack.js',
+  'social_arena_pack.js',
+  'survival_expedition_pack.js',
+  'cyber_code_lab_pack.js',
+  'life_finance_pack.js'
 ];
 
 async function loadAllPackHandlers() {
