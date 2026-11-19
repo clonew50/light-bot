@@ -19,7 +19,7 @@ import { createPairingState } from './pairing.js';
 import { pushEvent as busPushEvent, getEvents } from './events.js';
 import { isAlive, livenessStatus } from './liveness.js';
 import { normalizeCommandsList, simulateCommand } from './simulator.js';
-import { renderPublicPortalHtml, renderAdminPanelHtml } from './panelViews.js';
+import { renderPublicPortalHtml, renderAdminPanelHtml, renderMaintenanceHtml } from './panelViews.js';
 import {
   normalizePhone,
   requestSubBotPairing,
@@ -29,7 +29,8 @@ import {
   controlSubBot,
   updateMainBotSettings,
   getBotFleetOverview,
-  syncConnectedBotOwner
+  syncConnectedBotOwner,
+  getMainBotSettings
 } from './botRegistry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -558,13 +559,44 @@ const PANEL_HTML = renderAdminPanelHtml(INSTALL_RENDER_JS);
 /* ============ معالجة الطلبات ============ */
 // تهيئة مبدئية: getClientInfo ممكن يتنده قبل startWebPanel (اختبارات) —
 // startWebPanel بيستبدلها بالقيم المقروءة من القرص.
-let panelCfg = { ...fDEFAULT_CONFIG, secret: '' };
+export function isMaintenanceActive(client) {
+  if (global.db && typeof global.db.maintenance === 'boolean') {
+    return global.db.maintenance;
+  }
+  try {
+    const ms = getMainBotSettings(client);
+    return Boolean(ms?.maintenance);
+  } catch (_) {
+    return false;
+  }
+}
 
 async function handle(req, res, client) {
   const ip = clientIp(req);
   const url = new URL(req.url, 'http://localhost');
   const cookies = parseCookies(req);
   const authed = verifyCookie(cookies.pw);
+  const maintenance = isMaintenanceActive(client);
+
+  // حالة الصيانة لفحص الصفحة وإعادة التحميل التلقائي
+  if (req.method === 'GET' && url.pathname === '/api/maintenance-status') {
+    return sendJson(res, 200, { maintenance });
+  }
+
+  // وضع الصيانة: إغلاق الموقع للزوار وعرض شاشة الصيانة اللطيفة مع إتاحة تسجيل دخول الأدمن
+  if (maintenance && !authed) {
+    if (req.method === 'POST' && url.pathname === '/login') {
+      // مسموح للأدمن بالمرور لتسجيل الدخول للوحة التحكم
+    } else if (url.pathname.startsWith('/api/')) {
+      return sendJson(res, 503, {
+        ok: false,
+        maintenance: true,
+        error: 'الموقع تحت الصيانة حالياً، يرجى الانتظار والمحاولة لاحقاً'
+      });
+    } else {
+      return sendHtml(res, 503, renderMaintenanceHtml(''));
+    }
+  }
 
   // الشاشة الافتراضية للزوار (ربط واتساب + التحكم بالكود المحفوظ) أو لوحة الأدمن للمسجلين
   if (req.method === 'GET' && url.pathname === '/') {
@@ -574,14 +606,20 @@ async function handle(req, res, client) {
 
   if (req.method === 'POST' && url.pathname === '/login') {
     const blocked = loginBlocked(ip);
-    if (blocked) return sendHtml(res, 429, LOGIN_HTML('محاولات كثيرة، انتظر ' + blocked + ' ثانية'));
+    if (blocked) {
+      const blockHtml = maintenance
+        ? renderMaintenanceHtml('محاولات كثيرة، انتظر ' + blocked + ' ثانية')
+        : LOGIN_HTML('محاولات كثيرة، انتظر ' + blocked + ' ثانية');
+      return sendHtml(res, 429, blockHtml);
+    }
     const { json, form } = await readBody(req);
     const pass = (json?.password ?? form?.password ?? '').toString();
     const ok = pass.length === panelCfg.password.length &&
       crypto.timingSafeEqual(Buffer.from(pass), Buffer.from(panelCfg.password));
     if (!ok) {
       registerFail(ip);
-      return sendHtml(res, 401, LOGIN_HTML('كلمة السر غلط'));
+      const failHtml = maintenance ? renderMaintenanceHtml('كلمة السر غلط') : LOGIN_HTML('كلمة السر غلط');
+      return sendHtml(res, 401, failHtml);
     }
     resetFail(ip);
     // SameSite=Strict بدل Lax — والكوكي Secure بس لما الطلب جه على TLS

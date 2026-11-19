@@ -650,6 +650,287 @@ async function mySubAction(action){
 </body></html>`;
 }
 
+export function renderMaintenanceHtml(err = '') {
+  const autoOpenAdmin = err ? 'true' : 'false';
+  const safeErr = String(err || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  return `<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🛠️ الموقع تحت الصيانة — لايت بوت</title>
+<style>${SHARED_CSS}
+.maint-wrap{
+  min-height: calc(100vh - 40px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.maint-card{
+  width: min(100%, 580px);
+  background: rgba(13, 20, 36, 0.94);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 24px;
+  padding: 38px 28px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.55), 0 0 50px rgba(245, 158, 11, 0.08);
+  animation: fadeSlideUp .42s var(--ease) both;
+}
+.maint-badge{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 9999px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 22px;
+}
+.gear-orbit{
+  width: 90px;
+  height: 90px;
+  margin: 0 auto 20px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gear-icon-main{
+  font-size: 48px;
+  display: inline-block;
+  animation: spinGear 9s linear infinite;
+  filter: drop-shadow(0 0 16px rgba(245, 158, 11, 0.45));
+}
+.gear-icon-sub{
+  position: absolute;
+  bottom: 2px;
+  left: 6px;
+  font-size: 26px;
+  display: inline-block;
+  animation: spinGearRev 6s linear infinite;
+}
+@keyframes spinGear{
+  from{transform: rotate(0deg)}
+  to{transform: rotate(360deg)}
+}
+@keyframes spinGearRev{
+  from{transform: rotate(360deg)}
+  to{transform: rotate(0deg)}
+}
+.pulse-dot{
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fbbf24;
+  box-shadow: 0 0 10px #fbbf24;
+  display: inline-block;
+  animation: pulseDot 1.4s ease-in-out infinite alternate;
+}
+@keyframes pulseDot{
+  from{opacity: 0.4; transform: scale(0.9)}
+  to{opacity: 1; transform: scale(1.2)}
+}
+.maint-title{
+  font-size: clamp(22px, 3.8vw, 30px);
+  font-weight: 800;
+  margin: 0 0 12px;
+  color: #fff;
+  letter-spacing: -0.01em;
+}
+.maint-text{
+  font-size: 15px;
+  color: var(--muted);
+  line-height: 1.8;
+  margin: 0 0 24px;
+}
+.status-box{
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px;
+  margin-bottom: 24px;
+  text-align: right;
+}
+.progress-bar{
+  height: 8px;
+  border-radius: 9999px;
+  background: #1e293b;
+  overflow: hidden;
+  margin: 12px 0;
+  position: relative;
+}
+.progress-fill{
+  height: 100%;
+  width: 70%;
+  background: linear-gradient(90deg, #f59e0b, #10b981, #38bdf8);
+  border-radius: 9999px;
+  position: relative;
+  overflow: hidden;
+}
+.progress-fill::after{
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  animation: shimmerSlide 2s infinite;
+}
+.maint-actions{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.auto-poll-hint{
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.modal-backdrop{
+  position:fixed;inset:0;background:rgba(3,7,18,0.75);backdrop-filter:blur(6px);
+  display:flex;align-items:center;justify-content:center;padding:16px;z-index:100;
+  opacity:0;pointer-events:none;transition:opacity .2s var(--ease);
+}
+.modal-backdrop.open{opacity:1;pointer-events:auto}
+.modal-card{
+  width:min(100%,410px);background:var(--surface);border:1px solid var(--border2);border-radius:18px;
+  padding:22px;transform:translate3d(0,14px,0) scale(.98);transition:transform .24s var(--ease);
+}
+.modal-backdrop.open .modal-card{transform:translate3d(0,0,0) scale(1)}
+</style></head>
+<body>
+<div class="ambient" aria-hidden="true"></div>
+<div class="wrap maint-wrap">
+  <div class="maint-card">
+    <div class="maint-badge">
+      <span class="pulse-dot"></span>
+      <span>وضع الصيانة والتطوير مفعّل</span>
+    </div>
+
+    <div class="gear-orbit" aria-hidden="true">
+      <span class="gear-icon-main">⚙️</span>
+      <span class="gear-icon-sub">🛠️</span>
+    </div>
+
+    <h1 class="maint-title">الموقع في استراحة صيانة وتطوير قصيرة!</h1>
+    <p class="maint-text">
+      أهلاً بك يا صديقي! نعمل الآن خلف الكواليس على ترقية الخوادم وتحديث النظام وتحسين الأداء لتقديم أفضل تجربة ممكنة.<br>
+      <strong>استنّانا شوية وهنرجع أقوى وأسرع من الأول بإذن الله! ☕✨</strong>
+    </p>
+
+    <div class="status-box">
+      <div class="split-row" style="margin-bottom:6px">
+        <span style="font-weight:700;color:#e2e8f0">حالة التحديثات:</span>
+        <span style="color:#fbbf24;font-size:13px;font-weight:700">جاري العمل الآن</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill"></div>
+      </div>
+      <div class="hint" style="color:var(--muted);font-size:13px">
+        💡 تقدر تاخد لك فنجان شاي أو قهوة سريع، الفحص شغال تلقائياً ومش هنتأخر عليك!
+      </div>
+    </div>
+
+    <div class="maint-actions">
+      <button type="button" class="pri" id="refreshBtn" onclick="manualCheck()">
+        <span id="btnIcon">🔄</span> إعادة فحص الحالة وتحديث الصفحة
+      </button>
+      <button type="button" class="ghost" onclick="openAdminModal()">
+        🔐 دخول الإدارة
+      </button>
+    </div>
+
+    <div class="auto-poll-hint">
+      يتم الفحص التلقائي لعودة الموقع كل 10 ثوانٍ (الفحص القادم خلال: <span id="secCount">10</span> ثانية)
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Admin Login Bypass -->
+<div class="modal-backdrop" id="adminModal" onclick="if(event.target===this)closeAdminModal()">
+  <div class="modal-card">
+    <div class="split-row" style="margin-bottom:12px">
+      <h3 style="margin:0;font-size:16px;color:#fff">دخول الإدارة للتحكم</h3>
+      <button type="button" class="ghost sm" onclick="closeAdminModal()">✕</button>
+    </div>
+    <p class="hint" style="margin:0 0 14px">أدخل كلمة سر لوحة التحكم لإدارة البوت أو إيقاف وضع الصيانة.</p>
+    ${safeErr ? `<div class="err-banner" style="margin-bottom:12px">${safeErr}</div>` : ''}
+    <form method="POST" action="/login">
+      <label class="lbl" for="maintPass">كلمة سر لوحة التحكم</label>
+      <input type="password" id="maintPass" name="password" required autofocus style="margin-bottom:14px">
+      <div class="actions">
+        <button type="submit" class="pri" style="width:100%">تسجيل الدخول للوحة التحكم</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+let remaining = 10;
+const secCountEl = document.getElementById('secCount');
+const autoOpen = ${autoOpenAdmin};
+
+if (autoOpen) {
+  openAdminModal();
+}
+
+function openAdminModal() {
+  document.getElementById('adminModal').classList.add('open');
+  setTimeout(() => {
+    const inp = document.getElementById('maintPass');
+    if (inp) inp.focus();
+  }, 50);
+}
+
+function closeAdminModal() {
+  document.getElementById('adminModal').classList.remove('open');
+}
+
+async function checkMaintenanceStatus() {
+  try {
+    const res = await fetch('/api/maintenance-status');
+    if (res.ok) {
+      const data = await res.json();
+      if (!data.maintenance) {
+        window.location.reload();
+        return;
+      }
+    }
+  } catch (_) {}
+}
+
+async function manualCheck() {
+  const btn = document.getElementById('refreshBtn');
+  const icon = document.getElementById('btnIcon');
+  if (btn) btn.disabled = true;
+  if (icon) icon.style.display = 'inline-block';
+  if (icon) icon.style.transform = 'rotate(180deg)';
+  await checkMaintenanceStatus();
+  setTimeout(() => {
+    if (btn) btn.disabled = false;
+    if (icon) icon.style.transform = 'none';
+  }, 600);
+}
+
+setInterval(() => {
+  remaining--;
+  if (secCountEl) secCountEl.textContent = String(remaining);
+  if (remaining <= 0) {
+    remaining = 10;
+    if (secCountEl) secCountEl.textContent = '10';
+    checkMaintenanceStatus();
+  }
+}, 1000);
+</script>
+</body></html>`;
+}
+
 export function renderAdminPanelHtml(customInstallJs = '') {
 return `<!DOCTYPE html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8">
@@ -747,6 +1028,7 @@ return `<!DOCTYPE html>
 <div class="ambient" aria-hidden="true"></div>
 <div class="wrap">
   <div id="pendingRestart" style="display:none;background:#3b2f05;border:1px solid #f59e0b;color:#fde68a;border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:14px">♻️ إعادة التشغيل جارية... سيتم تطبيق الإعدادات فور إقلاع البوت</div>
+  <div id="maintenanceAlert" style="display:none;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.4);color:#fbbf24;border-radius:12px;padding:12px 16px;margin-bottom:14px;font-size:14px;font-weight:700">🛠️ وضع الصيانة مفعّل حالياً — الموقع مغلق أمام الزوار وتظهر لهم شاشة الصيانة. يمكنك إيقافه من قسم "إعدادات البوت الرئيسي" أدناه.</div>
 
   <header class="topbar">
     <span class="brand-word">إدارة لايت بوت</span>
@@ -1095,6 +1377,8 @@ async function loadFleet(notify){
     document.getElementById('ms-allowWeb').checked=ms.allowPublicWebPair!==false;
     document.getElementById('ms-noSub').checked=!!ms.noSub;
     document.getElementById('ms-maint').checked=!!ms.maintenance;
+    const maintAlert=document.getElementById('maintenanceAlert');
+    if(maintAlert) maintAlert.style.display=ms.maintenance?'block':'none';
     document.getElementById('ms-autoRead').checked=!!ms.autoRead;
     document.getElementById('ms-fromMe').value=ms.fromMeMode||'both';
     document.getElementById('ms-welcome').checked=ms.welcomeEnabled!==false;
