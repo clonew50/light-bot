@@ -23,8 +23,8 @@ const SHARED_CSS = `
   --red:#ef4444;
   --ease:cubic-bezier(0.16,1,0.3,1);
 }
-html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);overflow-x:hidden}
-body{padding:18px;position:relative}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);overflow-x:hidden;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
+body{padding:18px;position:relative;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
 .ambient{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
 .ambient::before,.ambient::after{
   content:"";position:absolute;border-radius:50%;filter:blur(90px);opacity:0.18;
@@ -77,6 +77,7 @@ body{padding:18px;position:relative}
 .card{
   background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px;min-width:0;
   transition:border-color .2s var(--ease),transform .2s var(--ease);
+  white-space:normal;word-wrap:break-word;overflow-wrap:break-word;word-break:keep-all;
 }
 .card:hover{border-color:var(--border2)}
 .anim-in{animation:fadeSlideUp .4s var(--ease) both}
@@ -116,7 +117,7 @@ input,select,textarea{
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
 .ltr{direction:ltr;unicode-bidi:plaintext}
-.hint{color:var(--muted);font-size:13px;line-height:1.7}
+.hint{color:var(--muted);font-size:13px;line-height:1.7;white-space:normal;word-wrap:break-word;overflow-wrap:break-word;word-break:keep-all}
 small.t{color:#64748b}
 
 .kpi-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
@@ -940,7 +941,7 @@ return `<!DOCTYPE html>
 .panel{display:none}
 .panel.active{display:block;animation:panelFadeIn .24s var(--ease) both}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
-.qrbox{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+.qrbox{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;white-space:normal;word-wrap:break-word;overflow-wrap:break-word;word-break:keep-all}
 .qrbox img{width:min(100%,260px);background:#fff;padding:10px;border-radius:14px}
 .code{
   font-family:ui-monospace,Menlo,Consolas,monospace;font-size:28px;font-weight:800;letter-spacing:3px;
