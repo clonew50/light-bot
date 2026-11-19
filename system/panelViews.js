@@ -227,6 +227,12 @@ export function renderPublicPortalHtml(err = '') {
   .portal-grid{grid-template-columns:minmax(0,1fr)}
   .steps{grid-template-columns:minmax(0,1fr)}
 }
+@media (max-width:640px){
+  .hero-band{flex-direction:column;align-items:flex-start;gap:14px}
+  .hero-band > div:first-child{width:100%;min-width:0}
+  .hero-band .meta-line{width:100%;justify-content:flex-start;flex-wrap:wrap}
+  .hero-title{text-wrap:balance}
+}
 </style></head>
 <body>
 <div class="ambient" aria-hidden="true"></div>
@@ -243,7 +249,7 @@ export function renderPublicPortalHtml(err = '') {
   </header>
 
   <section class="hero-band">
-    <div style="min-width:0;flex:1">
+    <div style="flex:1;min-width:0;overflow-wrap:break-word;word-break:break-word">
       <h1 class="hero-title">اربط حسابك على واتساب وتحكّم في بوتك من نفس الموقع</h1>
       <p class="hero-sub">أدخل رقم هاتفك لإصدار كود ربط واتساب الفوري، مع حفظ كود تحكم خاص بك يتيح لك تعديل إعدادات بوتك (الوضع العام/الخاص، الاسم، البادئة، والترحيب) في أي وقت.</p>
     </div>
