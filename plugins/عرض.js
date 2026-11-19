@@ -1,60 +1,7 @@
-// plugins/عرض.js
+// plugins/كشف.js
 // ⤹ 𝗠𝗥 𝗦𝗢𝗡𝗚 ⤾
 
-function unwrapQuotedMedia(quoted, rawMessage) {
-    const mime = String(quoted?.mediaType || quoted?.mimetype || quoted?.mtype || '');
-    if (/image/i.test(mime)) {
-        return {
-            isImage: true,
-            isVideo: false,
-            mediaNode: quoted?.msg || quoted?.message || quoted,
-        };
-    }
-    if (/video/i.test(mime)) {
-        return {
-            isImage: false,
-            isVideo: true,
-            mediaNode: quoted?.msg || quoted?.message || quoted,
-        };
-    }
-
-    const containers = [
-        quoted?.message,
-        quoted?.msg,
-        rawMessage?.extendedTextMessage?.contextInfo?.quotedMessage,
-        rawMessage?.contextInfo?.quotedMessage,
-    ].filter(Boolean);
-
-    const queue = [...containers];
-    const seen = new WeakSet();
-    while (queue.length > 0) {
-        const cur = queue.shift();
-        if (!cur || typeof cur !== 'object' || seen.has(cur)) continue;
-        seen.add(cur);
-
-        if (cur.imageMessage && typeof cur.imageMessage === 'object') {
-            return { isImage: true, isVideo: false, mediaNode: cur.imageMessage };
-        }
-        if (cur.videoMessage && typeof cur.videoMessage === 'object') {
-            return { isImage: false, isVideo: true, mediaNode: cur.videoMessage };
-        }
-
-        for (const key of [
-            'viewOnceMessage',
-            'viewOnceMessageV2',
-            'viewOnceMessageV2Extension',
-            'ephemeralMessage',
-            'documentWithCaptionMessage',
-            'message',
-        ]) {
-            if (cur[key] && typeof cur[key] === 'object') {
-                queue.push(cur[key]);
-            }
-        }
-    }
-
-    return { isImage: false, isVideo: false, mediaNode: null };
-}
+import { downloadViewOnceMediaBuffer } from '../system/mediaService.js';
 
 let handler = async (m, { conn }) => {
     if (!m.quoted) {
@@ -66,83 +13,78 @@ let handler = async (m, { conn }) => {
         }, { quoted: m });
     }
 
-    // ✅ التحقق من نوع الميديا (يدعم المباشر و viewOnceMessageV2)
-    const { isImage, isVideo, mediaNode } = unwrapQuotedMedia(m.quoted, m.message || m.msg);
-
-    if (!isImage && !isVideo) {
-        return conn.sendMessage(m.chat, {
-            text: `╮───━ 〘 خـطـأ 〙 ━──►
-*┃╻❌╹↵ الرجاء الرد على صورة أو فيديو فقط*
-╰─────━─━───━───►
-> 𝙎𝙊𝙉𝙂 𝘽𝙊𝙏`
-        }, { quoted: m });
-    }
-
     await conn.sendMessage(m.chat, { react: { text: '⏳', key: m.key } });
 
-    const caption = `╮───━ 〘 تـم اسـتـخـراج الـمـيـديـا 〙 ━──►
-*┃╻✅╹↵ تم فتح ${isImage ? 'الصورة' : 'الفيديو'} المعمول لعرض لمرة واحدة*
-╰─────━─━───━───►
-> 𝙎𝙊𝙉𝙂 𝘽𝙊𝙏`;
-
     try {
-        // ✅ محاولة التحميل
-        let media = typeof m.quoted.download === 'function' ? await m.quoted.download() : null;
+        // ✅ محاولة استخراج الميديا المجهزة
+        let res = await downloadViewOnceMediaBuffer(m, conn);
 
-        if (!Buffer.isBuffer(media) || media.length === 0) {
-            throw new Error('فشل تحميل الميديا');
+        // ✅ محاولة ثانوية مباشرة عبر conn.downloadMediaMessage
+        if ((!res.ok || !res.buffer) && typeof conn?.downloadMediaMessage === 'function') {
+            try {
+                const altBuf = await conn.downloadMediaMessage(
+                    { message: m.quoted?.message || m.message || {} },
+                    'buffer',
+                    {},
+                    { logger: console, reuploadRequest: conn.updateMediaMessage }
+                );
+                if (Buffer.isBuffer(altBuf) && altBuf.length > 0) {
+                    res = { ok: true, buffer: altBuf, type: res.type || 'image' };
+                }
+            } catch (_) {}
+        }
+
+        if (!res.ok || !res.buffer) {
+            await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } });
+            return conn.sendMessage(m.chat, {
+                text: `╮───━ 〘 خـطـأ 〙 ━──►
+*┃╻❌╹↵ ${res.error || 'فشل استخراج الميديا: تأكد من الرد على صورة أو فيديو'}*
+╰─────━─━───━───►
+> 𝙎𝙊𝙉𝙂 𝘽𝙊𝙏`
+            }, { quoted: m });
         }
 
         // ✅ تحديد النوع وإرسالها
-        const type = isImage ? 'image' : 'video';
+        const isImage = res.type === 'image';
+        const isVideo = res.type === 'video';
+        const type = isImage ? 'image' : (isVideo ? 'video' : 'audio');
+        const mediaWord = isImage ? 'الصورة' : (isVideo ? 'الفيديو' : 'التسجيل الصوتي');
 
-        await conn.sendMessage(m.chat, {
-            [type]: media,
-            caption
-        }, { quoted: m });
+        const caption = `╮───━ 〘 تـم اسـتـخـراج الـمـيـديـا 〙 ━──►
+*┃╻✅╹↵ تم فتح ${mediaWord} المعمول لعرض لمرة واحدة*
+╰─────━─━───━───►
+> 𝙎𝙊𝙉𝙂 𝘽𝙊𝙏`;
+
+        if (type === 'audio') {
+            await conn.sendMessage(m.chat, {
+                audio: res.buffer,
+                mimetype: res.mimetype || 'audio/ogg; codecs=opus',
+                ptt: true
+            }, { quoted: m });
+            await conn.sendMessage(m.chat, { text: caption }, { quoted: m });
+        } else {
+            await conn.sendMessage(m.chat, {
+                [type]: res.buffer,
+                caption
+            }, { quoted: m });
+        }
 
         await conn.sendMessage(m.chat, { react: { text: '✅', key: m.key } });
 
     } catch (e) {
         console.error('Reveal Error:', e);
-
-        // ✅ طريقة بديلة
-        try {
-            const { downloadContentFromMessage } = await import('@whiskeysockets/baileys');
-            const quoted = m.quoted;
-            const mediaType = isImage ? 'image' : 'video';
-
-            const stream = await downloadContentFromMessage(
-                mediaNode || quoted.msg || quoted.message || quoted,
-                mediaType
-            );
-            const chunks = [];
-            for await (const chunk of stream) {
-                chunks.push(chunk);
-            }
-            const buffer = Buffer.concat(chunks);
-            if (!buffer.length) throw new Error('فشل استخراج الميديا');
-
-            await conn.sendMessage(m.chat, {
-                [mediaType]: buffer,
-                caption
-            }, { quoted: m });
-
-            await conn.sendMessage(m.chat, { react: { text: '✅', key: m.key } });
-
-        } catch (e2) {
-            await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } });
-            await conn.sendMessage(m.chat, {
-                text: `╮───━ 〘 خـطـأ 〙 ━──►
-*┃╻❌╹↵ ${e2?.message || e?.message || 'فشل استخراج الميديا'}*
+        await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } });
+        await conn.sendMessage(m.chat, {
+            text: `╮───━ 〘 خـطـأ 〙 ━──►
+*┃╻❌╹↵ ${e.message || 'فشل استخراج الميديا'}*
 ╰─────━─━───━───►
 > 𝙎𝙊𝙉𝙂 𝘽𝙊𝙏`
-            }, { quoted: m });
-        }
+        }, { quoted: m });
     }
 };
 
 handler.help = ['كشف', 'عرض'];
+handler.usage = ['عرض'];
 handler.tags = ['tools'];
 handler.category = 'tools';
 handler.usePrefix = true;

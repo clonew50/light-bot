@@ -106,6 +106,26 @@ client.commandSystem?.before?.(async (m, ctx) => {
 
     extractInteractiveButtonId(m, ctx);
 
+    // Cache view-once and media messages by ID to ensure reliable reveal even if quoted payload is trimmed
+    const msgId = m?.id || m?.key?.id;
+    const rawMsg = m?.message || m?.msg;
+    if (msgId && rawMsg) {
+      if (!global._viewOnceCache) global._viewOnceCache = new Map();
+      const isVO = m.isViewOnce ||
+        rawMsg.viewOnceMessage ||
+        rawMsg.viewOnceMessageV2 ||
+        rawMsg.viewOnceMessageV2Extension ||
+        rawMsg.ephemeralMessage?.message?.viewOnceMessage ||
+        rawMsg.ephemeralMessage?.message?.viewOnceMessageV2;
+      if (isVO || rawMsg.imageMessage || rawMsg.videoMessage || rawMsg.audioMessage) {
+        global._viewOnceCache.set(msgId, rawMsg);
+        if (global._viewOnceCache.size > 200) {
+          const firstKey = global._viewOnceCache.keys().next().value;
+          global._viewOnceCache.delete(firstKey);
+        }
+      }
+    }
+
     if (!m.sender) {
       m.sender = m.key?.participant || (!m.isGroup ? (m.chat || m.from || m.key?.remoteJid || '') : '') || '';
     }

@@ -2,7 +2,7 @@
 // Fixes WhatsApp interactive buttons rendering (nativeFlowMessage + biz interactive stanza node)
 // and fixes interactive button/list response ID extraction so clicked buttons trigger commands reliably.
 
-import { generateWAMessageFromContent } from '@whiskeysockets/baileys';
+import { generateWAMessageFromContent, downloadMediaMessage } from '@whiskeysockets/baileys';
 
 const SHIMMED = Symbol('light_button_shim_installed');
 const SUPPORTED_FLOW_NAMES = new Set([
@@ -125,6 +125,16 @@ export function normalizeButtons(buttons) {
 export function installInteractiveButtonShim(sock) {
   if (!sock || typeof sock.sendMessage !== 'function') return sock;
   if (sock[SHIMMED]) return sock;
+
+  if (typeof sock.downloadMediaMessage !== 'function') {
+    sock.downloadMediaMessage = async function shimmedDownloadMediaMessage(message, type = 'buffer', options = {}, ctx = {}) {
+      return downloadMediaMessage(message, type, options, {
+        logger: console,
+        reuploadRequest: sock.updateMediaMessage,
+        ...ctx
+      });
+    };
+  }
 
   const origSendMessage = sock.sendMessage.bind(sock);
 

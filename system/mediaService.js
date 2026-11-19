@@ -14,6 +14,7 @@ import FormData from 'form-data';
 import sharp from 'sharp';
 import { fileTypeFromBuffer } from 'file-type';
 import * as ruhend from 'ruhend-scraper';
+import { downloadContentFromMessage, downloadMediaMessage } from '@whiskeysockets/baileys';
 
 const execFileAsync = promisify(execFile);
 const APP_UA = 'LightBot/1.0 (https://github.com/clonew50/light-bot)';
@@ -435,6 +436,192 @@ export async function searchYouTubeEdits(query, limit = 5) {
   }));
 }
 
+/* ── 10. View-Once Media Deep Extractor & Robust Downloader ── */
+export function findViewOnceMediaDeep(obj, depth = 0, seen = new WeakSet()) {
+  if (!obj || typeof obj !== 'object' || depth > 10) return null;
+  if (seen.has(obj)) return null;
+  seen.add(obj);
+
+  // If node has media credentials directly
+  if ((obj.directPath || obj.url) && (obj.mediaKey || obj.mimetype)) {
+    let type = 'image';
+    if (obj.mimetype?.includes('video') || typeof obj.seconds === 'number') type = 'video';
+    else if (obj.mimetype?.includes('audio') || obj.ptt) type = 'audio';
+    return { node: obj, type };
+  }
+
+  // Priority search for common WhatsApp media envelope keys
+  const priorityKeys = [
+    'imageMessage',
+    'videoMessage',
+    'audioMessage',
+    'documentMessage',
+    'viewOnceMessageV2',
+    'viewOnceMessage',
+    'viewOnceMessageV2Extension',
+    'ephemeralMessage',
+    'documentWithCaptionMessage',
+    'message',
+    'msg',
+    'quotedMessage'
+  ];
+
+  for (const k of priorityKeys) {
+    if (obj[k] && typeof obj[k] === 'object') {
+      const found = findViewOnceMediaDeep(obj[k], depth + 1, seen);
+      if (found) {
+        if (k === 'imageMessage') found.type = 'image';
+        else if (k === 'videoMessage') found.type = 'video';
+        else if (k === 'audioMessage') found.type = 'audio';
+        return found;
+      }
+    }
+  }
+
+  for (const k of Object.keys(obj)) {
+    if (['key', 'quoted', 'conn', 'sock'].includes(k)) continue;
+    const val = obj[k];
+    if (val && typeof val === 'object') {
+      const found = findViewOnceMediaDeep(val, depth + 1, seen);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
+export async function downloadViewOnceMediaBuffer(m, conn) {
+  // 1) Direct m.quoted.download() if it works
+  if (typeof m?.quoted?.download === 'function') {
+    try {
+      const buf = await m.quoted.download();
+      if (Buffer.isBuffer(buf) && buf.length > 0) {
+        let detectedType = 'image';
+        const deepFound = findViewOnceMediaDeep(m.quoted) || findViewOnceMediaDeep(m.message) || findViewOnceMediaDeep(m.msg);
+        if (deepFound?.type) {
+          detectedType = deepFound.type;
+        } else if (buf.length >= 8 && buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) {
+          detectedType = 'video';
+        } else if (buf.length >= 4 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) {
+          detectedType = 'video';
+        } else if (buf.length >= 4 && buf[0] === 0x4f && buf[1] === 0x67 && buf[2] === 0x67 && buf[3] === 0x53) {
+          detectedType = 'audio';
+        } else {
+          const rawMime = String(m.quoted?.mimetype || m.quoted?.mediaType || '');
+          if (/video/i.test(rawMime)) detectedType = 'video';
+          else if (/audio/i.test(rawMime)) detectedType = 'audio';
+        }
+
+        return {
+          ok: true,
+          buffer: buf,
+          type: detectedType,
+          mimetype: deepFound?.node?.mimetype || m.quoted?.mimetype
+        };
+      }
+    } catch (_) {}
+  }
+
+  // 2) Collect search candidates (memory cache, quoted, message, contextInfo)
+  const stanzaId =
+    m?.quoted?.id ||
+    m?.message?.extendedTextMessage?.contextInfo?.stanzaId ||
+    m?.msg?.contextInfo?.stanzaId;
+  const cached = stanzaId && global._viewOnceCache?.get(stanzaId);
+
+  const candidates = [
+    cached,
+    m?.quoted?.message,
+    m?.message?.extendedTextMessage?.contextInfo?.quotedMessage,
+    m?.msg?.contextInfo?.quotedMessage,
+    m?.quoted,
+    m?.message,
+    m?.msg
+  ].filter(Boolean);
+
+  let mediaInfo = null;
+  for (const c of candidates) {
+    mediaInfo = findViewOnceMediaDeep(c);
+    if (mediaInfo) break;
+  }
+
+  if (!mediaInfo) {
+    const rawMime = String(m?.quoted?.mediaType || m?.quoted?.mimetype || m?.quoted?.mtype || '');
+    if (m?.quoted && !/image|video|audio|viewOnce/i.test(rawMime)) {
+      return { ok: false, error: 'الرجاء الرد على صورة أو فيديو فقط' };
+    }
+    return { ok: false, error: 'تعذر العثور على وسائط العرض لمرة واحدة في الرسالة' };
+  }
+
+  const { node, type } = mediaInfo;
+
+  // 3) Try conn.downloadMediaMessage
+  if (typeof conn?.downloadMediaMessage === 'function') {
+    const key = m?.quoted?.key || {
+      remoteJid: m?.chat,
+      id: stanzaId,
+      fromMe: false
+    };
+    const wrap = { [type + 'Message']: node };
+    const variants = [
+      { key, message: wrap },
+      { message: wrap }
+    ];
+    for (const v of variants) {
+      try {
+        const buf = await conn.downloadMediaMessage(
+          v,
+          'buffer',
+          {},
+          { logger: console, reuploadRequest: conn?.updateMediaMessage }
+        );
+        if (Buffer.isBuffer(buf) && buf.length > 0) {
+          return { ok: true, buffer: buf, type, node, mimetype: node.mimetype };
+        }
+      } catch (_) {}
+    }
+  }
+
+  // 4) Try downloadContentFromMessage with unwrapped media node
+  try {
+    if (node && (node.directPath || node.url)) {
+      const stream = await downloadContentFromMessage(node, type);
+      const chunks = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      const buf = Buffer.concat(chunks);
+      if (Buffer.isBuffer(buf) && buf.length > 0) {
+        return { ok: true, buffer: buf, type, node, mimetype: node.mimetype };
+      }
+    }
+  } catch (err) {
+    console.error('[viewonce] downloadContentFromMessage failed:', err?.message || err);
+  }
+
+  // 5) Try thumbnail fallback if full media is not available on server
+  if (node?.thumbnailDirectPath || node?.jpegThumbnail) {
+    if (Buffer.isBuffer(node.jpegThumbnail) && node.jpegThumbnail.length > 0) {
+      return { ok: true, buffer: node.jpegThumbnail, type: 'image', node, isThumbnail: true };
+    }
+    try {
+      const stream = await downloadContentFromMessage(
+        { directPath: node.thumbnailDirectPath, mediaKey: node.mediaKey },
+        'thumbnail-link'
+      );
+      const chunks = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      const buf = Buffer.concat(chunks);
+      if (Buffer.isBuffer(buf) && buf.length > 0) {
+        return { ok: true, buffer: buf, type: 'image', node, isThumbnail: true };
+      }
+    } catch (_) {}
+  }
+
+  return {
+    ok: false,
+    error: 'تعذر استخراج الميديا: قد تكون الرسالة منتهية الصلاحية أو غير متاحة على خوادم واتساب'
+  };
+}
+
 export default {
   fetchAnimeGif,
   renderTextProLogo,
@@ -445,5 +632,7 @@ export default {
   searchPinterestImages,
   resolveSpotifyTrack,
   downloadTikTokViaRuhend,
-  searchYouTubeEdits
+  searchYouTubeEdits,
+  findViewOnceMediaDeep,
+  downloadViewOnceMediaBuffer
 };

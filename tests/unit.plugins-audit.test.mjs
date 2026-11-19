@@ -295,9 +295,11 @@ test('viewonce reveal handler (كشف / عرض) handles missing quote, non-media
   assert.match(h1.sent[0].content.text, /𝙎𝙊𝙉𝙂 𝘽𝙊𝙏/);
 
   // 2) Unsupported non-media quote
-  const h2 = makeHarness({ quoted: { mediaType: 'audio', text: 'voice' } });
+  const h2 = makeHarness({ quoted: { mediaType: 'text', text: 'plain text message' } });
   await viewMod.default(h2.m, { conn: h2.conn });
-  assert.match(h2.sent[0].content.text, /الرجاء الرد على صورة أو فيديو فقط/);
+  const errReply = h2.sent.find(s => s.content?.text);
+  assert.ok(errReply, 'should reply with error text');
+  assert.match(errReply.content.text, /الرجاء الرد على صورة أو فيديو/);
 
   // 3) Direct image quote with working download()
   const imgBuf = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
@@ -329,4 +331,22 @@ test('viewonce reveal handler (كشف / عرض) handles missing quote, non-media
   await viewMod.default(h4.m, { conn: h4.conn });
   assert.deepEqual(h4.sent[1].content.video, vidBuf);
   assert.match(h4.sent[1].content.caption, /تم فتح الفيديو المعمول لعرض لمرة واحدة/);
+
+  // 5) Deep extraction when download() returns null and conn.downloadMediaMessage succeeds
+  const h5 = makeHarness({
+    quoted: {
+      mediaType: 'viewOnceV2',
+      id: 'CACHED-1',
+      message: {
+        message: {
+          imageMessage: { mimetype: 'image/jpeg', directPath: '/v/t62/test' }
+        }
+      },
+      download: async () => null // download fails like in meowsab
+    }
+  });
+  h5.conn.downloadMediaMessage = async () => imgBuf;
+  await viewMod.default(h5.m, { conn: h5.conn });
+  assert.deepEqual(h5.sent[1].content.image, imgBuf);
+  assert.match(h5.sent[1].content.caption, /تم فتح الصورة المعمول لعرض لمرة واحدة/);
 });
