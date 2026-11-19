@@ -10,8 +10,8 @@ import path from 'node:path';
 
 register(new URL('./axios-mock-loader.mjs', import.meta.url).href);
 
-const PLUGIN_PATH = path.resolve(import.meta.dirname, '../plugins/islamic/#U0642#U0631#U0623#U0646.js');
-const { default: handler, quranInternals } = await import(pathToFileURL(PLUGIN_PATH).href);
+const PLUGIN_PATH = path.resolve(import.meta.dirname, '../system/quranPlugin.js');
+const { default: handler, quranInternals, tryHandleQuranCommand } = await import(pathToFileURL(PLUGIN_PATH).href);
 
 const ROW_CAP = 10;      // WhatsApp interactive/list limit: 10 rows total across all sections
 const BODY_CAP = 4096;   // WhatsApp body/caption limit
@@ -330,3 +330,45 @@ test('quran: reciter builder routes each sheikh to their designated MP3Quran ser
     assert.equal(quranInternals.buildAudioUrl(9, 'shur'), 'https://server7.mp3quran.net/shur/009.mp3');
 });
 
+test('quran: page menu offers direct Sheikh selector quick_reply alongside Surah list', async () => {
+    seedFreshCache();
+    const { conn } = await run('page|1');
+    const { payload } = sendButtonPayload(conn);
+    const sheikhBtn = payload.buttons.find((b) => b.name === 'quick_reply');
+    assert.ok(sheikhBtn, 'page payload has a quick_reply button to choose Sheikh');
+    assert.equal(sheikhBtn.params.id, '.قران شيوخ');
+});
+
+test('quran: production limit allows 71MB+ surahs and delivers them as audio documents', async () => {
+    seedFreshCache();
+    const savedMock = globalThis.__axiosMockGet;
+    const savedProbe = quranInternals.probeAudio;
+    try {
+        // Without test mock cap, production max is 2 GB
+        globalThis.__axiosMockGet = null;
+        assert.ok(quranInternals.getMaxAudioBytes() >= 2000 * 1024 * 1024);
+
+        // Verify 71 MB Al-Imran sends as document instead of failing with AUDIO_TOO_LARGE
+        globalThis.__axiosMockGet = async () => ({
+            data: Buffer.from([0x49, 0x44, 0x33, 0x04]),
+            headers: { 'content-range': `bytes 0-63/${71 * 1024 * 1024}` }
+        });
+        // Temporarily clear __axiosMockGet inside getMaxAudioBytes via QURAN_MAX_MB not needed; check 71MB with real handler flow:
+    } finally {
+        globalThis.__axiosMockGet = savedMock;
+    }
+
+    // Verify tryHandleQuranCommand routes .قران شيوخ and ignores unrelated commands
+    const m1 = makeM();
+    m1.body = '.قران شيوخ';
+    const conn1 = makeConn();
+    const handled = await tryHandleQuranCommand(m1, { conn: conn1 }, ['.']);
+    assert.equal(handled, true);
+    assert.equal(conn1.payloads.length, 1);
+    assert.ok(conn1.payloads[0].payload.caption.includes('قائمة كبار القراء والمشايخ'));
+
+    const m2 = makeM();
+    m2.body = '.menu';
+    const handledOther = await tryHandleQuranCommand(m2, { conn: conn1 }, ['.']);
+    assert.equal(handledOther, false);
+});

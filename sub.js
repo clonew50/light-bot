@@ -9,6 +9,7 @@ import {
   recordSubStatusEvent,
   syncSubBotSelfOwner
 } from "./system/botRegistry.js";
+import { installInteractiveButtonShim } from "./system/buttonFix.js";
 
 // خريطة لتخزين حالة الوضع لكل بوت فرعي (المفتاح هو uid أو رقم البوت)
 const subBotModes = new Map();
@@ -73,6 +74,7 @@ async function sub(client) {
 
   global.subBots.on('ready', async (uid, sock) => {
     console.log(`✅ [SubBot ${uid}] Connected!`);
+    try { installInteractiveButtonShim(sock); } catch {}
     try { syncSubBotSelfOwner(global.subBots.get(uid), sock); } catch {}
     try { recordSubReadyEvent(uid, sock, global.subBots); } catch {}
   });
@@ -209,9 +211,13 @@ function getMessageText(msg) {
     try {
       const p = JSON.parse(msg.message.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson);
       if (p.id) return p.id;
+      if (p.selectedRowId) return p.selectedRowId;
       if (p.displayText) return p.displayText;
     } catch {}
   }
+  if (msg.message.buttonsResponseMessage?.selectedButtonId) return msg.message.buttonsResponseMessage.selectedButtonId;
+  if (msg.message.listResponseMessage?.singleSelectReply?.selectedRowId) return msg.message.listResponseMessage.singleSelectReply.selectedRowId;
+  if (msg.message.templateButtonReplyMessage?.selectedId) return msg.message.templateButtonReplyMessage.selectedId;
   return msg.body || null;
 }
 

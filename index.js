@@ -14,6 +14,8 @@ import { createPeriodicRestartScheduler, installPresenceCap } from './system/run
 import { pushEvent as pushRuntimeEvent } from './system/events.js';
 import { attachLiveness, isAlive, verifyRestartOutcome } from './system/liveness.js';
 import { applyMainBotSettingsOnBoot, syncConnectedBotOwner, syncSubBotSelfOwner } from './system/botRegistry.js';
+import { extractInteractiveButtonId, installInteractiveButtonShim } from './system/buttonFix.js';
+import { tryHandleQuranCommand } from './system/quranPlugin.js';
 
 // أحداث حارس الإقلاع (bootGuard) بتتبعت من هنا بنوع مستقل — نفس الدالة اللي
 // بتترحّل لناقل الأحداث، بس kind='boot' عشان تبان في اللوحة كـ"إقلاع".
@@ -97,18 +99,12 @@ if (!global.db) {
 const { config } = client;
 config.info = buildInfo();
 applyMainBotSettingsOnBoot(client);
-client.commandSystem?.before?.((m, ctx) => {
+client.commandSystem?.before?.(async (m, ctx) => {
   try {
-    const interactiveMsg = m?.message?.interactiveResponseMessage || m?.msg?.message?.interactiveResponseMessage;
-    if (interactiveMsg?.nativeFlowResponseMessage?.paramsJson) {
-      try {
-        const parsed = JSON.parse(interactiveMsg.nativeFlowResponseMessage.paramsJson);
-        if (parsed.id) {
-          m.body = parsed.id;
-          if (m.text !== undefined) m.text = parsed.id;
-        }
-      } catch {}
-    }
+    if (client.sock) installInteractiveButtonShim(client.sock);
+    if (ctx?.conn) installInteractiveButtonShim(ctx.conn);
+
+    extractInteractiveButtonId(m, ctx);
 
     if (!m.sender) {
       m.sender = m.key?.participant || (!m.isGroup ? (m.chat || m.from || m.key?.remoteJid || '') : '') || '';
@@ -135,6 +131,10 @@ client.commandSystem?.before?.((m, ctx) => {
       }
       m.isOwner = true;
       if (ctx && typeof ctx === 'object') ctx.isOwner = true;
+    }
+
+    if (await tryHandleQuranCommand(m, ctx, client.config?.prefix)) {
+      return true;
     }
   } catch {}
   return false;

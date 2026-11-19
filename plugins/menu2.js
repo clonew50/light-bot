@@ -77,20 +77,28 @@ async function handler(m, { conn, bot, command, args }) {
 
     // 1️⃣ القائمة الرئيسية بالأزرار عند كتابة الأمر بدون أرقام
     if (!selected && !args[0]) {
-        const menuText = `*لايت في الخدمة 📜*\n\n❐═━━━═╊⊰🩸⊱╉═━━━═❐\n┇ 👤  الـمـسـتـخـدم: @${m.sender.split("@")[0]}\n┇ ⚙️  الـتـشـغـيـل: ${uptimeFormatted}\n┇ 📜  الـوقـت: ${date} ⁝ ${time}\n❐═━━━═╊⊰🩸⊱╉═━━━═❐
-
-*لمعرفة اوامر وامكانيات البوت اكتب (.شرح)*
-`;
+        const menuText =
+            `╭─┈──┈─⟞🩸⟝─┈──┈─╮\n` +
+            `┃ *لايت في الخدمة 📜*\n` +
+            `╰─┈──┈─⟞🩸⟝─┈──┈─╯\n\n` +
+            `❐═━━━═╊⊰🩸⊱╉═━━━═❐\n` +
+            `┃ 👤 *المستخدم:* @${m.sender.split("@")[0]}\n` +
+            `┃ ⚙️ *التشغيل:* ${uptimeFormatted}\n` +
+            `┃ 📅 *التاريخ:* ${date}\n` +
+            `┃ ⏰ *الوقت:* ${time}\n` +
+            `❐═━━━═╊⊰🩸⊱╉═━━━═❐\n\n` +
+            `✨ *اختر قسماً من القائمة أو اكتب (.شرح)*`;
         
         await conn.sendButtonNormal(m.chat, {
             media: { url: "https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/0b22c6a0-3522-4e3d-b1b8-120642cb25b2.jpg" },
             mediaType: 'image',
             caption: menuText,
+            footer: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻',
             buttons: [
                 {
                     name: "single_select",
                     params: {
-                        title: "قائمة 📜 الاوامر",
+                        title: "📜 قائمة الأوامر",
                         sections: sections
                     }
                 },
@@ -152,22 +160,29 @@ async function handler(m, { conn, bot, command, args }) {
         const usages = Array.isArray(c.usage) ? c.usage : [c.usage];
         return usages
             .filter(Boolean)
-            .map(cmd => ` ${cat[3]} ┇ \`.${cmd}\``)
+            .map(cmd => `┃ ${cat[3]} *.${cmd}*`)
             .join('\n');
     }).join('\n');
 
-    const resultText = `❐═━━━═╊⊰🩸⊱╉═━━━═❐\n┃ *قـسـم ${cat[1]} ${cat[3]}*\n❐═━━━═╊⊰🩸⊱╉═━━━═❐\n\n${cmdsList}\n\n❐═━━━═╊⊰🩸⊱╉═━━━═❐\n\n𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻`;
+    const resultText =
+        `╭─┈──┈─⟞${cat[3]}⟝─┈──┈─╮\n` +
+        `┃ *قسم ${cat[1]}*\n` +
+        `╰─┈──┈─⟞${cat[3]}⟝─┈──┈─╯\n\n` +
+        `❐═━━━═╊⊰🩸⊱╉═━━━═❐\n` +
+        `${cmdsList}\n` +
+        `❐═━━━═╊⊰🩸⊱╉═━━━═❐`;
 
     // إرسال كرسالة قائمة تفاعلية تحتوي على الأوامر مع إدراج زر تصفح بقية الأقسام
     await conn.sendButtonNormal(m.chat, {
         media: { url: botImg },
         mediaType: 'image',
         caption: resultText.trim(),
+        footer: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻',
         buttons: [
             {
                 name: "single_select",
                 params: {
-                    title: "تصفح الاقسام الاخرى 📜",
+                    title: "📜 تصفح الأقسام الأخرى",
                     sections: sections
                 }
             }
