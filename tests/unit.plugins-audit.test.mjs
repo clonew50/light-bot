@@ -281,3 +281,52 @@ test('tools & games bug fixes: base64 strip, color swatch, editImage sharp filte
   await makerMod.default(mh.m, { conn: mh.conn, text: '', usedPrefix: '.', command: 'ستيكر-نص' });
   assert.ok(mh.replies.length >= 1);
 });
+
+test('viewonce reveal handler (كشف / عرض) handles missing quote, non-media, direct image, and viewOnceMessageV2', async () => {
+  const viewMod = await loadMod('plugins/عرض.js');
+  for (const cmd of ['كشف', 'reveal', 'كشف-صوره', 'كشف-فيديو', 'عرض']) {
+    assert.ok(viewMod.default.command.includes(cmd), `command list should include ${cmd}`);
+  }
+
+  // 1) Missing quoted message
+  const h1 = makeHarness();
+  await viewMod.default(h1.m, { conn: h1.conn });
+  assert.match(h1.sent[0].content.text, /قم بالرد على الصورة أو الفيديو/);
+  assert.match(h1.sent[0].content.text, /𝙎𝙊𝙉𝙂 𝘽𝙊𝙏/);
+
+  // 2) Unsupported non-media quote
+  const h2 = makeHarness({ quoted: { mediaType: 'audio', text: 'voice' } });
+  await viewMod.default(h2.m, { conn: h2.conn });
+  assert.match(h2.sent[0].content.text, /الرجاء الرد على صورة أو فيديو فقط/);
+
+  // 3) Direct image quote with working download()
+  const imgBuf = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+  const h3 = makeHarness({
+    quoted: {
+      mediaType: 'image',
+      download: async () => imgBuf
+    }
+  });
+  await viewMod.default(h3.m, { conn: h3.conn });
+  assert.equal(h3.sent[0].content.react.text, '⏳');
+  assert.deepEqual(h3.sent[1].content.image, imgBuf);
+  assert.match(h3.sent[1].content.caption, /تم فتح الصورة المعمول لعرض لمرة واحدة/);
+  assert.equal(h3.sent[2].content.react.text, '✅');
+
+  // 4) Wrapped viewOnceMessageV2 video where m.quoted.mediaType is viewOnceV2
+  const vidBuf = Buffer.from([0, 0, 0, 24, 102, 116, 121, 112]);
+  const h4 = makeHarness({
+    quoted: {
+      mediaType: 'viewOnceV2',
+      message: {
+        message: {
+          videoMessage: { mimetype: 'video/mp4', url: 'https://example.com/v' }
+        }
+      },
+      download: async () => vidBuf
+    }
+  });
+  await viewMod.default(h4.m, { conn: h4.conn });
+  assert.deepEqual(h4.sent[1].content.video, vidBuf);
+  assert.match(h4.sent[1].content.caption, /تم فتح الفيديو المعمول لعرض لمرة واحدة/);
+});
