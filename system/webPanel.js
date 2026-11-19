@@ -559,19 +559,22 @@ const PANEL_HTML = renderAdminPanelHtml(INSTALL_RENDER_JS);
 /* ============ معالجة الطلبات ============ */
 // تهيئة مبدئية: getClientInfo ممكن يتنده قبل startWebPanel (اختبارات) —
 // startWebPanel بيستبدلها بالقيم المقروءة من القرص.
+let panelCfg = readPanelConfig();
+
 export function isMaintenanceActive(client) {
-  if (global.db && typeof global.db.maintenance === 'boolean') {
-    return global.db.maintenance;
+  if (global.db && typeof global.db.maintenance === 'boolean' && global.db.maintenance === true) {
+    return true;
   }
   try {
     const ms = getMainBotSettings(client);
-    return Boolean(ms?.maintenance);
+    return Boolean(ms?.maintenance === true);
   } catch (_) {
     return false;
   }
 }
 
 async function handle(req, res, client) {
+  panelCfg = readPanelConfig();
   const ip = clientIp(req);
   const url = new URL(req.url, 'http://localhost');
   const cookies = parseCookies(req);
