@@ -5,11 +5,7 @@
   ═══════════════════════════════════════════
 */
 import sharp from 'sharp'
-import { pruneCooldown } from '../../system/cooldowns.js'
 import { renderColorSwatch } from '../../system/mediaService.js'
-
-const cooldown = new Map()
-const COOLDOWN_MS = 2000
 
 function randomColor() {
   const r = Math.floor(Math.random() * 256)
@@ -95,11 +91,6 @@ async function renderPaletteImage(colors) {
 const handler = async (m, { conn, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
-    pruneCooldown(cooldown, COOLDOWN_MS)
 
     const subCmd = args[0]?.toLowerCase()
 
@@ -110,7 +101,6 @@ const handler = async (m, { conn, args, usedPrefix = '.' }) => {
     }
 
     if (subCmd === 'واحد' || subCmd === 'single' || subCmd === 'واحدة') {
-      cooldown.set(m.sender, now)
       const color = randomColor()
       const { hex, rgb, hsl } = formatColor(color.r, color.g, color.b)
       const img = await renderColorSwatch(hex, rgb, hsl)
@@ -124,7 +114,6 @@ const handler = async (m, { conn, args, usedPrefix = '.' }) => {
     }
 
     if (subCmd === 'باليت' || subCmd === 'palette') {
-      cooldown.set(m.sender, now)
       const palette = generatePalette(5)
       const img = await renderPaletteImage(palette)
       await m.react('🎨')
@@ -144,7 +133,6 @@ const handler = async (m, { conn, args, usedPrefix = '.' }) => {
     }
 
     if (subCmd === 'تدرج' || subCmd === 'gradient') {
-      cooldown.set(m.sender, now)
       const c1 = randomColor()
       const c2 = randomColor()
       const { hex: h1 } = formatColor(c1.r, c1.g, c1.b)
@@ -159,7 +147,6 @@ const handler = async (m, { conn, args, usedPrefix = '.' }) => {
       )
     }
 
-    cooldown.set(m.sender, now)
     await m.react('🎨')
     const color = randomColor()
     const { hex, rgb, hsl } = formatColor(color.r, color.g, color.b)
@@ -188,5 +175,4 @@ const handler = async (m, { conn, args, usedPrefix = '.' }) => {
 handler.command = ['color', 'لون', 'الوان', 'randomcolor']
 handler.usage = ['color', 'color واحد', 'color باليت', 'color تدرج']
 handler.category = 'tools'
-handler.cooldown = 2
 export default handler

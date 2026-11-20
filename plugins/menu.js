@@ -204,7 +204,7 @@ html,body{margin:0;min-height:100%;background:#060609;color:#f1f1f4;font-family:
 
       var sec=document.createElement("div"); sec.className="sec";
       var h=document.createElement("div"); h.className="sec-head";
-      h.textContent=c.emoji+" "+c.name+" · "+items.length;
+      h.textContent=c.emoji+" "+c.name+" · "+(c.count||items.length);
       sec.appendChild(h);
 
       items.forEach(function(u){
@@ -248,10 +248,17 @@ const menuV2 = async (m, { conn, bot, command, usedPrefix, sock }) => {
 
     const cats = ordered.map((key) => {
         const [name, emoji] = metaOf(key);
-        const cmds = byCat.get(key).flatMap((c) => usagesOf(c));
-        return { key, name, emoji, cmds };
+        const list = byCat.get(key);
+        const totalInCat = list.length;
+        const cmds = [];
+        for (let i = 0; i < list.length && cmds.length < 30; i++) {
+            for (const u of usagesOf(list[i])) {
+                if (cmds.length < 30) cmds.push(u);
+            }
+        }
+        return { key, name, emoji, count: totalInCat, cmds };
     });
-    const total = cats.reduce((n, c) => n + c.cmds.length, 0);
+    const total = cats.reduce((n, c) => n + c.count, 0);
 
     const dataJson = JSON.stringify({ prefix, total, cats }).replace(/</g, '\\u003c');
     const html = HTML_MENU.replace('/*__MENU_DATA__*/', function () { return dataJson; });
@@ -341,8 +348,8 @@ const menuV2 = async (m, { conn, bot, command, usedPrefix, sock }) => {
         );
     } catch (error) {
         console.error('[اوامر2] rich response error:', error);
-        const fallback = cats.map((c) => `${c.emoji} *${c.name}*\n` + c.cmds.map((u) => `┇ \`${prefix}${u}\``).join('\n')).join('\n\n');
-        await m.reply(`${fallback}\n\n❐═━━━═╊⊰🩸⊱╉═━━━═❐\n> تعذّر عرض القائمة التفاعلية، حدّث meowsab وأعد التشغيل.`);
+        const fallback = cats.slice(0, 15).map((c) => `${c.emoji} *${c.name} (${c.count})*\n` + c.cmds.slice(0, 10).map((u) => `┇ \`${prefix}${u}\``).join('\n')).join('\n\n');
+        await m.reply(`${fallback}\n\n❐═━━━═╊⊰🩸⊱╉═━━━═❐\n> استخدم \`.بحث_امر\` أو \`.قسم <القسم>\` لتصفح باقي الأوامر (${total.toLocaleString()}).`);
     }
 };
 
@@ -481,7 +488,10 @@ menuV1.before = async (m, { conn, bot }) => {
     await conn.sendMessage(m.chat, { delete: { remoteJid: m.chat, id: m.quoted.id, fromMe: true } });
     delete global.menus[m.quoted.id];
 
-    const cmdsList = cmds.map(c => `┇ ${cat[3]}  /${c.usage.join(`\n┇ ${cat[3]}  /`)}`).join('\n');
+    const totalInCat = cmds.length;
+    const shownCmds = cmds.slice(0, 40);
+    const cmdsList = shownCmds.map(c => `┇ ${cat[3]}  /${c.usage.join(`\n┇ ${cat[3]}  /`)}`).join('\n');
+    const moreNote = totalInCat > 40 ? `\n\n📌 *معروض أول 40 من أصل ${totalInCat.toLocaleString()} أمر — اكتب \`.قسم ${cat[2]} 2\` أو \`.بحث_امر\` للتصفح.*` : '';
 
     await conn.sendMessage(m.chat, {
         text: `
@@ -489,7 +499,7 @@ menuV1.before = async (m, { conn, bot }) => {
 ┃ *قـسـم ${cat[1]} ${cat[3]}*
 ╰─┈──┈─⟞🩸⟝─┈──┈─╯
 
-${cmdsList}
+${cmdsList}${moreNote}
 
 ╭─┈─┈┈─⟞🩸⟝─┈┈─┈─╮
 ┃ *𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻*

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -66,6 +67,7 @@ test('Creative Packs: 1,000+ genuinely distinct new commands with zero numbered 
   }
 
   // Scan ALL prior plugins (both non-pack plugins and the 7 original pack files) in an isolated process
+  const tmpJson = path.resolve(`.tmp-creative-scan-${Date.now()}.json`);
   const scanScript = `
     import fs from 'node:fs';
     import path from 'node:path';
@@ -88,18 +90,21 @@ test('Creative Packs: 1,000+ genuinely distinct new commands with zero numbered 
         for (const c of cmds) if (typeof c === 'string') out.push([c.toLowerCase(), f]);
       }
     }
-    process.stdout.write('EXISTING_JSON:' + JSON.stringify(out));
+    fs.writeFileSync(${JSON.stringify(tmpJson)}, JSON.stringify(out));
     process.exit(0);
   `;
-  const raw = execFileSync(process.execPath, ['--input-type=module', '-e', scanScript], {
-    cwd: process.cwd(),
-    env: { ...process.env, PORT: '0' },
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe']
-  });
-  const marker = raw.lastIndexOf('EXISTING_JSON:');
-  assert.ok(marker >= 0, 'Expected EXISTING_JSON marker');
-  const existingMap = new Map(JSON.parse(raw.slice(marker + 'EXISTING_JSON:'.length)));
+  let existingMap;
+  try {
+    execFileSync(process.execPath, ['--input-type=module', '-e', scanScript], {
+      cwd: process.cwd(),
+      env: { ...process.env, PORT: '0' },
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    existingMap = new Map(JSON.parse(fs.readFileSync(tmpJson, 'utf8')));
+  } finally {
+    try { fs.rmSync(tmpJson, { force: true }); } catch {}
+  }
 
   for (const [k, file] of newTriggers) {
     assert.equal(

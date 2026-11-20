@@ -6,14 +6,11 @@
   ════════════════════════════════════════════════
 */
 
-import { pruneCooldown } from "../../system/cooldowns.js";
 
-const COOLDOWN_MS = 6000;
 const Q_PER_GAME = 10;
 const Q_TIME_MS = 45000;
 const HINT_MAX = 2;
 const OPT = ['a', 'b', 'c', 'd'];
-const cooldown = new Map();
 
 const CATS = [
   { key: 'general', label: 'عامة', emoji: '🌍' },
@@ -238,13 +235,6 @@ const handler = async (m, { conn, args, text }) => {
 
     // Cooldown for starting a new game / opening the list
     const now = Date.now();
-    const last = cooldown.get(chatId) || 0;
-    if (now - last < COOLDOWN_MS) {
-      const left = Math.ceil((COOLDOWN_MS - (now - last)) / 1000);
-      return m.reply(`⏳ يرجى الانتظار ${left} ثانية قبل بدء اختبار جديد.`);
-    }
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(chatId, now);
 
     const catKey = sub || 'general';
     if (catKey === 'random' || !CATS.some((c) => c.key === catKey || c.label === sub)) {
@@ -265,7 +255,6 @@ handler.command = ['ترivia', 'asi', 'استفسار', 'اسئلة'];
 handler.usage = ['ترivia', 'ترivia عامة', 'ترivia تلميح', 'ترivia نقاط', 'ترivia إيقاف'];
 handler.category = 'games';
 handler.usePrefix = true;
-handler.cooldown = 6;
 handler.group = false;
 handler.private = false;
 export default handler;

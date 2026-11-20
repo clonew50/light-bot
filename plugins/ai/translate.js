@@ -5,7 +5,6 @@
   ═══════════════════════════════════════════
 */
 import { askAI, translateText } from '../../system/aiService.js';
-import { pruneCooldown } from '../../system/cooldowns.js';
 
 const LANGUAGES = [
   { code: 'ar', name: '🇸🇦 العربية', native: 'العربية' },
@@ -22,8 +21,6 @@ const LANGUAGES = [
   { code: 'it', name: '🇮🇹 الإيطالية', native: 'Italiano' },
 ];
 
-const cooldown = new Map();
-const COOLDOWN_MS = 3000;
 const userFrom = new Map();
 const userTo = new Map();
 
@@ -38,10 +35,6 @@ function buildLangList(direction = 'من', usedPrefix = '.') {
 const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now();
-    const last = cooldown.get(m.sender) || 0;
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`);
-    }
 
     const subCmd = args[0]?.toLowerCase();
 
@@ -124,8 +117,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
       }, { quoted: m });
     }
 
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(m.sender, now);
     await m.react?.('🌐');
 
     const fromCode = userFrom.get(m.sender) || 'auto';
@@ -160,5 +151,4 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['translate', 'ترجمة', 'trans', 't'];
 handler.usage = ['translate <نص>', 'translate من <كود>', 'translate إلى <كود>', 'translate تبديل', 'translate إعدادات'];
 handler.category = 'ai';
-handler.cooldown = 3;
 export default handler;

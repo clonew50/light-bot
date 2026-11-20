@@ -156,13 +156,22 @@ async function handler(m, { conn, bot, command, args }) {
         return;
     }
 
-    const cmdsList = categoryCmds.map(c => {
+    const PAGE_SIZE = 20;
+    const totalCmds = categoryCmds.length;
+    const totalPages = Math.max(1, Math.ceil(totalCmds / PAGE_SIZE));
+    const page = Math.min(totalPages, Math.max(1, parseInt(args[1] || '1', 10) || 1));
+    const pageSlice = categoryCmds.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+    const cmdsList = pageSlice.map(c => {
         const usages = Array.isArray(c.usage) ? c.usage : [c.usage];
         return usages
             .filter(Boolean)
+            .slice(0, 1)
             .map(cmd => `┃ ${cat[3]} *.${cmd}*`)
             .join('\n');
     }).join('\n');
+
+    const pagerNote = totalPages > 1 ? `\n📄 *صفحة ${page} من ${totalPages}* (${totalCmds.toLocaleString()} أمر) — اكتب \`.${command} ${selected} ${page < totalPages ? page + 1 : 1}\`` : '';
 
     const resultText =
         `╭─┈──┈─⟞${cat[3]}⟝─┈──┈─╮\n` +
@@ -170,7 +179,7 @@ async function handler(m, { conn, bot, command, args }) {
         `╰─┈──┈─⟞${cat[3]}⟝─┈──┈─╯\n\n` +
         `❐═━━━═╊⊰🩸⊱╉═━━━═❐\n` +
         `${cmdsList}\n` +
-        `❐═━━━═╊⊰🩸⊱╉═━━━═❐`;
+        `❐═━━━═╊⊰🩸⊱╉═━━━═❐${pagerNote}`;
 
     // إرسال كرسالة قائمة تفاعلية تحتوي على الأوامر مع إدراج زر تصفح بقية الأقسام
     await conn.sendButtonNormal(m.chat, {

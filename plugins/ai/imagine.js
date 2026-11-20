@@ -5,7 +5,6 @@
   ═══════════════════════════════════════════
 */
 import { generateAIImage } from '../../system/aiService.js';
-import { pruneCooldown } from '../../system/cooldowns.js';
 
 const MODELS = [
   { id: 'flux', name: 'Flux', desc: 'جودة عالية وتفاصيل دقيقة', emoji: '🌊' },
@@ -40,8 +39,6 @@ const STYLES = [
   { id: 'fantasy', name: 'فانتازي', emoji: '🏰' },
 ];
 
-const cooldown = new Map();
-const COOLDOWN_MS = 12000;
 const userSettings = new Map();
 
 function getSettings(sender) {
@@ -62,10 +59,6 @@ function getSettings(sender) {
 const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now();
-    const last = cooldown.get(m.sender) || 0;
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`);
-    }
 
     const subCmd = args[0]?.toLowerCase();
     const settings = getSettings(m.sender);
@@ -188,8 +181,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
       }, { quoted: m });
     }
 
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(m.sender, now);
     await m.react?.('🎨');
 
     const ratio = ASPECT_RATIOS.find((x) => x.id === settings.ratio) || ASPECT_RATIOS[0];
@@ -228,5 +219,4 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['imagine', 'تخيل', 'توليد-متقدم', 'imagine-adv'];
 handler.usage = ['imagine <وصف>', 'imagine نموذج <flux|sdxl|dalle3|...>', 'imagine نسبة <1:1|16:9|9:16|...>', 'imagine أسلوب <photorealistic|anime|...>', 'imagine سلبي <ما لا تريد>', 'imagine بذرة <رقم>', 'imagine خطوات <10-100>', 'imagine توجيه <1-20>', 'imagine إعدادات', 'imagine ريست'];
 handler.category = 'ai';
-handler.cooldown = 12;
 export default handler;

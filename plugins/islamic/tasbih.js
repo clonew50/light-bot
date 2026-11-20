@@ -5,8 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-const cooldown = new Map()
-const COOLDOWN_MS = 1000
 const userTasbih = new Map()
 
 const DHIKR = [
@@ -47,10 +45,6 @@ function buildCounterButtons(dhikrId) {
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
     const tasbih = getUserTasbih(m.sender)
@@ -61,7 +55,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       tasbih.current = subCmd
       tasbih.count = 0
       userTasbih.set(m.sender, tasbih)
-      cooldown.set(m.sender, now)
       return conn.sendMessage(m.chat, {
         text: `${dhikr.emoji} *${dhikr.text}*\\n\\n` +
           `🎯 *الهدف:* ${dhikr.count}\\n` +
@@ -84,7 +77,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       userTasbih.set(m.sender, tasbih)
       const progress = Math.min(100, Math.round((tasbih.count / dhikr.count) * 100))
       const bar = '█'.repeat(Math.floor(progress / 10)) + '░'.repeat(10 - Math.floor(progress / 10))
-      cooldown.set(m.sender, now)
       return conn.sendMessage(m.chat, {
         text: `${dhikr.emoji} *${dhikr.text}*\\n\\n` +
           `📊 ${tasbih.count}/${dhikr.count} (${progress}%)\\n` +
@@ -106,7 +98,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       const dhikr = DHIKR.find(d => d.id === dhikrId)
       const progress = Math.min(100, Math.round((tasbih.count / dhikr.count) * 100))
       const bar = '█'.repeat(Math.floor(progress / 10)) + '░'.repeat(10 - Math.floor(progress / 10))
-      cooldown.set(m.sender, now)
       return conn.sendMessage(m.chat, {
         text: `${dhikr.emoji} *${dhikr.text}*\\n\\n` +
           `📊 ${tasbih.count}/${dhikr.count} (${progress}%)\\n` +
@@ -145,7 +136,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // تغيير الذكر
     if (subCmd === 'تغيير' || subCmd === 'change' || subCmd === 'switch') {
-      cooldown.set(m.sender, now)
       return conn.sendMessage(m.chat, {
         text: '📿 *اختر الذكر:*',
         footer: 'LIGHT BOT • Tasbih',
@@ -154,7 +144,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     }
 
     // قائمة رئيسية
-    cooldown.set(m.sender, now)
     return conn.sendMessage(m.chat, {
       text: `📿 *المسبحة الإلكترونية*\\n\\n` +
         `اختر ذكراً للبدء:\\n` +
@@ -173,5 +162,4 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 handler.command = ['tasbih', 'مسبحة', 'تسبيح', 'dhikr']
 handler.usage = ['tasbih', 'tasbih <ذكر>', 'tasbih زيادة', 'tasbih نقص', 'tasbih ريست', 'tasbih إحصائيات', 'tasbih تغيير']
 handler.category = 'islamic'
-handler.cooldown = 1
 export default handler

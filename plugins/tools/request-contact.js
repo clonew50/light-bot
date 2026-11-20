@@ -9,12 +9,10 @@
     .طلب_جهة
   ═══════════════════════════════════════════
 */
-const COOLDOWN_MS = 10 * 1000;
 const REQUEST_TTL = 30 * 60 * 1000;   // صلاحية انتظار الرد 30 دقيقة
 
 import { pruneCooldown } from "../../system/cooldowns.js";
 
-const cooldown = new Map();
 // الشاتات اللي البوت طلب فيها جهة اتصال ومستني رد
 const pending = new Map();
 
@@ -28,11 +26,6 @@ async function relayRaw(conn, chat, content, extra = {}) {
 
 const handler = async (m, { conn }) => {
   try {
-    const last = cooldown.get(m.chat) || 0;
-    if (Date.now() - last < COOLDOWN_MS) return;
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(m.chat, Date.now());
-
     const content = {
       interactiveMessage: {
         body: { text: '📇 اضغط الزر وشارك جهة اتصالك معنا' },
@@ -103,7 +96,6 @@ const before = async (m, { conn }) => {
 handler.command = ['طلب_جهة', 'requestcontact'];
 handler.usage = ['طلب_جهة'];
 handler.category = 'tools';
-handler.cooldown = 10;
 handler.before = before;
 
 export default handler;

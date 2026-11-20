@@ -5,10 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-import { pruneCooldown } from '../../system/cooldowns.js'
-
-const cooldown = new Map()
-const COOLDOWN_MS = 5000
 const userBalance = new Map()
 const userStats = new Map()
 
@@ -100,8 +96,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     const subCmd = args[0]?.toLowerCase()
     const balance = getBalance(sender)
     const stats = getStats(sender)
-    const last = cooldown.get(sender) || 0
-    pruneCooldown(cooldown, COOLDOWN_MS)
     for (const map of [userBalance, userStats]) {
       if (map.size > 2000) map.delete(map.keys().next().value)
     }
@@ -152,10 +146,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       if (isNaN(bet) || bet < 10) return m.reply('❌ رهان غير صالح (الحد الأدنى 10)')
       if (bet > balance) return m.reply(`❌ رصيد غير كافي! رصيدك: ${balance} عملة`)
 
-      if (now - last < COOLDOWN_MS) {
-        return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-      }
-      cooldown.set(sender, now)
 
       // خصم الرهان
       setBalance(sender, balance - bet)
@@ -216,6 +206,5 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 handler.command = ['slots', 'سلوت', 'قمار', 'كازينو', 'slot']
 handler.usage = ['slots', 'slots دور [رهان]', 'slots رهان <مبلغ>', 'slots رصيد', 'slots إحصائيات', 'slots يومي', 'slots ريست']
 handler.category = 'games'
-handler.cooldown = 5
 handler.group = true
 export default handler

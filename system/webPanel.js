@@ -560,6 +560,7 @@ const PANEL_HTML = renderAdminPanelHtml(INSTALL_RENDER_JS);
 // تهيئة مبدئية: getClientInfo ممكن يتنده قبل startWebPanel (اختبارات) —
 // startWebPanel بيستبدلها بالقيم المقروءة من القرص.
 let panelCfg = readPanelConfig();
+let panelPasswordOverride = null;
 
 export function isMaintenanceActive(client) {
   if (global.db && typeof global.db.maintenance === 'boolean' && global.db.maintenance === true) {
@@ -575,6 +576,7 @@ export function isMaintenanceActive(client) {
 
 async function handle(req, res, client) {
   panelCfg = readPanelConfig();
+  if (panelPasswordOverride !== null) panelCfg.password = panelPasswordOverride;
   const ip = clientIp(req);
   const url = new URL(req.url, 'http://localhost');
   const cookies = parseCookies(req);
@@ -733,14 +735,18 @@ async function handle(req, res, client) {
   if (req.method === 'GET' && url.pathname === '/api/commands') {
     const all = normalizeCommandsList(client);
     const catMap = new Map();
-    for (const c of all) {
-      const prev = catMap.get(c.category) || { id: c.category, label: c.categoryLabel, emoji: c.categoryEmoji, count: 0 };
+    for (let i = 0; i < all.length; i++) {
+      const c = all[i];
+      let prev = catMap.get(c.category);
+      if (!prev) {
+        prev = { id: c.category, label: c.categoryLabel, emoji: c.categoryEmoji, count: 0 };
+        catMap.set(c.category, prev);
+      }
       prev.count += 1;
-      catMap.set(c.category, prev);
     }
     const q = (url.searchParams.get('q') || '').trim().toLowerCase();
     const cat = (url.searchParams.get('cat') || '').trim();
-    const filtered = all.filter((c) => {
+    const filtered = (!q && !cat) ? all : all.filter((c) => {
       if (cat && c.category !== cat) return false;
       if (!q) return true;
       return c.primary.toLowerCase().includes(q)
@@ -748,12 +754,26 @@ async function handle(req, res, client) {
         || c.categoryLabel.toLowerCase().includes(q)
         || c.triggers.some((t) => String(t).toLowerCase().includes(q));
     });
+    const hasLimit = url.searchParams.has('limit') || url.searchParams.has('page');
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
+    const limit = hasLimit
+      ? Math.min(500, Math.max(1, parseInt(url.searchParams.get('limit') || '24', 10) || 24))
+      : 0;
+    const totalPages = limit > 0 ? Math.max(1, Math.ceil(filtered.length / limit)) : 1;
+    const safePage = Math.min(page, totalPages);
+    const commandsSlice = limit > 0
+      ? filtered.slice((safePage - 1) * limit, safePage * limit)
+      : (filtered.length > 500 ? filtered.slice(0, 500) : filtered);
     return sendJson(res, 200, {
       ok: true,
       total: all.length,
       filtered: filtered.length,
+      page: safePage,
+      limit: limit || commandsSlice.length,
+      totalPages,
+      truncated: limit === 0 && filtered.length > 500,
       categories: [...catMap.values()].sort((a, b) => b.count - a.count),
-      commands: filtered
+      commands: commandsSlice
     });
   }
 
@@ -820,6 +840,7 @@ async function handle(req, res, client) {
 
   if (req.method === 'POST' && url.pathname === '/api/admin/rotate-password') {
     const nextPass = generatePassword(16);
+    panelPasswordOverride = null;
     panelCfg.password = nextPass;
     panelCfg.pwHash = crypto.createHash('sha256').update(nextPass).digest('hex');
     panelCfg.rev = (Number(panelCfg.rev) || 0) + 1;
@@ -952,7 +973,8 @@ async function handle(req, res, client) {
 /* ============ التشغيل ============ */
 export function startWebPanel(client, options = {}) {
   panelCfg = readPanelConfig();
-  if (options.password) panelCfg.password = options.password;
+  panelPasswordOverride = options.password ? String(options.password) : null;
+  if (panelPasswordOverride !== null) panelCfg.password = panelPasswordOverride;
 
   hookConsole();
 

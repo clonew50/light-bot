@@ -5,11 +5,8 @@
   ═══════════════════════════════════════════
 */
 import { generateAIImage } from "../../system/aiService.js";
-import { pruneCooldown } from "../../system/cooldowns.js";
 
 const MAX_PROMPT = 500;
-const COOLDOWN = 15 * 1000;
-const cooldown = new Map();
 const FOOTER = "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻";
 
 const handler = async (m, { conn, text, usedPrefix = ".", command = "انشاء" }) => {
@@ -24,13 +21,7 @@ const handler = async (m, { conn, text, usedPrefix = ".", command = "انشاء"
     }
 
     const now = Date.now();
-    const last = cooldown.get(m.sender) || 0;
-    if (now - last < COOLDOWN) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN - (now - last)) / 1000)} ثانية تانية قبل عملية جديدة`);
-    }
 
-    pruneCooldown(cooldown, COOLDOWN);
-    cooldown.set(m.sender, now);
 
     try { await m.react("⏳"); } catch {}
     await m.reply("🎨 جاري رسم صورتك بالذكاء الاصطناعي...\nاستنى لحظات، الجودة بتستاهل 🩸");

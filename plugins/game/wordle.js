@@ -4,11 +4,6 @@
   الأمر: .wordle / .وردل
   ═══════════════════════════════════════════
 */
-import { pruneCooldown } from '../../system/cooldowns.js'
-
-const cooldown = new Map()
-const COOLDOWN_MS = 5000
-
 // كلمات عربية من 5 حروف تماماً
 const RAW_WORDS = [
   'سيارة', 'طائرة', 'سفينة', 'دراجة', 'حافلة', 'شاحنة', 'مدرسة', 'نافذة', 'حاسوب', 'نظارة',
@@ -136,7 +131,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
     const subCmd = args[0]?.toLowerCase()
     const game = getGame(chatId)
 
-    pruneCooldown(cooldown, COOLDOWN_MS)
 
     if (subCmd === 'حرف' || subCmd === 'letter') {
       const val = (args[1] || '').trim()
@@ -195,12 +189,7 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
       return submitGuess(m, conn, game, directGuess, chatId, sender)
     }
 
-    const last = cooldown.get(sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
-    cooldown.set(sender, now)
     const answer = WORDS[Math.floor(Math.random() * WORDS.length)]
     const newGame = {
       active: true,
@@ -241,6 +230,5 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['wordle', 'وردل', 'wordle-ar']
 handler.usage = ['wordle', 'wordle <كلمة من 5 حروف>', 'wordle حرف <حرف>', 'wordle دخول', 'wordle مسح', 'wordle تلميح', 'wordle إيقاف']
 handler.category = 'games'
-handler.cooldown = 5
 handler.group = true
 export default handler

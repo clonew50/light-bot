@@ -5,12 +5,9 @@
   ═══════════════════════════════════════════
 */
 import axios from 'axios'
-import { pruneCooldown } from "../../system/cooldowns.js";
 
 const GEOCODE = 'https://geocoding-api.open-meteo.com/v1/search'
 const FORECAST = 'https://api.open-meteo.com/v1/forecast'
-const COOLDOWN = 15 * 1000
-const cooldown = new Map()
 
 const handler = async (m, { conn, text }) => {
   try {
@@ -19,12 +16,6 @@ const handler = async (m, { conn, text }) => {
 
     /* كولداون ضد السبام */
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN)
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN - (now - last)) / 1000)} ثانية تانية قبل عملية جديدة`)
-
-    pruneCooldown(cooldown, COOLDOWN)
-    cooldown.set(m.sender, now)
 
     const { data: geo } = await axios.get(GEOCODE, { params: { name: city, count: 1, language: 'ar', format: 'json' } })
     if (!geo?.results?.length) return m.reply('❌ مدينة غير معروفة')

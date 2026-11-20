@@ -4,10 +4,6 @@
   الأمر: .coin / .قرش / .flip
   ═══════════════════════════════════════════
 */
-import { pruneCooldown } from '../../system/cooldowns.js'
-
-const cooldown = new Map()
-const COOLDOWN_MS = 2000
 const userStats = new Map()
 
 function getStats(sender) {
@@ -48,9 +44,6 @@ const handler = async (m, { conn, args, usedPrefix = '.' }) => {
     const sender = m.sender
     const subCmd = args[0]?.toLowerCase()
     const stats = getStats(sender)
-    const last = cooldown.get(sender) || 0
-
-    pruneCooldown(cooldown, COOLDOWN_MS)
     if (userStats.size > 2000) userStats.delete(userStats.keys().next().value)
 
     if (subCmd === 'إحصائيات' || subCmd === 'stats' || subCmd === 'احصائيات') {
@@ -65,11 +58,6 @@ const handler = async (m, { conn, args, usedPrefix = '.' }) => {
     if (subCmd === 'أفضل' || subCmd === 'best' || subCmd === 'bo') {
       const n = parseInt(args[1]) || 3
       if (n < 2 || n > 10) return m.reply('❌ عدد الجولات 2-10')
-
-      if (now - last < COOLDOWN_MS * 2) {
-        return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS * 2 - (now - last)) / 1000)} ثانية`)
-      }
-      cooldown.set(sender, now)
 
       let heads = 0, tails = 0
       const results = []
@@ -91,10 +79,6 @@ const handler = async (m, { conn, args, usedPrefix = '.' }) => {
       )
     }
 
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
-    cooldown.set(sender, now)
 
     const result = flipCoin()
     const isHeads = result === 'heads'
@@ -129,5 +113,4 @@ const handler = async (m, { conn, args, usedPrefix = '.' }) => {
 handler.command = ['coin', 'قرش', 'flip', 'رمي']
 handler.usage = ['coin', 'coin أفضل 3', 'coin أفضل 5', 'coin إحصائيات', 'coin ريست']
 handler.category = 'games'
-handler.cooldown = 2
 export default handler

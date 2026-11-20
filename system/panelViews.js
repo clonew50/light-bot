@@ -213,30 +213,55 @@ export function renderPublicPortalHtml(err = '') {
 
 .modal-backdrop{
   position:fixed;inset:0;background:rgba(3,7,18,0.75);backdrop-filter:blur(6px);
-  display:flex;align-items:center;justify-content:center;padding:16px;z-index:100;
+  display:none;align-items:center;justify-content:center;padding:16px;z-index:100;
   opacity:0;pointer-events:none;transition:opacity .2s var(--ease);
 }
-.modal-backdrop.open{opacity:1;pointer-events:auto}
+.modal-backdrop.open{display:flex;opacity:1;pointer-events:auto}
 .modal-card{
   width:min(100%,410px);background:var(--surface);border:1px solid var(--border2);border-radius:18px;
   padding:22px;transform:translate3d(0,14px,0) scale(.98);transition:transform .24s var(--ease);
 }
 .modal-backdrop.open .modal-card{transform:translate3d(0,0,0) scale(1)}
 
+.saved-bar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:rgba(8,13,24,0.68);border:1px solid var(--border2);border-radius:12px;padding:10px 12px;
+}
+.saved-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
 @media (max-width:900px){
   .portal-grid{grid-template-columns:minmax(0,1fr)}
   .steps{grid-template-columns:minmax(0,1fr)}
 }
 @media (max-width:640px){
-  .hero-band{flex-direction:column;align-items:flex-start;gap:14px}
-  .hero-band > div:first-child{width:100%;min-width:0}
-  .hero-band .meta-line{width:100%;justify-content:flex-start;flex-wrap:wrap}
-  .hero-title{text-wrap:balance}
+  body{padding:12px}
+  .light-bot{width:100%;padding:2px}
+  .light-bot .topbar{padding:12px;gap:10px;margin-bottom:14px}
+  .light-bot .nav-links{width:100%;gap:10px;justify-content:flex-start}
+  .light-bot .hero-band{flex-direction:column;align-items:stretch;gap:14px;padding:16px 14px;margin-bottom:14px}
+  .light-bot .hero-band > div:first-child{width:100%;min-width:0}
+  .light-bot .hero-title{text-wrap:balance;font-size:21px}
+  .light-bot .card{padding:16px 14px}
+  .light-bot .card h2{flex-wrap:wrap;gap:6px;font-size:15px}
+  .light-bot input,.light-bot select,.light-bot textarea{width:100%;padding:12px;font-size:16px}
+  .light-bot form button,.light-bot .actions button{width:100%;min-height:44px;justify-content:center}
+  .light-bot .actions{flex-direction:column;width:100%;gap:10px}
+  .light-bot .split-row{flex-direction:column;align-items:stretch;gap:8px}
+  .light-bot .row{flex-wrap:wrap;gap:6px;padding:10px 0}
+  .light-bot .row .actions{flex-direction:row;width:auto;align-items:center}
+  .light-bot .row .actions button{width:auto;min-height:36px}
+  .light-bot .seg{display:grid;grid-template-columns:1fr 1fr;width:100%}
+  .light-bot .seg button{width:100%;min-height:40px}
+  .light-bot .code-vault{padding:14px 12px}
+  .light-bot .code-big{font-size:19px;letter-spacing:2px;word-break:break-all;padding:10px 6px}
+  .light-bot #savedQuickBar{width:100%;flex-direction:column;align-items:stretch;gap:10px;padding:12px}
+  .light-bot #savedQuickBar .saved-actions{display:grid;grid-template-columns:1fr 1fr;width:100%;gap:8px}
+  .light-bot #savedQuickBar .saved-actions button{width:100%;min-height:40px}
 }
 </style></head>
 <body>
 <div class="ambient" aria-hidden="true"></div>
-<div class="wrap">
+<div class="wrap light-bot">
   <header class="topbar">
     <a href="/" class="brand-word">لايت بوت</a>
     <nav class="nav-links" aria-label="التنقل الرئيسي">
@@ -253,9 +278,12 @@ export function renderPublicPortalHtml(err = '') {
       <h1 class="hero-title">اربط حسابك على واتساب وتحكّم في بوتك من نفس الموقع</h1>
       <p class="hero-sub">أدخل رقم هاتفك لإصدار كود ربط واتساب الفوري، مع حفظ كود تحكم خاص بك يتيح لك تعديل إعدادات بوتك (الوضع العام/الخاص، الاسم، البادئة، والترحيب) في أي وقت.</p>
     </div>
-    <div class="meta-line" id="savedQuickBar" style="display:none">
-      <span>بوت محفوظ: <strong class="mono ltr" id="savedPhoneLbl"></strong></span>
-      <button type="button" class="sky sm" onclick="restoreSavedBot()">استعادة التحكم</button>
+    <div class="meta-line saved-bar" id="savedQuickBar" style="display:none">
+      <span>بوت محفوظ: <strong class="mono ltr" id="savedPhoneLbl"></strong> · الكود: <strong class="mono ltr" id="savedCodeLbl" style="color:#7dd3fc"></strong></span>
+      <div class="saved-actions">
+        <button type="button" class="ghost sm" id="savedCopyBtn" onclick="copySavedCode()">نسخ الكود</button>
+        <button type="button" class="sky sm" onclick="restoreSavedBot()">استعادة التحكم</button>
+      </div>
     </div>
   </section>
 
@@ -372,7 +400,7 @@ export function renderPublicPortalHtml(err = '') {
 </div>
 
 <!-- Admin Login Modal -->
-<div class="modal-backdrop${autoOpenAdmin === 'true' ? ' open' : ''}" id="adminLoginModal" role="dialog" aria-modal="true" aria-labelledby="admDlgTitle">
+<div class="modal-backdrop${autoOpenAdmin === 'true' ? ' open' : ''}" id="adminLoginModal" role="dialog" aria-modal="true" aria-hidden="${autoOpenAdmin === 'true' ? 'false' : 'true'}" aria-labelledby="admDlgTitle" onclick="if(event.target===this)closeAdminModal()">
   <form class="modal-card" method="POST" action="/login">
     <div class="split-row" style="margin-bottom:8px">
       <h2 id="admDlgTitle" style="margin:0;font-size:18px">دخول لوحة الأدمن</h2>
@@ -430,15 +458,21 @@ function doExecCopy(text){
   }catch(e){toast('الكود: '+text);}
 }
 function openAdminModal(){
-  document.getElementById('adminLoginModal').classList.add('open');
+  const m=document.getElementById('adminLoginModal');
+  m.classList.add('open');
+  m.setAttribute('aria-hidden','false');
   setTimeout(()=>{const i=document.getElementById('admPassInput');if(i)i.focus();},60);
 }
 function closeAdminModal(){
-  document.getElementById('adminLoginModal').classList.remove('open');
+  const m=document.getElementById('adminLoginModal');
+  m.classList.remove('open');
+  m.setAttribute('aria-hidden','true');
 }
-function saveLocalCredential(phone,code){
+function saveLocalCredential(phone,code,loggedOut){
   try{
-    if(phone && code) localStorage.setItem(STORAGE_KEY,JSON.stringify({phone:phone,code:code}));
+    if(phone && code){
+      localStorage.setItem(STORAGE_KEY,JSON.stringify({phone:phone,code:code,loggedOut:!!loggedOut}));
+    }
   }catch(e){}
   showSavedBar();
 }
@@ -449,9 +483,21 @@ function showSavedBar(){
     const saved=JSON.parse(raw);
     if(saved && saved.phone && saved.code){
       document.getElementById('savedPhoneLbl').textContent=saved.phone;
+      const cl=document.getElementById('savedCodeLbl');
+      if(cl) cl.textContent=saved.code;
       document.getElementById('savedQuickBar').style.display='flex';
     }
   }catch(e){}
+}
+function copySavedCode(){
+  let code=currentControlCode||'';
+  if(!code){
+    try{
+      const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');
+      code=saved.code||'';
+    }catch(e){}
+  }
+  copyText(code,'savedCodeLbl');
 }
 function updateSteps(bot,pairCode){
   const s1=document.getElementById('st1');
@@ -471,7 +517,7 @@ function applyMyBotView(bot,forceHydrate){
   if(!bot){return;}
   currentControlCode=bot.controlCode||currentControlCode||'';
   currentPairCode=bot.pairCode||currentPairCode||'';
-  saveLocalCredential(bot.phone,currentControlCode||currentPairCode);
+  saveLocalCredential(bot.phone,currentControlCode||currentPairCode,false);
 
   document.getElementById('subUnlockBox').style.display='none';
   document.getElementById('subControlBox').style.display='block';
@@ -535,7 +581,8 @@ async function startSubPair(){
     }
     currentPairCode=d.pairCode||'';
     currentControlCode=d.controlCode||'';
-    document.getElementById('pairOutput').style.display='block';
+    const outEl=document.getElementById('pairOutput');
+    outEl.style.display='block';
     document.getElementById('pairCodeDisplay').textContent=currentPairCode||'جاري الطلب من واتساب...';
     document.getElementById('controlCodeDisplay').textContent=currentControlCode||'—';
     if(d.bot) applyMyBotView(d.bot,true);
@@ -544,6 +591,7 @@ async function startSubPair(){
       errEl.style.display='block';
     }
     toast(d.message||'تم حفظ الكود');
+    outEl.scrollIntoView({behavior:'smooth',block:'nearest'});
     startPollingMe();
   }catch(e){
     errEl.textContent='تعذّر الاتصال بالخادم';
@@ -552,7 +600,7 @@ async function startSubPair(){
     btn.disabled=false;btn.textContent='إصدار كود الربط وحفظ الكود';
   }
 }
-async function unlockSubBot(phoneOverride,codeOverride){
+async function unlockSubBot(phoneOverride,codeOverride,silent){
   const phone=(phoneOverride||document.getElementById('authPhone').value).trim();
   const code=(codeOverride||document.getElementById('authCode').value).trim();
   const errEl=document.getElementById('unlockErr');
@@ -564,16 +612,22 @@ async function unlockSubBot(phoneOverride,codeOverride){
     });
     const d=await r.json();
     if(!d.ok){
-      errEl.textContent=d.error||'بيانات الدخول غير صحيحة';
-      errEl.style.display='block';
-      return;
+      if(!silent){
+        errEl.textContent=d.error||'بيانات الدخول غير صحيحة';
+        errEl.style.display='block';
+      }
+      return false;
     }
     applyMyBotView(d.bot,true);
-    toast('تم فتح لوحة تحكم بوتك');
+    if(!silent) toast('تم فتح لوحة تحكم بوتك');
     startPollingMe();
+    return true;
   }catch(e){
-    errEl.textContent='خطأ في الاتصال بالخادم';
-    errEl.style.display='block';
+    if(!silent){
+      errEl.textContent='خطأ في الاتصال بالخادم';
+      errEl.style.display='block';
+    }
+    return false;
   }
 }
 async function restoreSavedBot(){
@@ -584,7 +638,7 @@ async function restoreSavedBot(){
     if(saved && saved.phone && saved.code){
       document.getElementById('authPhone').value=saved.phone;
       document.getElementById('authCode').value=saved.code;
-      await unlockSubBot(saved.phone,saved.code);
+      await unlockSubBot(saved.phone,saved.code,false);
     }
   }catch(e){}
 }
@@ -633,6 +687,13 @@ async function mySubAction(action){
     const d=await r.json();
     if(action==='logout'){
       if(pollTimer)clearInterval(pollTimer);
+      try{
+        const raw=localStorage.getItem(STORAGE_KEY);
+        if(raw){
+          const s=JSON.parse(raw);
+          if(s && s.phone && s.code) saveLocalCredential(s.phone,s.code,true);
+        }
+      }catch(e){}
       hydratedPhone='';
       document.getElementById('subControlBox').style.display='none';
       document.getElementById('subUnlockBox').style.display='block';
@@ -644,7 +705,7 @@ async function mySubAction(action){
     if(!d.ok){toast(d.error||'تعذّر تنفيذ الإجراء');return;}
     if(d.controlCode){
       currentControlCode=d.controlCode;
-      saveLocalCredential(document.getElementById('mb-phone').textContent,d.controlCode);
+      saveLocalCredential(document.getElementById('mb-phone').textContent,d.controlCode,false);
     }
     if(d.bot) applyMyBotView(d.bot,true);
     toast(d.message||'تم التنفيذ');
@@ -664,6 +725,9 @@ async function mySubAction(action){
         if(s && s.phone && s.code){
           document.getElementById('authPhone').value=s.phone;
           document.getElementById('authCode').value=s.code;
+          if(!s.loggedOut){
+            await unlockSubBot(s.phone,s.code,true);
+          }
         }
       }
     }catch(e){}
@@ -1205,8 +1269,8 @@ return `<!DOCTYPE html>
     <div class="card">
       <h2><span>دليل الأوامر التفاعلي</span><small class="t" id="cmdSummary"></small></h2>
       <div class="toolbar">
-        <input id="cmdSearch" type="search" placeholder="ابحث باسم الأمر أو الوصف (مثال: سورة، زخرفة، تصويت، بطاقتي)..." oninput="cmdPage=1;renderCommands()">
-        <select id="cmdCat" onchange="cmdPage=1;renderCommands()">
+        <input id="cmdSearch" type="search" placeholder="ابحث باسم الأمر أو الوصف (مثال: سورة، زخرفة، تصويت، بطاقتي)..." oninput="cmdPage=1;debouncedLoadCommands()">
+        <select id="cmdCat" onchange="cmdPage=1;loadCommands()">
           <option value="">كل الأقسام</option>
         </select>
         <button type="button" class="ghost" onclick="loadCommands(true)">تحديث</button>
@@ -1267,7 +1331,7 @@ function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt
 function switchTab(name){
   document.querySelectorAll('.nav-link').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
   document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='tab-'+name));
-  if(name==='commands' && !allCommands.length) loadCommands();
+  if(name==='commands' && !commandsLoadedOnce) loadCommands();
   if(name==='fleet') loadFleet();
 }
 
@@ -1533,44 +1597,37 @@ async function adminAllowNum(approve,phoneArg){
   loadFleet();
 }
 
-/* Command Explorer */
-let allCommands=[],cmdPage=1;
+/* Command Explorer — Server-paginated for 100k+ commands */
+let cmdPage=1,cmdTotalFiltered=0,commandsLoadedOnce=false,cmdSearchTimer=null;
 const PAGE_SIZE=24;
+function debouncedLoadCommands(){
+  if(cmdSearchTimer) clearTimeout(cmdSearchTimer);
+  cmdSearchTimer=setTimeout(()=>{ void loadCommands(false); },180);
+}
 async function loadCommands(force){
   try{
-    const r=await fetch('/api/commands');
+    const q=(document.getElementById('cmdSearch').value||'').trim();
+    const cat=document.getElementById('cmdCat').value||'';
+    const qs='?page='+cmdPage+'&limit='+PAGE_SIZE+(q?'&q='+encodeURIComponent(q):'')+(cat?'&cat='+encodeURIComponent(cat):'');
+    const r=await fetch('/api/commands'+qs);
     if(r.status===401){location.reload();return;}
     const d=await r.json();
-    allCommands=d.commands||[];
+    commandsLoadedOnce=true;
     const sel=document.getElementById('cmdCat');
     const prev=sel.value;
-    sel.innerHTML='<option value="">كل الأقسام ('+allCommands.length+')</option>'
-      +(d.categories||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.emoji+' '+c.label+' ('+c.count+')')+'</option>').join('');
+    sel.innerHTML='<option value="">كل الأقسام ('+(d.total||0).toLocaleString()+')</option>'
+      +(d.categories||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.emoji+' '+c.label+' ('+c.count.toLocaleString()+')')+'</option>').join('');
     if(prev)sel.value=prev;
-    renderCommands();
-    if(force)toast('تم تحديث الفهرس: '+allCommands.length+' أمر');
+    cmdTotalFiltered=Number(d.filtered||0);
+    renderCommandsPage(d.commands||[], cmdTotalFiltered, Number(d.total||0));
+    if(force)toast('تم تحديث الفهرس: '+(d.total||0).toLocaleString()+' أمر');
   }catch(e){toast('تعذّر تحميل الأوامر');}
 }
-function getFilteredCommands(){
-  const q=(document.getElementById('cmdSearch').value||'').trim().toLowerCase();
-  const cat=document.getElementById('cmdCat').value;
-  return allCommands.filter(c=>{
-    if(cat && c.category!==cat) return false;
-    if(!q) return true;
-    return c.primary.toLowerCase().includes(q)
-      || (c.description||'').toLowerCase().includes(q)
-      || (c.categoryLabel||'').toLowerCase().includes(q)
-      || (c.triggers||[]).some(t=>String(t).toLowerCase().includes(q));
-  });
-}
-function renderCommands(){
-  const items=getFilteredCommands();
-  const pages=Math.max(1,Math.ceil(items.length/PAGE_SIZE));
+function renderCommandsPage(slice,filteredCount,totalCount){
+  const pages=Math.max(1,Math.ceil(filteredCount/PAGE_SIZE));
   if(cmdPage>pages)cmdPage=pages;
-  const start=(cmdPage-1)*PAGE_SIZE;
-  const slice=items.slice(start,start+PAGE_SIZE);
-  document.getElementById('cmdSummary').textContent='عرض '+slice.length+' من '+items.length+' أمر';
-  document.getElementById('cmdPageInfo').textContent='صفحة '+cmdPage+' من '+pages;
+  document.getElementById('cmdSummary').textContent='عرض '+slice.length+' من '+filteredCount.toLocaleString()+' (الإجمالي '+totalCount.toLocaleString()+')';
+  document.getElementById('cmdPageInfo').textContent='صفحة '+cmdPage+' من '+pages.toLocaleString();
   document.getElementById('cmdPrev').disabled=cmdPage<=1;
   document.getElementById('cmdNext').disabled=cmdPage>=pages;
   const grid=document.getElementById('cmdGrid');
@@ -1584,7 +1641,7 @@ function renderCommands(){
       +'</div>';
   }).join('');
 }
-function changePage(delta){cmdPage=Math.max(1,cmdPage+delta);renderCommands();}
+function changePage(delta){cmdPage=Math.max(1,cmdPage+delta);void loadCommands(false);}
 function tryInSimulator(cmd){switchTab('simulator');runSim(cmd);}
 
 /* Interactive Simulator */

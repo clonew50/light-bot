@@ -9,10 +9,7 @@
   ═══════════════════════════════════════════
 */
 
-import { pruneCooldown } from "../../system/cooldowns.js";
 
-const COOLDOWN_MS = 5 * 1000;
-const cooldown = new Map();
 
 const DEFAULT_IMG = 'https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/0b22c6a0-3522-4e3d-b1b8-120642cb25b2.jpg';
 const getImg = (bot) => {
@@ -28,10 +25,6 @@ const handler = async (m, { conn, bot, args }) => {
       await conn.sendMessage(m.chat, { text: '✍️ اكتب اللي عايز يتنسخ بعد الأمر:\n.زر_نسخ LIGHT-2026' }, { quoted: m });
       return;
     }
-    const last = cooldown.get(m.chat) || 0;
-    if (Date.now() - last < COOLDOWN_MS) return;
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(m.chat, Date.now());
 
     if (typeof conn?.sendButtonNormal === 'function') {
       await conn.sendButtonNormal(m.chat, {
@@ -61,6 +54,5 @@ const handler = async (m, { conn, bot, args }) => {
 handler.command = ['زر_نسخ', 'copybtn'];
 handler.usage = ['زر_نسخ <نص>'];
 handler.category = 'tools';
-handler.cooldown = 5;
 
 export default handler;

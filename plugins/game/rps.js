@@ -5,10 +5,7 @@
   ═══════════════════════════════════════════
 */
 import { formatCard } from '../../system/interactiveUI.js';
-import { pruneCooldown } from '../../system/cooldowns.js';
 
-const cooldown = new Map();
-const COOLDOWN_MS = 2500;
 
 const CHOICES = [
   { id: 'rock', name: '✊ حجر', label: 'حجر', emoji: '✊', beats: 'scissors', aliases: ['rock', 'حجر', '✊', '🪨'] },
@@ -210,12 +207,6 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
     }
 
     // كولداون بدء لعبة جديدة
-    const last = cooldown.get(sender) || 0;
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية قبل بدء لعبة جديدة.`);
-    }
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(sender, now);
 
     // بدء لعبة جديدة
     const mode = MODES.find((md) => md.id === args[0]) || MODES[1]; // افتراضي أفضل 3
@@ -252,6 +243,5 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
 handler.command = ['rps', 'حجر', 'مقص', 'ورقة', 'rockpaperscissors'];
 handler.usage = ['rps', 'rps وضع <1|3|5>', 'rps نقاط', 'rps إيقاف'];
 handler.category = 'games';
-handler.cooldown = 3;
 handler.group = false;
 export default handler;

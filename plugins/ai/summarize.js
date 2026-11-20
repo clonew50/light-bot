@@ -5,7 +5,6 @@
   ═══════════════════════════════════════════
 */
 import { askAI } from '../../system/aiService.js';
-import { pruneCooldown } from '../../system/cooldowns.js';
 import { splitText } from '../../system/text-chunks.js';
 
 const STYLES = [
@@ -22,18 +21,12 @@ const LENGTHS = [
   { id: 'long', name: '🔷 طويل (300 كلمة)', emoji: '🔷' },
 ];
 
-const cooldown = new Map();
-const COOLDOWN_MS = 5000;
 const userStyle = new Map();
 const userLength = new Map();
 
 const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now();
-    const last = cooldown.get(m.sender) || 0;
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`);
-    }
 
     const subCmd = args[0]?.toLowerCase();
 
@@ -104,8 +97,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
       return m.reply('❌ النص قصير جداً، لا يحتاج إلى تلخيص');
     }
 
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(m.sender, now);
     await m.react?.('📝');
 
     const styleId = userStyle.get(m.sender) || 'bullets';
@@ -147,5 +138,4 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['summarize', 'ملخص', 'اختصار', 'tldr'];
 handler.usage = ['summarize <نص>', 'summarize اسلوب <bullets|paragraph|tldr|keywords|action>', 'summarize طول <short|medium|long>', 'summarize إعدادات'];
 handler.category = 'ai';
-handler.cooldown = 5;
 export default handler;

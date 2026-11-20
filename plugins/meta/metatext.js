@@ -10,10 +10,7 @@
   ═══════════════════════════════════════════
 */
 import crypto from 'crypto';
-import { pruneCooldown } from "../../system/cooldowns.js";
 
-const cooldown = new Map();
-const COOLDOWN_MS = 4 * 1000;
 
 /* إرسال بروتوكول خام عبر السوكيت (conn = عميل meowsab) */
 function relayOf(conn) {
@@ -104,10 +101,6 @@ const metaText = async (m, { conn, args }) => {
       await conn.sendMessage(m.chat, { text: '✍️ اكتب النص بعد الأمر:\n.ميتا مرحبًا بكم في لايت بوت' }, { quoted: m });
       return;
     }
-    const last = cooldown.get(m.chat) || 0;
-    if (Date.now() - last < COOLDOWN_MS) return;
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(m.chat, Date.now());
     await sendMeta(conn, m.chat, body, false);
   } catch (e) {
     console.error('❌ [ميتا]', e?.message || e);
@@ -122,10 +115,6 @@ const metaThinking = async (m, { conn, args }) => {
       await conn.sendMessage(m.chat, { text: '✍️ اكتب النص بعد الأمر:\n.ميتا_يفكر جاري تجهيز طلبك…' }, { quoted: m });
       return;
     }
-    const last = cooldown.get(m.chat) || 0;
-    if (Date.now() - last < COOLDOWN_MS) return;
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(m.chat, Date.now());
     await sendMeta(conn, m.chat, body, true);
   } catch (e) {
     console.error('❌ [ميتا_يفكر]', e?.message || e);
@@ -136,11 +125,9 @@ const metaThinking = async (m, { conn, args }) => {
 metaText.command = ['ميتا', 'metaai'];
 metaText.usage = ['ميتا <نص>', 'ميتا_يفكر <نص>'];
 metaText.category = 'ai';
-metaText.cooldown = 4;
 
 metaThinking.command = ['ميتا_يفكر', 'ميتايفكر'];
 metaThinking.usage = ['ميتا_يفكر <نص>'];
 metaThinking.category = 'ai';
-metaThinking.cooldown = 4;
 
 export default [metaText, metaThinking];

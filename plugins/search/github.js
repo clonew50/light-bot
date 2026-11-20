@@ -6,16 +6,9 @@
 */
 import axios from 'axios'
 
-const cooldown = new Map()
-const COOLDOWN_MS = 5000
-
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
     const query = text?.replace(/^(غيثب|github)\s*/i, '').trim()
@@ -23,7 +16,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     if (subCmd === 'مستخدم' || subCmd === 'user') {
       const username = args[1]
       if (!username) return m.reply('❌ اكتب اسم المستخدم: `.github مستخدم torvalds`')
-      cooldown.set(m.sender, now)
       await m.react('🐙')
       const { data } = await axios.get(`https://api.github.com/users/${username}`, { timeout: 10000 })
       return sendUser(m, conn, data)
@@ -32,7 +24,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     if (subCmd === 'مستودع' || subCmd === 'repo') {
       const repo = args.slice(1).join(' ')
       if (!repo) return m.reply('❌ اكتب اسم المستودع: `.github مستودع facebook/react`')
-      cooldown.set(m.sender, now)
       await m.react('🐙')
       const { data } = await axios.get(`https://api.github.com/repos/${repo}`, { timeout: 10000 })
       return sendRepo(m, conn, data)
@@ -52,7 +43,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       }, { quoted: m })
     }
 
-    cooldown.set(m.sender, now)
     await m.react('🔍')
 
     // بحث في المستودعات
@@ -122,5 +112,4 @@ async function sendRepo(m, conn, data) {
 handler.command = ['github', 'غيثب', 'git']
 handler.usage = ['github <بحث>', 'github مستخدم <username>', 'github مستودع <owner/repo>']
 handler.category = 'search'
-handler.cooldown = 5
 export default handler

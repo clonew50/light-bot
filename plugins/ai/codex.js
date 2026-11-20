@@ -5,7 +5,6 @@
   ═══════════════════════════════════════════
 */
 import { askAI } from '../../system/aiService.js';
-import { pruneCooldown } from '../../system/cooldowns.js';
 import { splitText } from '../../system/text-chunks.js';
 
 const LANGUAGES = [
@@ -34,18 +33,12 @@ const ACTIONS = [
   { id: 'review', name: '👀 مراجعة', desc: 'مراجعة شاملة + نصائح', emoji: '👀' },
 ];
 
-const cooldown = new Map();
-const COOLDOWN_MS = 5000;
 const userLang = new Map();
 const userAction = new Map();
 
 const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now();
-    const last = cooldown.get(m.sender) || 0;
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`);
-    }
 
     const subCmd = args[0]?.toLowerCase();
 
@@ -121,8 +114,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
       return m.reply('❌ الطلب قصير جداً');
     }
 
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(m.sender, now);
     await m.react?.('💻');
 
     const lang = LANGUAGES.find((l) => l.id === userLang.get(m.sender)) || { name: 'كشف تلقائي', ext: '' };
@@ -165,5 +156,4 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['codex', 'برمجة', 'code'];
 handler.usage = ['codex <كود>', 'codex لغة <js|ts|py|java|...>', 'codex عملية <explain|debug|optimize|convert|test|doc|refactor|review>', 'codex إعدادات'];
 handler.category = 'ai';
-handler.cooldown = 5;
 export default handler;

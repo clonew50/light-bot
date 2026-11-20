@@ -4,8 +4,6 @@
   الأمر: .time / .وقت / .توقيت <منطقة>
   ═══════════════════════════════════════════
 */
-import { pruneCooldown } from '../../system/cooldowns.js'
-
 const TIMEZONES = [
   { id: 'UTC', name: '🌍 UTC', offset: 0, cities: ['غرينتش', 'لندن (شتاء)'] },
   { id: 'GMT', name: '🇬🇧 GMT', offset: 0, cities: ['لندن'] },
@@ -47,8 +45,6 @@ const FORMATS = [
   { id: 'relative', name: '⏱️ نسبي' },
 ]
 
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
 const userFrom = new Map()
 const userTo = new Map()
 const userFormat = new Map()
@@ -103,11 +99,6 @@ function getOffsetString(tz) {
 const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
-    pruneCooldown(cooldown, COOLDOWN_MS)
     for (const map of [userFrom, userTo, userFormat]) {
       if (map.size > 2000) map.delete(map.keys().next().value)
     }
@@ -190,7 +181,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
     }
 
     if (subCmd === 'الآن' || subCmd === 'now') {
-      cooldown.set(m.sender, now)
       const date = new Date()
       const from = userFrom.get(m.sender) || 'UTC'
       const to = userTo.get(m.sender) || 'Asia/Riyadh'
@@ -235,7 +225,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
         return m.reply('❌ تنسيق وقت غير مفهوم، جرب: `10:30 PM` أو `2026-11-18 22:30`')
       }
 
-      cooldown.set(m.sender, now)
       await m.react('🔄')
       return m.reply(
         `🔄 *تحويل الوقت:*\n\n` +
@@ -254,13 +243,11 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
         t.cities.some(c => c.toLowerCase().includes(query))
       )
       if (match) {
-        cooldown.set(m.sender, now)
         const fmt = userFormat.get(m.sender) || 'full'
         return m.reply(`🕐 *${match.name}:*\n${formatTime(new Date(), match.id, fmt)}`)
       }
     }
 
-    cooldown.set(m.sender, now)
     const from = userFrom.get(m.sender) || 'UTC'
     const to = userTo.get(m.sender) || 'Asia/Riyadh'
 
@@ -290,5 +277,4 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['time', 'وقت', 'توقيت', 'timezone', 'tz']
 handler.usage = ['time', 'time الآن', 'time <مدينة>', 'time تحويل <وقت>', 'time من <منطقة>', 'time إلى <منطقة>', 'time تنسيق <full|short|time|iso|relative>', 'time تبديل', 'time إعدادات']
 handler.category = 'tools'
-handler.cooldown = 3
 export default handler

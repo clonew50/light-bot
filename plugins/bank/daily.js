@@ -5,9 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-const cooldown = new Map()
-const COOLDOWN_MS = 1000
-
 const DAILY_BASE = 500
 const STREAK_BONUS = 50 // مكافأة إضافية لكل يوم متتالٍ
 const MAX_STREAK_BONUS = 2000
@@ -17,10 +14,6 @@ const MONTHLY_BONUS_DAY = 30 // يوم 30 = مكافأة شهرية
 const handler = async (m, { conn, text, args, usedPrefix, sender }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
 
@@ -109,7 +102,6 @@ const handler = async (m, { conn, text, args, usedPrefix, sender }) => {
       user.daily.streak = newStreak
       user.daily.totalClaimed = (user.daily.totalClaimed || 0) + reward
 
-      cooldown.set(sender, now)
       await m.react('🎁')
 
       const streakEmoji = newStreak >= 30 ? '🏆' : newStreak >= 7 ? '🎉' : newStreak >= 3 ? '🔥' : '📅'
@@ -148,5 +140,4 @@ const handler = async (m, { conn, text, args, usedPrefix, sender }) => {
 handler.command = ['daily', 'يومي', 'مكافأة', 'dailyreward']
 handler.usage = ['daily', 'daily حالة', 'daily أسبوعية', 'daily شهرية', 'daily ريست']
 handler.category = 'bank'
-handler.cooldown = 1
 export default handler

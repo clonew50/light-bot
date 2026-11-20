@@ -77,6 +77,15 @@ global.presenceStats = () => presenceCap.stats();
 client.onGroupEvent(group);
 client.onCommandAccess(access);
 
+if (client.commandSystem?.executor) {
+  client.commandSystem.executor.checkCooldown = async () => true;
+  const cm = client.commandSystem.executor.getCooldownManager?.();
+  if (cm) {
+    cm.getRemaining = () => 0;
+    cm.set = () => {};
+  }
+}
+
 /* =========== Liveness — إشارة حياة حقيقية (todo 35) ===========
    client.isConnected() بتقرأ running/sock/sock.user بس وبتكدب بعد badSession
    (الإطار بيسيب السوكيت موجود ويقفل الـ ws). نبضة الحياة هنا بتعتمد على

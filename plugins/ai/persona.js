@@ -184,5 +184,4 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['persona', 'شخصية', 'شخصيات', 'personas'];
 handler.usage = ['persona', 'persona قائمة', 'persona اختر <id>', 'persona أنشئ "اسم" "وصف" "برومبت" "🎭"', 'persona عدل <id> "اسم" "وصف" "برومبت" "🎭"', 'persona احذف <id>', 'persona تفاصيل <id>', 'persona بحث <كلمة>'];
 handler.category = 'ai';
-handler.cooldown = 3;
 export default handler;

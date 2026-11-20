@@ -6,25 +6,17 @@
 */
 import axios from 'axios'
 
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
-
 const API_BASE = 'https://api.alquran.cloud/v1'
 
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
     const query = text?.replace(/^(قرآن|quran)\s*/i, '').trim()
 
     // سورة عشوائية
     if (subCmd === 'عشوائي' || subCmd === 'random') {
-      cooldown.set(m.sender, now)
       await m.react('📖')
       const surahNum = Math.floor(Math.random() * 114) + 1
       return fetchSurah(m, conn, surahNum)
@@ -32,7 +24,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // قائمة السور
     if (subCmd === 'السور' || subCmd === 'surahs' || subCmd === 'list') {
-      cooldown.set(m.sender, now)
       const { data } = await axios.get(`${API_BASE}/surah`, { timeout: 10000 })
       let msg = `📖 *قائمة السور (114 سورة):*\\n\\n`
       data.data.forEach(s => {
@@ -43,7 +34,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // آية عشوائية
     if (subCmd === 'آية' || subCmd === 'ayah' || subCmd === 'verse') {
-      cooldown.set(m.sender, now)
       await m.react('📖')
       const surah = Math.floor(Math.random() * 114) + 1
       const { data: surahData } = await axios.get(`${API_BASE}/surah/${surah}`, { timeout: 10000 })
@@ -55,7 +45,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     if (subCmd === 'بحث' || subCmd === 'search') {
       const keyword = args.slice(1).join(' ')
       if (!keyword) return m.reply('❌ اكتب كلمة للبحث: `.quran بحث رحمة`')
-      cooldown.set(m.sender, now)
       await m.react('🔍')
       const { data } = await axios.get(`${API_BASE}/search/${encodeURIComponent(keyword)}/all/ar`, { timeout: 10000 })
       if (!data.data?.matches?.length) return m.reply(`🔍 لا نتائج لـ "${keyword}"`)
@@ -86,7 +75,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       }, { quoted: m })
     }
 
-    cooldown.set(m.sender, now)
 
     // تنسيق سورة:آية
     if (query.includes(':')) {
@@ -154,5 +142,4 @@ async function fetchSurah(m, conn, surah) {
 handler.command = ['quran', 'قرآن', 'قران']
 handler.usage = ['quran <سورة:آية>', 'quran <رقم سورة>', 'quran بحث <كلمة>', 'quran عشوائي', 'quran آية', 'quran السور']
 handler.category = 'islamic'
-handler.cooldown = 3
 export default handler

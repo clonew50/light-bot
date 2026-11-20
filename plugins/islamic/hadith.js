@@ -6,9 +6,6 @@
 */
 import axios from 'axios'
 
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
-
 const BOOKS = [
   { id: 'bukhari', name: '📚 صحيح البخاري', emoji: '📚' },
   { id: 'muslim', name: '📚 صحيح مسلم', emoji: '📚' },
@@ -21,10 +18,6 @@ const BOOKS = [
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
     const query = text?.replace(/^(حديث|hadith)\s*/i, '').trim()
@@ -49,7 +42,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // حديث عشوائي
     if (subCmd === 'عشوائي' || subCmd === 'random' || !query) {
-      cooldown.set(m.sender, now)
       await m.react('📜')
       // استخدام API للأحاديث
       try {
@@ -70,7 +62,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     if (subCmd === 'بحث' || subCmd === 'search') {
       const keyword = args.slice(1).join(' ')
       if (!keyword) return m.reply('❌ اكتب كلمة للبحث: `.hadith بحث صلاة`')
-      cooldown.set(m.sender, now)
       await m.react('🔍')
       try {
         // البحث في الكتب المتاحة
@@ -104,13 +95,11 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     const matchedTopic = Object.entries(topics).find(([k, v]) => v.some(w => query.includes(w)))
     if (matchedTopic) {
-      cooldown.set(m.sender, now)
       await m.react('📜')
       return m.reply(`📜 *أحاديث عن ${matchedTopic[0]}:*\\n\\n(الميزة قيد التطوير - جرب \`.hadith عشوائي\`)`)
     }
 
     // افتراضي: عشوائي
-    cooldown.set(m.sender, now)
     await m.react('📜')
     try {
       const { data } = await axios.get('https://api.hadith.gading.dev/books', { timeout: 10000 })
@@ -152,5 +141,4 @@ function sendFixedHadith(m) {
 handler.command = ['hadith', 'حديث', 'احاديث']
 handler.usage = ['hadith', 'hadith عشوائي', 'hadith بحث <كلمة>', 'hadith كتاب <bukhari|muslim|...>']
 handler.category = 'islamic'
-handler.cooldown = 3
 export default handler

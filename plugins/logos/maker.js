@@ -6,9 +6,6 @@
 */
 import axios from 'axios'
 
-const cooldown = new Map()
-const COOLDOWN_MS = 10000
-
 const STYLES = [
   { id: 'neon', name: '💡 نيون', desc: 'أضواء نيون ساطعة', emoji: '💡', params: 'neon, glowing, vibrant colors, dark background' },
   { id: '3d', name: '🎮 ثلاثي الأبعاد', desc: 'شعار 3D واقعي', emoji: '🎮', params: '3d, realistic, depth, shadows, cinematic lighting' },
@@ -34,10 +31,6 @@ const POLLINATIONS = 'https://image.pollinations.ai/prompt/'
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
     const prompt = text?.replace(/^(لوجو|logo|شعار)\s*/i, '').trim()
@@ -96,7 +89,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       return m.reply('❌ النص طويل جداً (الحد 50 حرف للشعار)')
     }
 
-    cooldown.set(m.sender, now)
     await m.react('🎨')
 
     const styleId = userStyle.get(m.sender) || 'neon'
@@ -128,5 +120,4 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 handler.command = ['logo', 'لوجو', 'شعار', 'logomaker']
 handler.usage = ['logo <نص>', 'logo نمط <neon|3d|minimal|gradient|retro|luxury|tech|handwritten>', 'logo أنماط', 'logo إعدادات']
 handler.category = 'logos'
-handler.cooldown = 10
 export default handler

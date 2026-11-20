@@ -5,16 +5,9 @@
   ═══════════════════════════════════════════
 */
 
-const cooldown = new Map()
-const COOLDOWN_MS = 5000
-
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
 
@@ -36,7 +29,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
         }, { quoted: m })
       }
 
-      cooldown.set(m.sender, now)
       await m.react('📦')
 
       // حفظ معلومات الحزمة (يمكن تطويرها لقاعدة بيانات)
@@ -106,5 +98,4 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 handler.command = ['pack', 'حزمة', 'stickerpack']
 handler.usage = ['pack <اسم> [كاتب]', 'pack قائمتي', 'pack عرض <id>', 'pack احذف <id>']
 handler.category = 'sticker'
-handler.cooldown = 5
 export default handler

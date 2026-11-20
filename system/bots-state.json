@@ -1,5 +1,27 @@
 {
-  "subBots": {},
+  "subBots": {
+    "201505362172": {
+      "phone": "201505362172",
+      "uid": "51aa6bae2479",
+      "controlCode": "LB-B5Z6-P4RH",
+      "lastPairCode": "L7ZVW86F",
+      "pairStatus": "pairing",
+      "pairError": null,
+      "createdAt": 1795198031145,
+      "pairedAt": 1795198033206,
+      "lastSeenAt": 0,
+      "waName": "",
+      "settings": {
+        "mode": "public",
+        "customName": "",
+        "prefix": ".",
+        "welcome": true,
+        "autoReply": true,
+        "paused": false,
+        "notes": ""
+      }
+    }
+  },
   "mainBot": {
     "nameBot": "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻",
     "prefix": [

@@ -5,9 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
-
 function bbcodeToHtml(bbcode) {
   return bbcode
     // الأحجام والعناوين
@@ -71,10 +68,6 @@ function bbcodeToPlain(bbcode) {
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
     const input = text?.replace(/^(بي بي كود|bbcode|bb)\s*/i, '').trim() || m.quoted?.text
@@ -96,7 +89,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // تحويل لـ HTML
     if (subCmd === 'html' || subCmd === 'إتش تي إم إل') {
-      cooldown.set(m.sender, now)
       const html = bbcodeToHtml(input)
       return conn.sendMessage(m.chat, {
         text: `🌐 *HTML Output:*\\n\\n\`\`\`html\\n${html}\\n\`\`\``,
@@ -106,7 +98,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // تحويل لـ Markdown
     if (subCmd === 'md' || subCmd === 'ماركداون' || subCmd === 'markdown') {
-      cooldown.set(m.sender, now)
       const md = bbcodeToMarkdown(input)
       return conn.sendMessage(m.chat, {
         text: `📝 *Markdown Output:*\\n\\n\`\`\`markdown\\n${md}\\n\`\`\``,
@@ -116,7 +107,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // تحويل لنص عادي
     if (subCmd === 'نص' || subCmd === 'plain' || subCmd === 'عادي') {
-      cooldown.set(m.sender, now)
       const plain = bbcodeToPlain(input)
       return conn.sendMessage(m.chat, {
         text: `📄 *Plain Text:*\\n\\n\`\`\`\\n${plain}\\n\`\`\``,
@@ -126,7 +116,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // تحويل الكل
     if (subCmd === 'الكل' || subCmd === 'all') {
-      cooldown.set(m.sender, now)
       const html = bbcodeToHtml(input)
       const md = bbcodeToMarkdown(input)
       const plain = bbcodeToPlain(input)
@@ -141,7 +130,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // تحقق
     if (subCmd === 'تحقق' || subCmd === 'validate') {
-      cooldown.set(m.sender, now)
       const issues = []
       const tags = ['b', 'i', 'u', 's', 'code', 'quote', 'url', 'img', 'color', 'size', 'list']
       tags.forEach(tag => {
@@ -153,7 +141,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     }
 
     // معاينة
-    cooldown.set(m.sender, now)
     const preview = bbcodeToHtml(input).replace(/<[^>]+>/g, '').slice(0, 200)
 
     return conn.sendMessage(m.chat, {
@@ -178,5 +165,4 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 handler.command = ['bbcode', 'بي بي كود', 'bb', 'bbc']
 handler.usage = ['bbcode <نص>', 'bbcode html', 'bbcode md', 'bbcode plain', 'bbcode الكل', 'bbcode تحقق']
 handler.category = 'meta'
-handler.cooldown = 3
 export default handler

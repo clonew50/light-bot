@@ -5,13 +5,10 @@
   ═══════════════════════════════════════════
 */
 import axios from "axios";
-import { pruneCooldown } from "../../system/cooldowns.js";
 
 const TIMEOUT = 25000;
-const COOLDOWN = 10 * 1000;
 
 /* كولداون في الذاكرة زي plugins/bank/theft.js */
-const cooldown = new Map();
 
 const FOOTER = "𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻";
 
@@ -52,12 +49,6 @@ const handler = async (m, { conn, args, text, usedPrefix, command }) => {
 
     /* كولداون ضد السبام */
     const now = Date.now();
-    const last = cooldown.get(m.sender) || 0;
-    if (now - last < COOLDOWN)
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN - (now - last)) / 1000)} ثانية تانية`);
-
-    pruneCooldown(cooldown, COOLDOWN);
-    cooldown.set(m.sender, now);
 
     try { await m.react("💱"); } catch (e) {}
 

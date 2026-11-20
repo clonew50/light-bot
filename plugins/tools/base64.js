@@ -4,11 +4,6 @@
   الأمر: .base64 / .بيس64 <نص>
   ═══════════════════════════════════════════
 */
-import { pruneCooldown } from '../../system/cooldowns.js'
-
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
-
 function encode(text) {
   return Buffer.from(text, 'utf-8').toString('base64')
 }
@@ -45,11 +40,6 @@ function buildButtons(usedPrefix = '.') {
 const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
-    pruneCooldown(cooldown, COOLDOWN_MS)
 
     const subCmd = args[0]?.toLowerCase()
     const restText = args.slice(1).join(' ').trim()
@@ -59,7 +49,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
     if (subCmd === 'تشفير' || subCmd === 'encode' || subCmd === 'encrypt') {
       const target = restText || quotedText
       if (!target) return m.reply('❌ اكتب نص للتشفير أو رد على رسالة')
-      cooldown.set(m.sender, now)
       const encoded = encode(target)
       await m.react('🔒')
       return conn.sendMessage(m.chat, {
@@ -79,7 +68,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
       if (!target) return m.reply('❌ اكتب Base64 لفك التشفير أو رد على رسالة')
       const decoded = decode(target)
       if (decoded === null) return m.reply('❌ Base64 غير صالح')
-      cooldown.set(m.sender, now)
       await m.react('🔓')
       return conn.sendMessage(m.chat, {
         text: `🔓 *تم فك التشفير:*\n\n\`${decoded}\`\n\n📏 ${target.length} حرف → ${decoded.length} حرف`,
@@ -95,7 +83,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
     if (subCmd === 'url' || subCmd === 'urlsafe') {
       const target = restText || quotedText
       if (!target) return m.reply('❌ اكتب نص')
-      cooldown.set(m.sender, now)
       const isEncoded = /^[A-Za-z0-9_-]+$/.test(target) && target.length >= 4 && target.length % 4 === 0
       if (isEncoded && !target.includes(' ') && !target.includes('\n')) {
         const result = decodeUrl(target)
@@ -118,7 +105,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
       try {
         const buffer = await q.download()
         const b64 = buffer.toString('base64')
-        cooldown.set(m.sender, now)
         await m.react('📁')
         return m.reply(
           `📁 *ملف → Base64:*\n\n` +
@@ -137,7 +123,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
       return m.reply(`📋 *تم النسخ:*\n\`${value}\``)
     }
 
-    cooldown.set(m.sender, now)
     const target = input || quotedText
     if (target) {
       const isBase64 = /^[A-Za-z0-9+/=]+$/.test(target) && target.length >= 4 && target.length % 4 === 0
@@ -173,5 +158,4 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['base64', 'بيس64', 'باز64', 'b64']
 handler.usage = ['base64 <نص>', 'base64 تشفير <نص>', 'base64 فك <base64>', 'base64 url <نص>', 'base64 ملف (رد على ميديا)']
 handler.category = 'tools'
-handler.cooldown = 3
 export default handler

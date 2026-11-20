@@ -5,8 +5,6 @@
   ═══════════════════════════════════════════
 */
 import crypto from 'crypto'
-import { pruneCooldown } from '../../system/cooldowns.js'
-
 const ALGORITHMS = [
   { id: 'md5', name: 'MD5', desc: '128-bit، سريع، غير آمن', emoji: '🔴' },
   { id: 'sha1', name: 'SHA-1', desc: '160-bit، مهجور', emoji: '🟠' },
@@ -18,8 +16,6 @@ const ALGORITHMS = [
   { id: 'ripemd160', name: 'RIPEMD-160', desc: '160-bit، بديل', emoji: '🟡' },
 ]
 
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
 const userAlgo = new Map()
 
 function buildAlgoButtons(usedPrefix = '.') {
@@ -40,11 +36,6 @@ function hashText(text, algo) {
 const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
-    pruneCooldown(cooldown, COOLDOWN_MS)
     if (userAlgo.size > 2000) userAlgo.delete(userAlgo.keys().next().value)
 
     const subCmd = args[0]?.toLowerCase()
@@ -73,7 +64,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
     if (subCmd === 'الكل' || subCmd === 'all') {
       const target = args.slice(1).join(' ').trim() || m.quoted?.text
       if (!target) return m.reply('❌ اكتب نص أو رد على رسالة')
-      cooldown.set(m.sender, now)
       await m.react('#️⃣')
       let out = `📋 *هاش لجميع الخوارزميات:*\n\n\`${target.slice(0, 50)}\`\n\n`
       for (const a of ALGORITHMS) {
@@ -100,7 +90,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 
     const targetText = inputText || m.quoted?.text || m.quoted?.msg?.conversation
 
-    cooldown.set(m.sender, now)
     await m.react('#️⃣')
 
     const algoId = userAlgo.get(m.sender) || 'sha256'
@@ -129,5 +118,4 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['hash', 'هاش', 'هاشينغ']
 handler.usage = ['hash <نص>', 'hash خوارزمية <md5|sha1|sha256|sha512|...>', 'hash الكل <نص>', 'hash إعدادات']
 handler.category = 'tools'
-handler.cooldown = 3
 export default handler

@@ -5,10 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-import { pruneCooldown } from '../../system/cooldowns.js'
-
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
 const userPrefs = new Map()
 
 const STRENGTHS = [
@@ -93,11 +89,6 @@ function buildLengthButtons() {
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
-    pruneCooldown(cooldown, COOLDOWN_MS)
     if (userPrefs.size > 2000) userPrefs.delete(userPrefs.keys().next().value)
 
     const subCmd = args[0]?.toLowerCase()
@@ -189,7 +180,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       const pwd = generatePassword(prefs.length, prefs)
       userPrefs.set(m.sender + '_last', pwd)
       userPrefs.set(m.sender, prefs)
-      cooldown.set(m.sender, now)
       await m.react('🔐')
 
       return conn.sendMessage(m.chat, {
@@ -218,7 +208,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // قائمة رئيسية
     const strength = getStrength(prefs.length, prefs.symbols, prefs.upper, prefs.lower, prefs.digits)
-    cooldown.set(m.sender, now)
     return conn.sendMessage(m.chat, {
       text: `🔐 *مولد كلمة مرور قوية*\n\n` +
         `الإعدادات الحالية: ${prefs.length} حرف • ${strength.emoji} ${strength.label}`,
@@ -236,5 +225,4 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 handler.command = ['باسورد', 'password', 'passgen', 'كلمةمرور']
 handler.usage = ['باسورد', 'باسورد توليد', 'باسورد إعدادات', 'باسورد طول <8-64>', 'باسورد تبديل <symbols|upper|lower|digits|excludeAmbiguous>']
 handler.category = 'tools'
-handler.cooldown = 3
 export default handler

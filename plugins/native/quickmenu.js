@@ -77,7 +77,7 @@ const handler = async (m, ctx = {}) => {
     const cats = await collectCategories(bot);
     const sub = nonEmpty(ctx.args?.[0] ?? ctx.text, '').trim();
 
-    // ── .قسم <category> ──────────────────────────────────────────────
+    // ── .قسم <category> [page] ───────────────────────────────────────
     if (sub) {
       const needle = sub.toLowerCase();
       const found = cats.find((c) =>
@@ -90,12 +90,21 @@ const handler = async (m, ctx = {}) => {
         return say(m, '❌ القسم غير موجود. اكتب .قائمة لعرض كل الأقسام.');
       }
 
-      const buttons = found.commands.map((u) => quickReply(u, u, prefix));
-      if (!buttons.length) {
+      if (!found.commands.length) {
         return say(m, `❌ لا توجد أوامر في قسم ${found.label}.`);
       }
 
-      const caption = `${nonEmpty(info?.nameBot, 'القائمة')}\n\n${found.emoji} ${found.label}\nعدد الأوامر: ${buttons.length}\nاختر أمراً:`;
+      const PAGE_CMDS = 25;
+      const totalCmds = found.commands.length;
+      const totalPages = Math.max(1, Math.ceil(totalCmds / PAGE_CMDS));
+      const page = Math.min(totalPages, Math.max(1, parseInt(ctx.args?.[1] || '1', 10) || 1));
+      const pageCmds = found.commands.slice((page - 1) * PAGE_CMDS, page * PAGE_CMDS);
+      const buttons = pageCmds.map((u) => quickReply(u, u, prefix));
+      if (page < totalPages) {
+        buttons.push(quickReply(`قسم ${found.key} ${page + 1}`, `⏭️ الصفحة التالية (${page + 1}/${totalPages})`, prefix));
+      }
+
+      const caption = `${nonEmpty(info?.nameBot, 'القائمة')}\n\n${found.emoji} ${found.label}\nعدد الأوامر: ${totalCmds.toLocaleString()} (صفحة ${page}/${totalPages})\nاختر أمراً أو ابحث بـ \`.بحث_امر\`:`;
       await sendChunks(conn, m.chat, images, caption, footer, buttons, m);
       return undefined;
     }

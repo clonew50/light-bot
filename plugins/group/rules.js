@@ -5,9 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
-
 if (!global.groupRules) global.groupRules = new Map()
 
 const DEFAULT_RULES = `📜 *قواعد المجموعة*
@@ -41,17 +38,12 @@ const handler = async (m, { conn, text, args, usedPrefix, isAdmin, isBotAdmin, s
     if (!m.isGroup) return m.reply('❌ هذا الأمر للمجموعات فقط')
 
     const now = Date.now()
-    const last = cooldown.get(sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const rules = getRules(m.chat)
     const subCmd = args[0]?.toLowerCase()
 
     // عرض القواعد
     if (!subCmd || subCmd === 'عرض' || subCmd === 'show') {
-      cooldown.set(sender, now)
       return conn.sendMessage(m.chat, {
         text: rules.text,
         footer: 'LIGHT BOT • Rules',
@@ -194,6 +186,5 @@ const handler = async (m, { conn, text, args, usedPrefix, isAdmin, isBotAdmin, s
 handler.command = ['rules', 'قوانين', 'قواعد', 'group_rules']
 handler.usage = ['rules', 'rules تعديل <نص>', 'rules تثبيت', 'rules إلغاء_تثبيت', 'rules أضف <قاعدة>', 'rules احذف <رقم>', 'rules افتراضي', 'rules معلومات']
 handler.category = 'group'
-handler.cooldown = 3
 handler.group = true
 export default handler

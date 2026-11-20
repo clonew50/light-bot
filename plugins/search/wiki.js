@@ -6,18 +6,12 @@
 */
 import axios from 'axios'
 
-const cooldown = new Map()
-const COOLDOWN_MS = 5000
 const LANGUAGES = ['ar', 'en', 'fr', 'es', 'de', 'tr', 'ru', 'zh', 'ja']
 const userLang = new Map()
 
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
     const query = text?.replace(/^(ويكي|wiki)\s*/i, '').trim()
@@ -54,14 +48,12 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // مقال عشوائي
     if (query === 'عشوائي' || query === 'random') {
-      cooldown.set(m.sender, now)
       await m.react('🎲')
       const lang = userLang.get(m.sender) || 'ar'
       const { data } = await axios.get(`https://${lang}.wikipedia.org/api/rest_v1/page/random/summary`, { timeout: 10000 })
       return sendArticle(m, conn, data, lang)
     }
 
-    cooldown.set(m.sender, now)
     await m.react('📖')
 
     const lang = userLang.get(m.sender) || 'ar'
@@ -110,5 +102,4 @@ async function sendArticle(m, conn, data, lang) {
 handler.command = ['wiki', 'ويكي', 'wikipedia']
 handler.usage = ['wiki <موضوع>', 'wiki لغة <ar|en|fr|...>', 'wiki عشوائي']
 handler.category = 'search'
-handler.cooldown = 5
 export default handler

@@ -154,5 +154,4 @@ const handler = async (m, { conn, args, usedPrefix = '.' }) => {
 handler.command = ['history', 'سجل', 'محادثات'];
 handler.usage = ['history', 'history عرض [عدد]', 'history مسح تأكيد', 'history تصدير', 'history إحصائيات', 'history بحث <كلمة>'];
 handler.category = 'ai';
-handler.cooldown = 3;
 export default handler;

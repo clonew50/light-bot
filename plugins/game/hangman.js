@@ -5,11 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-import { pruneCooldown } from '../../system/cooldowns.js'
-
-const cooldown = new Map()
-const COOLDOWN_MS = 5000
-
 const HANGMAN_STAGES = [
   `
    +---+
@@ -117,7 +112,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     const sender = m.sender
     const subCmd = args[0]?.toLowerCase()
     const game = getGame(chatId)
-    pruneCooldown(cooldown, COOLDOWN_MS)
 
     // تخمين حرف
     if (subCmd === 'حرف' || subCmd === 'letter') {
@@ -204,13 +198,8 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     }
 
     // لعبة جديدة / قائمة رئيسية
-    const last = cooldown.get(sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     // بدء لعبة جديدة
-    cooldown.set(sender, now)
     const category = args[0] && CATEGORIES[args[0]] ? args[0] : Object.keys(CATEGORIES)[Math.floor(Math.random() * Object.keys(CATEGORIES).length)]
     const word = CATEGORIES[category].words[Math.floor(Math.random() * CATEGORIES[category].words.length)]
 
@@ -249,6 +238,5 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 handler.command = ['hangman', 'مشنقة', 'شنق', 'hangman-ar']
 handler.usage = ['hangman', 'hangman فئة <animals|fruits|countries|objects|colors>', 'hangman حرف <حرف>', 'hangman تلميح', 'hangman إيقاف']
 handler.category = 'games'
-handler.cooldown = 5
 handler.group = true
 export default handler

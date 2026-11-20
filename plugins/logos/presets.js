@@ -5,9 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-const cooldown = new Map()
-const COOLDOWN_MS = 5000
-
 const PRESETS = {
   gaming: [
     { name: '🎮 فريق ألعاب', template: 'Gaming Team {name}', style: 'neon', emoji: '🎮' },
@@ -44,10 +41,6 @@ const PRESETS = {
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
 
@@ -77,14 +70,12 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       const preset = PRESETS[subCmd][presetIndex]
       const finalText = preset.template.replace('{name}', name)
 
-      cooldown.set(m.sender, now)
 
       // استدعاء أمر اللوجو الأساسي
       return m.reply(`✅ تم اختيار القالب: ${preset.emoji} ${preset.name}\\nالنص النهائي: ${finalText}\\n\\nالآن اكتب: \`.logo ${finalText}\` مع النمط ${preset.style}`)
     }
 
     // قائمة الفئات
-    cooldown.set(m.sender, now)
     return conn.sendMessage(m.chat, {
       text: `📋 *قوالب اللوجو الجاهزة*\\n\\nاختر فئة:`,
       footer: 'LIGHT BOT • Logo Presets',
@@ -104,5 +95,4 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 handler.command = ['logopreset', 'قوالب_لوجو', 'شعار_جاهز', 'logo_preset']
 handler.usage = ['logopreset', 'logopreset <gaming|business|personal|tech|fun>', 'logopreset <fئة> <رقم> "الاسم"']
 handler.category = 'logos'
-handler.cooldown = 5
 export default handler

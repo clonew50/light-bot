@@ -40,7 +40,6 @@ const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 export const DEFAULT_API_BASE = "https://text.pollinations.ai";
 export const DEFAULT_TIMEOUT_MS = 45000;
-export const COOLDOWN_MS = 20000;
 export const MAX_PROMPT = 1000;
 export const AI_ERROR = "تعذر الوصول إلى مزود الذكاء الاصطناعي";
 /* نص الاستخدام القديم — ما اتغيّرش (نفس صيغة الأمر) */
@@ -127,8 +126,7 @@ const JSON_ERROR_HINT_RE = /"(?:error|errors|status|status_code|statusCode|code|
 const ERROR_PHRASE_RE =
   /error|fail(?:ed|ure)?|denied|disabled|quota|payment required|unauthoriz|forbidden|not found|unavailable|timeout|invalid api key|expired|blocked|rate limit/i;
 
-/* كولداون في الذاكرة لكل مستخدم (زي plugins/ai/imagen.js) */
-const cooldown = new Map();
+
 
 const envStr = (name) => String(process.env[name] ?? "").trim();
 const trimSlash = (v) => String(v || "").trim().replace(/\/+$/, "");
@@ -404,17 +402,7 @@ const handler = async (m, { conn, text, bot }) => {
   if (prompt.length > MAX_PROMPT)
     return m.reply(`❌ سؤالك طويل أوي، الحد الأقصى ${MAX_PROMPT} حرف — اختصره شوية`);
 
-  /* كولداون لكل مستخدم — يمنع إغراق المزود */
-  const sender = m?.sender || m?.chat || "unknown";
-  const now = Date.now();
-  const last = cooldown.get(sender) || 0;
-  if (now - last < COOLDOWN_MS)
-    return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية تانية قبل سؤال جديد`);
-  if (cooldown.size > 500) {
-    /* تنظيف: الخريطة مايبقاش تكبر للأبد */
-    for (const [id, ts] of cooldown) if (now - ts >= COOLDOWN_MS) cooldown.delete(id);
-  }
-  cooldown.set(sender, now);
+
 
   const { base, useKey } = resolveBase(bot);
   const timeout = resolveTimeout();
@@ -448,4 +436,5 @@ handler.usage = ["اوبن"];
 handler.category = "ai";
 handler.command = ["اوبن"];
 
+export const COOLDOWN_MS = 0;
 export default handler;

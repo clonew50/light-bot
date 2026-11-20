@@ -5,8 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
 const MIN_TRANSFER = 10
 const MAX_TRANSFER = 100000
 const FEE_PERCENT = 0.02 // 2% رسوم
@@ -14,10 +12,6 @@ const FEE_PERCENT = 0.02 // 2% رسوم
 const handler = async (m, { conn, text, args, usedPrefix, sender }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
     const mentioned = m.mentionedJid?.[0] || (args[1]?.startsWith('@') ? args[1].replace('@', '') + '@s.whatsapp.net' : null)
@@ -58,7 +52,6 @@ const handler = async (m, { conn, text, args, usedPrefix, sender }) => {
 
       if (senderBal < total) return m.reply(`❌ رصيد غير كافي!\\nتحتاج: ${total.toLocaleString()} (${amount.toLocaleString()} + ${fee.toLocaleString()} رسوم)\\nرصيدك: ${senderBal.toLocaleString()}`)
 
-      cooldown.set(sender, now)
 
       // تنفيذ التحويل
       global.db.users[sender].balance -= total
@@ -88,7 +81,6 @@ const handler = async (m, { conn, text, args, usedPrefix, sender }) => {
     }
 
     // مساعدة
-    cooldown.set(sender, now)
     return conn.sendMessage(m.chat, {
       text: `💸 *أوامر التحويل:*\\n\\n` +
         `\`${usedPrefix}transfer @user 500\` - تحويل 500 عملة\\n` +
@@ -111,5 +103,4 @@ const handler = async (m, { conn, text, args, usedPrefix, sender }) => {
 handler.command = ['transfer', 'تحويل', 'send', 'ارسال']
 handler.usage = ['transfer @user <مبلغ>', 'transfer سجل']
 handler.category = 'bank'
-handler.cooldown = 3
 export default handler

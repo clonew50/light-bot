@@ -5,8 +5,6 @@
   ═══════════════════════════════════════════
 */
 import crypto from 'crypto'
-import { pruneCooldown } from '../../system/cooldowns.js'
-
 const VERSIONS = [
   { id: 'v1', name: 'v1 (وقت + MAC)', desc: 'بناء على الوقت وعنوان MAC', emoji: '⏰' },
   { id: 'v4', name: 'v4 (عشوائي)', desc: 'عشوائي تشفيرياً، الأكثر استخداماً', emoji: '🎲' },
@@ -15,8 +13,6 @@ const VERSIONS = [
   { id: 'max', name: 'Max UUID', desc: 'قيم قصوى (ffffffff-...)', emoji: '🔴' },
 ]
 
-const cooldown = new Map()
-const COOLDOWN_MS = 2000
 const userVersion = new Map()
 
 function generateV1() {
@@ -70,11 +66,6 @@ function buildVersionButtons(usedPrefix = '.') {
 const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
-    pruneCooldown(cooldown, COOLDOWN_MS)
     if (userVersion.size > 2000) userVersion.delete(userVersion.keys().next().value)
 
     const subCmd = args[0]?.toLowerCase()
@@ -107,7 +98,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 
     if (subCmd === 'كمية' || subCmd === 'count' || subCmd === 'عدد') {
       const count = Math.min(Math.max(parseInt(args[1]) || 1, 1), 50)
-      cooldown.set(m.sender, now)
       const ver = userVersion.get(m.sender) || 'v4'
       const uuids = Array.from({ length: count }, () => generate(ver))
       await m.react('🆔')
@@ -128,7 +118,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
       )
     }
 
-    cooldown.set(m.sender, now)
     const ver = userVersion.get(m.sender) || 'v4'
     const uuid = generate(ver)
     const v = VERSIONS.find(x => x.id === ver)
@@ -156,5 +145,4 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['uuid', 'يوييد', 'معرّف', 'guid']
 handler.usage = ['uuid', 'uuid اصدار <v1|v4|v7|nil|max>', 'uuid كمية <عدد>', 'uuid تحقق <uuid>', 'uuid إعدادات']
 handler.category = 'tools'
-handler.cooldown = 2
 export default handler

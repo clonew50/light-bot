@@ -9,10 +9,7 @@
     .ميتا_كود py print("hello")
   ═══════════════════════════════════════════
 */
-import { pruneCooldown } from "../../system/cooldowns.js";
 
-const cooldown = new Map();
-const COOLDOWN_MS = 4 * 1000;
 
 const handler = async (m, { conn, text }) => {
   try {
@@ -26,10 +23,6 @@ const handler = async (m, { conn, text }) => {
       }, { quoted: m });
       return;
     }
-    const last = cooldown.get(m.chat) || 0;
-    if (Date.now() - last < COOLDOWN_MS) return;
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(m.chat, Date.now());
 
     if (typeof conn?.sendAiMessage === 'function') {
       // الشكل اللي الإطار بيتوقعه بالظبط: {type:5, codeMetadata:{language, code}}
@@ -47,6 +40,5 @@ const handler = async (m, { conn, text }) => {
 handler.command = ['ميتا_كود', 'ميتاكود'];
 handler.usage = ['ميتا_كود <لغة> <كود>'];
 handler.category = 'ai';
-handler.cooldown = 4;
 
 export default handler;

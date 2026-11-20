@@ -104,6 +104,5 @@ const handler = async (m, ctx = {}) => {
 handler.command = ['ستكر', 'annotate'];
 handler.usage = ['.ستكر <نص التعليق> (رد على صورة)'];
 handler.category = 'sticker';
-handler.cooldown = 6;
 
 export default handler;

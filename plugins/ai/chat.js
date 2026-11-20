@@ -11,7 +11,6 @@ import {
   getUserAiModel,
   setUserAiModel
 } from '../../system/aiService.js';
-import { pruneCooldown } from '../../system/cooldowns.js';
 import { splitText } from '../../system/text-chunks.js';
 import { addMessage, clearHistory, loadHistory } from './history.js';
 import { getAllPersonas, findPersonaById } from './persona.js';
@@ -22,16 +21,10 @@ const MODELS = [
   { id: 'openai-large', name: '🚀 GPT Large', desc: 'قدرة أعمق في التفكير والتحليل المعقد', emoji: '🚀' }
 ];
 
-const cooldown = new Map();
-const COOLDOWN_MS = 4000;
 
 const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now();
-    const last = cooldown.get(m.sender) || 0;
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`);
-    }
 
     const subCmd = args[0]?.toLowerCase();
     const personas = getAllPersonas();
@@ -124,8 +117,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
       }, { quoted: m });
     }
 
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(m.sender, now);
     await m.react?.('🧠');
 
     const persona = findPersonaById(getUserPersonaId(m.sender));
@@ -162,5 +153,4 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['chat', 'ai', 'محادثة'];
 handler.usage = ['chat <سؤال>', 'chat شخصية', 'chat نموذج', 'chat حالي', 'chat سجل', 'chat مسح'];
 handler.category = 'ai';
-handler.cooldown = 4;
 export default handler;

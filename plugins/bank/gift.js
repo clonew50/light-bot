@@ -34,15 +34,7 @@ const handler = async (m, { conn, command }) => {
     const user = global.db.users[m.sender];
     if (!user.time) user.time = {};
     
-    const lastClaim = user.time[type];
     const now = Date.now();
-    
-    if (lastClaim && (now - lastClaim) < reward.cooldown) {
-        const remaining = getTimeRemaining(lastClaim, reward.cooldown);
-        const timeLeft = formatTime(remaining);
-        await m.reply(`*❌ انتظـر ${timeLeft} لاستلام الهدية ${reward.name}*`);
-        return;
-    }
     
     user.time[type] = now;
     user.xp = (user.xp || 0) + reward.xp;

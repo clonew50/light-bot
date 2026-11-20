@@ -7,9 +7,6 @@
 import QRCode from 'qrcode'
 import { pruneCooldown } from '../../system/cooldowns.js'
 import { generateAIImage } from '../../system/aiService.js'
-
-const COOLDOWN_MS = 10 * 1000
-const cooldown = new Map()
 const pending = new Map()
 
 const context = (jid) => ({
@@ -46,11 +43,7 @@ async function generateQR(content, type) {
 const handler = async (m, { conn, text, args }) => {
     try {
         const now = Date.now()
-        const last = cooldown.get(m.chat) || 0
-        if (now - last < COOLDOWN_MS) return
-        pruneCooldown(cooldown, COOLDOWN_MS)
         pruneCooldown(pending, 5 * 60 * 1000)
-        cooldown.set(m.chat, now)
 
         const input = (text || '').trim()
         const waiting = pending.get(m.chat)
@@ -115,6 +108,5 @@ const handler = async (m, { conn, text, args }) => {
 handler.command = ['qr', 'كيوأل', 'كيوआर']
 handler.usage = ['qr مرحباً', 'qr url https://example.com', 'qr wifi', 'qr vcard']
 handler.category = 'tools'
-handler.cooldown = 10
 
 export default handler

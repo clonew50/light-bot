@@ -6,9 +6,6 @@
 */
 import axios from 'axios'
 
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
-
 const VOICE_CATEGORIES = {
   arabic: [
     { id: 'ar-SA-Standard-A', name: '🇸🇦 عربي سعودي (أنثى)', sample: 'مرحباً بكم' },
@@ -55,10 +52,6 @@ function getAllVoices() {
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
     const allVoices = getAllVoices()
@@ -90,7 +83,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       const voice = allVoices.find(v => v.id === voiceId)
       if (!voice) return m.reply('❌ صوت غير موجود')
 
-      cooldown.set(m.sender, now)
       await m.react('🎙️')
 
       try {
@@ -122,7 +114,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     }
 
     // قائمة رئيسية مع أزرار الفئات
-    cooldown.set(m.sender, now)
     return conn.sendMessage(m.chat, {
       text: `🎙️ *قائمة الأصوات (${allVoices.length} صوت)*\\n\\nاختر فئة للتصفح:`,
       footer: 'LIGHT BOT • Voice List',
@@ -154,5 +145,4 @@ function showCategory(m, voices, title) {
 handler.command = ['voicelist', 'أصوات', 'قائمة_أصوات', 'voices_list']
 handler.usage = ['voicelist', 'voicelist عربي', 'voicelist إنجليزي', 'voicelist دولي', 'voicelist بحث <كلمة>', 'voicelist معاينة <id>', 'voicelist إحصائيات']
 handler.category = 'voices'
-handler.cooldown = 3
 export default handler

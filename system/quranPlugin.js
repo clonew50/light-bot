@@ -36,7 +36,7 @@ const getMaxAudioBytes = () => {
 const API_TIMEOUT_MS = 15000;
 const AUDIO_TIMEOUT_MS = 25000;
 const SEND_TIMEOUT_MS = 300000; // 5 minutes for very large surahs
-const COOLDOWN_MS = 10000;
+const COOLDOWN_MS = 0;
 const MAX_TRACKED = 5000;
 const CACHE_TTL_MS = 30 * 60 * 1000;
 

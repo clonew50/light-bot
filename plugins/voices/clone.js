@@ -6,8 +6,6 @@
 */
 import axios from 'axios'
 
-const cooldown = new Map()
-const COOLDOWN_MS = 5000
 const MAX_TEXT_LEN = 500
 
 const VOICES = [
@@ -35,10 +33,6 @@ function buildVoiceButtons() {
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
     const inputText = text?.replace(/^(صوت|voice|tts)\s*/i, '').trim()
@@ -98,7 +92,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       return m.reply(`❌ النص طويل جداً (الحد ${MAX_TEXT_LEN} حرف)`)
     }
 
-    cooldown.set(m.sender, now)
     await m.react('🎙️')
 
     const voiceId = userVoice.get(m.sender) || 'ar-SA'
@@ -137,5 +130,4 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 handler.command = ['voice', 'صوت', 'tts', 'تكلم']
 handler.usage = ['voice <نص>', 'voice صوت <ar-SA|en-US|...>', 'voice أصوات', 'voice حالي']
 handler.category = 'voices'
-handler.cooldown = 5
 export default handler

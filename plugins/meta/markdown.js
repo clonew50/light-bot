@@ -5,9 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
-
 // محول Markdown بسيط
 function markdownToHtml(md) {
   return md
@@ -73,10 +70,6 @@ function markdownToPlain(md) {
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
     const input = text?.replace(/^(ماركداون|markdown|md)\s*/i, '').trim() || m.quoted?.text
@@ -98,7 +91,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // تحويل لـ HTML
     if (subCmd === 'html' || subCmd === 'إتش تي إم إل') {
-      cooldown.set(m.sender, now)
       const html = markdownToHtml(input)
       return conn.sendMessage(m.chat, {
         text: `🌐 *HTML Output:*\\n\\n\`\`\`html\\n${html}\\n\`\`\``,
@@ -108,7 +100,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // تحويل لـ BBCode
     if (subCmd === 'bbcode' || subCmd === 'بي بي كود') {
-      cooldown.set(m.sender, now)
       const bbcode = markdownToBbcode(input)
       return conn.sendMessage(m.chat, {
         text: `📋 *BBCode Output:*\\n\\n\`\`\`\\n${bbcode}\\n\`\`\``,
@@ -118,7 +109,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // تحويل لنص عادي
     if (subCmd === 'نص' || subCmd === 'plain' || subCmd === 'عادي') {
-      cooldown.set(m.sender, now)
       const plain = markdownToPlain(input)
       return conn.sendMessage(m.chat, {
         text: `📄 *Plain Text:*\\n\\n\`\`\`\\n${plain}\\n\`\`\``,
@@ -128,7 +118,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // تحويل الكل
     if (subCmd === 'الكل' || subCmd === 'all') {
-      cooldown.set(m.sender, now)
       const html = markdownToHtml(input)
       const bbcode = markdownToBbcode(input)
       const plain = markdownToPlain(input)
@@ -143,7 +132,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 
     // تحقق من الصحة
     if (subCmd === 'تحقق' || subCmd === 'validate' || subCmd === 'lint') {
-      cooldown.set(m.sender, now)
       const issues = []
       // فحص بسيط
       if (input.includes('**') && (input.match(/\*\*/g) || []).length % 2 !== 0) issues.push('⚠️ علامات ** غير متطابقة')
@@ -155,7 +143,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
     }
 
     // عرض معاينة تفاعلية
-    cooldown.set(m.sender, now)
     const html = markdownToHtml(input)
     const preview = html.replace(/<[^>]+>/g, '').slice(0, 200)
 
@@ -181,5 +168,4 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 handler.command = ['md', 'ماركداون', 'markdown', 'mkd']
 handler.usage = ['md <نص>', 'md html', 'md bbcode', 'md plain', 'md الكل', 'md تحقق']
 handler.category = 'meta'
-handler.cooldown = 3
 export default handler

@@ -5,8 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
 const MAX_OPTIONS = 10
 const MAX_QUESTION_LEN = 256
 
@@ -17,10 +15,6 @@ const handler = async (m, { conn, text, args, usedPrefix, isAdmin, sender }) => 
     if (!m.isGroup) return m.reply('❌ هذا الأمر للمجموعات فقط')
 
     const now = Date.now()
-    const last = cooldown.get(sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
     const chatPolls = global.polls.get(m.chat) || new Map()
@@ -62,7 +56,6 @@ const handler = async (m, { conn, text, args, usedPrefix, isAdmin, sender }) => 
 
       if (question.length > MAX_QUESTION_LEN) return m.reply(`❌ السؤال طويل جداً (الحد ${MAX_QUESTION_LEN} حرف)`)
 
-      cooldown.set(sender, now)
 
       const pollId = `poll_${Date.now()}_${sender.split('@')[0]}`
       const poll = {
@@ -258,6 +251,5 @@ function showResults(m, poll, ended = false) {
 handler.command = ['poll', 'استطلاع', 'تصويت', 'poll_vote']
 handler.usage = ['poll "سؤال" "خيار1" "خيار2" ...', 'poll صوت <id> <رقم>', 'poll نتيجة [id]', 'poll قائمة', 'poll انهاء <id>', 'poll احذف <id>', 'poll إعدادات <id> <متعدد|مجهول|مدة> <قيمة>']
 handler.category = 'group'
-handler.cooldown = 3
 handler.group = true
 export default handler

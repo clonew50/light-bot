@@ -5,16 +5,12 @@
   ═══════════════════════════════════════════
 */
 import crypto from 'crypto'
-import { pruneCooldown } from '../../system/cooldowns.js'
-
 const ALGORITHMS = [
   { id: 'HS256', name: 'HS256', desc: 'HMAC SHA-256 (مفتاح مشترك)', emoji: '🔐' },
   { id: 'HS384', name: 'HS384', desc: 'HMAC SHA-384', emoji: '🔐' },
   { id: 'HS512', name: 'HS512', desc: 'HMAC SHA-512', emoji: '🔐' },
 ]
 
-const cooldown = new Map()
-const COOLDOWN_MS = 5000
 const userAlgo = new Map()
 const userSecret = new Map()
 const userClaims = new Map()
@@ -103,11 +99,6 @@ function buildAlgoButtons(usedPrefix = '.') {
 const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
-    pruneCooldown(cooldown, COOLDOWN_MS)
     for (const map of [userAlgo, userSecret, userClaims]) {
       if (map.size > 2000) map.delete(map.keys().next().value)
     }
@@ -250,7 +241,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 
       const algo = userAlgo.get(m.sender) || 'HS256'
       const token = signJWT(claims, secret, algo)
-      cooldown.set(m.sender, now)
       await m.react('🎫')
 
       return conn.sendMessage(m.chat, {
@@ -283,5 +273,4 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['jwt', 'توكن', 'token']
 handler.usage = ['jwt توليد', 'jwt خوارزمية <HS256|HS384|HS512>', 'jwt مفتاح <سر>', 'jwt مطالبة <مفتاح> <قيمة>', 'jwt انقضاء <دقائق>', 'jwt تحقق <token>', 'jwt فك <token>', 'jwt إعدادات']
 handler.category = 'tools'
-handler.cooldown = 5
 export default handler

@@ -469,21 +469,21 @@ test('attempt3 keep: a hanging provider is cut off by the timeout and never hang
   assert.ok(replies[0].includes(AI_ERROR), replies[0]);
 });
 
-test('attempt3 keep: a per-user cooldown stops the provider from being hammered', async (t) => {
+test('attempt3 keep: consecutive user calls succeed with zero cooldown wait', async (t) => {
   cleanEnv(t);
   let calls = 0;
   stubFetch(t, async () => {
     calls++;
-    return res(200, '42');
+    return res(200, `4${calls}`);
   });
 
   const { m, replies } = fakeMessage('203000000111@s.whatsapp.net');
   await handler(m, { conn: {}, text: 'سؤال أول', bot: realBot() });
   await handler(m, { conn: {}, text: 'سؤال تاني', bot: realBot() });
 
-  assert.equal(calls, 1, 'the second call must be blocked by the cooldown');
+  assert.equal(calls, 2, 'consecutive calls execute without per-user cooldown blocking');
   assert.equal(replies.length, 2);
-  assert.ok(replies[1].includes('استنى'), replies[1]);
+  assert.equal(replies[1].includes('استنى'), false);
 });
 
 test('attempt3 keep: malformed input (empty prompt) replies with the usage text and never calls the provider', async (t) => {

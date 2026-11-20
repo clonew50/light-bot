@@ -38,40 +38,18 @@ const srcByNeedle = (dir, needle) => {
     throw new Error(`no file under ${dir} contains: ${needle}`);
 };
 
-/* ── cooldown maps ── */
+/* ── cooldown maps & bounded state maps ── */
 
-const COOLDOWN_FILES = [
-    'plugins/tools/weather.js',
-    'plugins/tools/currency.js',
-    'plugins/voices/tts.js',
-    'plugins/ai/imagen.js',
-    'plugins/meta/latex.js',
-    'plugins/meta/metacode.js',
-    'plugins/meta/metatext.js',
-    'plugins/tools/copybtn.js',
-    'plugins/tools/request-contact.js',
-    'plugins/bank/theft.js',
-];
-
-test('task-28: cooldown maps prune on write and import the shared helper', () => {
-    for (const file of COOLDOWN_FILES) {
-        const s = src(file);
-        assert.match(s, /import \{ pruneCooldown \} from "\.\.\/\.\.\/system\/cooldowns\.js";/, `${file}: missing import`);
-        assert.match(s, /pruneCooldown\(/, `${file}: never prunes`);
-    }
-});
-
-test('task-28: request-contact prunes both the cooldown and the pending map', () => {
+test('task-28: request-contact prunes the pending map and command cooldowns are disabled', () => {
     const s = src('plugins/tools/request-contact.js');
-    assert.match(s, /pruneCooldown\(cooldown, COOLDOWN_MS\)/);
+    assert.match(s, /import \{ pruneCooldown \} from "\.\.\/\.\.\/system\/cooldowns\.js";/);
     assert.match(s, /pruneCooldown\(pending, REQUEST_TTL\)/);
 });
 
-test('task-28: quran cooldowns prune by slot recency and cap the map', () => {
+test('task-28: quran plugin sets COOLDOWN_MS to 0 and keeps cooldowns map bounded', () => {
     const s = srcByNeedle('plugins/islamic', 'per-user cooldown');
-    assert.match(s, /const pruneCooldowns = \(\) => \{/);
+    assert.match(s, /const COOLDOWN_MS = 0;/);
     assert.match(s, /if \(cooldowns\.size > MAX_TRACKED\)/);
-    assert.match(s, /pruneCooldowns\(\);\s*\n\s*cooldowns\.set\(sender, rec\);/);
 });
 
 test('task-28: no other module-level cooldown map ships unpruned', () => {
@@ -89,9 +67,9 @@ test('task-28: no other module-level cooldown map ships unpruned', () => {
     const unpruned = [];
     for (const f of files) {
         const s = readFileSync(f, 'utf8');
-        const moduleLevel = /^const \w+ = new Map\(\);$/m.exec(s);
+        const moduleLevel = /^const \w*cooldown\w* = new Map\(\);$/im.exec(s);
         if (!moduleLevel) continue;
-        const guarded = /pruneCooldown\(|pruneCooldowns\(|cooldown\.size >/.test(s);
+        const guarded = /pruneCooldown\(|pruneCooldowns\(|cooldowns?\.size >/.test(s);
         if (!guarded) unpruned.push(rel(f));
     }
     assert.deepEqual(unpruned, []);

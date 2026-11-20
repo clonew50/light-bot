@@ -5,9 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
-
 // تخزين إعدادات الترحيب لكل مجموعة
 if (!global.welcomeSettings) global.welcomeSettings = new Map()
 
@@ -48,10 +45,6 @@ const handler = async (m, { conn, text, args, usedPrefix, isAdmin, isBotAdmin, s
     if (!m.isGroup) return m.reply('❌ هذا الأمر للمجموعات فقط')
 
     const now = Date.now()
-    const last = cooldown.get(sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     if (!isAdmin) return m.reply('❌ للأدمن فقط')
 
@@ -172,7 +165,6 @@ const handler = async (m, { conn, text, args, usedPrefix, isAdmin, isBotAdmin, s
         .replace('{date}', date)
         .replace('{time}', time)
 
-      cooldown.set(sender, now)
       if (media) {
         await conn.sendMessage(m.chat, {
           image: media,
@@ -199,7 +191,6 @@ const handler = async (m, { conn, text, args, usedPrefix, isAdmin, isBotAdmin, s
     }
 
     // قائمة رئيسية
-    cooldown.set(sender, now)
     return conn.sendMessage(m.chat, {
       text: `👋 *إدارة الترحيب/الوداع*\\n\\nالحالة: ${settings.enabled ? '✅ مفعل' : '🔴 معطل'}`,
       footer: 'LIGHT BOT • Welcome',
@@ -226,7 +217,6 @@ const handler = async (m, { conn, text, args, usedPrefix, isAdmin, isBotAdmin, s
 handler.command = ['welcome', 'ترحيب', 'وداع', 'welcome_msg']
 handler.usage = ['welcome', 'welcome ترحيب <نص>', 'welcome وداع <نص>', 'welcome ميديا ترحيب/وداع (رد على ميديا)', 'welcome اختبار ترحيب/وداع', 'welcome إعدادات', 'welcome تفعيل/إيقاف', 'welcome حذف_تلقائي <ثواني>']
 handler.category = 'group'
-handler.cooldown = 3
 handler.group = true
 handler.admin = true
 export default handler

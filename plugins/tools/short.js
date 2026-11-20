@@ -5,8 +5,6 @@
   ═══════════════════════════════════════════
 */
 import axios from 'axios'
-import { pruneCooldown } from '../../system/cooldowns.js'
-
 const SERVICES = [
   { id: 'tinyurl', name: '🔗 TinyURL', api: 'https://tinyurl.com/api-create.php?url=', emoji: '🔗' },
   { id: 'isgd', name: '⚡ is.gd', api: 'https://is.gd/create.php?format=simple&url=', emoji: '⚡' },
@@ -14,8 +12,6 @@ const SERVICES = [
   { id: 'clck', name: '🖱️ clck.ru', api: 'https://clck.ru/--?url=', emoji: '🖱️' },
 ]
 
-const cooldown = new Map()
-const COOLDOWN_MS = 5000
 const userService = new Map()
 
 function buildServiceList(usedPrefix = '.') {
@@ -29,11 +25,6 @@ function buildServiceList(usedPrefix = '.') {
 const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
-    pruneCooldown(cooldown, COOLDOWN_MS)
     if (userService.size > 2000) userService.delete(userService.keys().next().value)
 
     const subCmd = args[0]?.toLowerCase()
@@ -79,7 +70,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
       return m.reply('❌ رابط غير صالح، يجب أن يبدأ بـ http:// أو https://')
     }
 
-    cooldown.set(m.sender, now)
     await m.react('🔗')
 
     const svcId = userService.get(m.sender) || 'tinyurl'
@@ -129,5 +119,4 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['short', 'قصير', 'مختصر', 'urlshort']
 handler.usage = ['short <رابط>', 'short خدمة <tinyurl|isgd|vgd|clck>', 'short إعدادات']
 handler.category = 'tools'
-handler.cooldown = 5
 export default handler

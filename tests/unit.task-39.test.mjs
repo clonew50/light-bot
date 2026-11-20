@@ -195,7 +195,7 @@ test('quran: malformed input never crashes and always answers in Arabic', async 
     }
 });
 
-test('quran: the per-user cooldown blocks a second immediate call', async () => {
+test('quran: consecutive calls execute immediately with cooldown disabled', async () => {
     seedStaleCache();
     let calls = 0;
     globalThis.__axiosMockGet = async () => { calls++; return apiOk(); };
@@ -205,17 +205,11 @@ test('quran: the per-user cooldown blocks a second immediate call', async () => 
     assert.equal(calls, 1);
 
     const second = await run('', '254700000002@s.whatsapp.net');
-    assert.equal(second.conn.payloads.length, 0, 'second immediate call is blocked');
-    assert.ok(second.m.replies[0].includes('⏳ استنى'), 'Arabic cooldown message');
-
-    // a different user is not blocked by the first user's cooldown
-    quranInternals.cache.ts = 0; // keep the cache stale so the next call fetches again
-    const other = await run('', '254700000003@s.whatsapp.net');
-    assert.equal(other.conn.payloads.length, 1);
-    assert.equal(calls, 2);
+    assert.equal(second.conn.payloads.length, 1, 'second immediate call succeeds without cooldown');
+    assert.equal(second.m.replies.some((t) => t.includes('⏳ استنى')), false);
 });
 
-test('quran: the audio slot has its own cooldown', async () => {
+test('quran: consecutive audio requests run without cooldown blocking', async () => {
     seedFreshCache();
     globalThis.__axiosMockGet = async () => ({
         data: Buffer.from([0x49, 0x44, 0x33]),
@@ -224,8 +218,7 @@ test('quran: the audio slot has its own cooldown', async () => {
     const a = await run('getsurah|2|البقرة|286');
     assert.equal(a.conn.sends.length, 1);
     const b = await run('getsurah|3|العمران|200');
-    assert.equal(b.conn.sends.length, 0, 'second immediate download blocked');
-    assert.ok(b.m.replies[0].includes('⏳ استنى'));
+    assert.equal(b.conn.sends.length, 1, 'second immediate download succeeds');
 });
 
 test('quran: a hung endpoint is turned into the Arabic timeout error', async () => {

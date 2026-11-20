@@ -14,10 +14,7 @@
   ═══════════════════════════════════════════
 */
 import crypto from 'crypto';
-import { pruneCooldown } from "../../system/cooldowns.js";
 
-const cooldown = new Map();
-const COOLDOWN_MS = 5 * 1000;
 const FONT_HEIGHT = 83.333;
 
 /* قراءة أبعاد صورة PNG من هيدر IHDR */
@@ -120,10 +117,6 @@ const handler = async (m, { conn, args, fetchImpl }) => {
       await say(m, '✍️ اكتب المعادلة بعد الأمر:\n.لاتكس e^{i\\pi} = -1\n.لاتكس \\frac{a}{b}');
       return;
     }
-    const last = cooldown.get(m.chat) || 0;
-    if (Date.now() - last < COOLDOWN_MS) return;
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(m.chat, Date.now());
 
     const url = codecogsUrl(formula);
     const doFetch = typeof fetchImpl === 'function' ? fetchImpl : fetch;
@@ -164,6 +157,5 @@ const handler = async (m, { conn, args, fetchImpl }) => {
 handler.command = ['لاتكس', 'latex', 'معادلة'];
 handler.usage = ['لاتكس <معادلة>'];
 handler.category = 'tools';
-handler.cooldown = 5;
 
 export default handler;

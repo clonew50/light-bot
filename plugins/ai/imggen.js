@@ -5,7 +5,6 @@
   ═══════════════════════════════════════════
 */
 import { generateAIImage } from '../../system/aiService.js';
-import { pruneCooldown } from '../../system/cooldowns.js';
 
 const MODELS = [
   { id: 'flux', name: '🌊 Flux', desc: 'جودة عالية وتفاصيل دقيقة', emoji: '🌊' },
@@ -21,18 +20,12 @@ const SIZES = [
   { id: '512x512', name: '⚡ سريع (512)', emoji: '⚡' },
 ];
 
-const cooldown = new Map();
-const COOLDOWN_MS = 10000;
 const userModel = new Map();
 const userSize = new Map();
 
 const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
   try {
     const now = Date.now();
-    const last = cooldown.get(m.sender) || 0;
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`);
-    }
 
     const subCmd = args[0]?.toLowerCase();
 
@@ -105,8 +98,6 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
       }, { quoted: m });
     }
 
-    pruneCooldown(cooldown, COOLDOWN_MS);
-    cooldown.set(m.sender, now);
     await m.react?.('🎨');
 
     const modelId = userModel.get(m.sender) || 'flux';
@@ -139,5 +130,4 @@ const handler = async (m, { conn, text, args, usedPrefix = '.' }) => {
 handler.command = ['imggen', 'توليد', 'صورة', 'imagegen'];
 handler.usage = ['imggen <وصف>', 'imggen نموذج <flux|dalle3|sdxl|midjourney>', 'imggen حجم <768x768|576x960|960x576|512x512>', 'imggen إعدادات'];
 handler.category = 'ai';
-handler.cooldown = 10;
 export default handler;

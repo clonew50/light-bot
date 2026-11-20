@@ -6,16 +6,9 @@
 */
 import axios from 'axios'
 
-const cooldown = new Map()
-const COOLDOWN_MS = 5000
-
 const handler = async (m, { conn, text, args, usedPrefix }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const query = text?.replace(/^(جوجل|google|search)\s*/i, '').trim()
     if (!query) {
@@ -30,7 +23,6 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
       }, { quoted: m })
     }
 
-    cooldown.set(m.sender, now)
     await m.react('🔍')
 
     // استخدام DuckDuckGo HTML scrape أو API بديل
@@ -67,5 +59,4 @@ const handler = async (m, { conn, text, args, usedPrefix }) => {
 handler.command = ['google', 'جوجل', 'search', 'بحث']
 handler.usage = ['google <استعلام>', 'جوجل <كلمات مفتاحية>']
 handler.category = 'search'
-handler.cooldown = 5
 export default handler

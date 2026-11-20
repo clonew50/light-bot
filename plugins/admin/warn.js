@@ -5,8 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
 const MAX_WARNS = 3
 
 // تخزين التحذيرات في الذاكرة (يمكن نقلها لقاعدة بيانات)
@@ -36,10 +34,6 @@ const handler = async (m, { conn, text, args, usedPrefix, isAdmin, isBotAdmin, s
     if (!m.isGroup) return m.reply('❌ هذا الأمر للمجموعات فقط')
 
     const now = Date.now()
-    const last = cooldown.get(m.sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     if (!isAdmin) return m.reply('❌ للأدمن فقط')
     if (!isBotAdmin) return m.reply('❌ البوت بحاجة لصلاحية أدمن')
@@ -88,7 +82,6 @@ const handler = async (m, { conn, text, args, usedPrefix, isAdmin, isBotAdmin, s
     const targetIsAdmin = groupMeta.participants.find(p => p.id === mentioned && p.admin)
     if (targetIsAdmin) return m.reply('❌ لا يمكن تحذير أدمن')
 
-    cooldown.set(m.sender, now)
     pruneWarns()
 
     const warns = getWarns(m.chat, mentioned)
@@ -133,7 +126,6 @@ const handler = async (m, { conn, text, args, usedPrefix, isAdmin, isBotAdmin, s
 handler.command = ['warn', 'تحذير', 'انذار']
 handler.usage = ['warn @user [سبب]', 'warn عرض @user', 'warn مسح @user']
 handler.category = 'admin'
-handler.cooldown = 3
 handler.group = true
 handler.admin = true
 handler.botAdmin = true

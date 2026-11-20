@@ -5,9 +5,6 @@
   ═══════════════════════════════════════════
 */
 
-const cooldown = new Map()
-const COOLDOWN_MS = 3000
-
 const SHOP_ITEMS = {
   // تعزيزات
   boost_xp: { name: '⚡ معزز XP', desc: 'مضاعف XP 2x لمدة ساعة', price: 5000, type: 'boost', effect: { xpMultiplier: 2, duration: 3600000 }, emoji: '⚡', max: 3 },
@@ -32,10 +29,6 @@ const SHOP_ITEMS = {
 const handler = async (m, { conn, text, args, usedPrefix, sender }) => {
   try {
     const now = Date.now()
-    const last = cooldown.get(sender) || 0
-    if (now - last < COOLDOWN_MS) {
-      return m.reply(`⏳ استنى ${Math.ceil((COOLDOWN_MS - (now - last)) / 1000)} ثانية`)
-    }
 
     const subCmd = args[0]?.toLowerCase()
 
@@ -49,7 +42,6 @@ const handler = async (m, { conn, text, args, usedPrefix, sender }) => {
     // عرض المتجر
     if (!subCmd || subCmd === 'عرض' || subCmd === 'list') {
       const category = args[1] || 'all'
-      cooldown.set(sender, now)
 
       let msg = `🛒 *متجر البنك* (رصيدك: ${user.balance.toLocaleString()} عملة)\\n\\n`
 
@@ -121,7 +113,6 @@ const handler = async (m, { conn, text, args, usedPrefix, sender }) => {
       const totalPrice = item.price * quantity
       if (user.balance < totalPrice) return m.reply(`❌ رصيد غير كافي!\\nتحتاج: ${totalPrice.toLocaleString()}\\nرصيدك: ${user.balance.toLocaleString()}`)
 
-      cooldown.set(sender, now)
 
       user.balance -= totalPrice
       user.inventory[itemId] = owned + quantity
@@ -147,7 +138,6 @@ const handler = async (m, { conn, text, args, usedPrefix, sender }) => {
       const item = SHOP_ITEMS[itemId]
       if (!item.consumable && item.type !== 'gift') return m.reply('❌ هذا العنصر غير قابل للاستخدام (تجميلي دائم)')
 
-      cooldown.set(sender, now)
 
       // تطبيق التأثير
       let resultMsg = `${item.emoji} *تم استخدام ${item.name}!*\\n`
@@ -205,7 +195,6 @@ const handler = async (m, { conn, text, args, usedPrefix, sender }) => {
       const item = SHOP_ITEMS[itemId]
       if (item.type !== 'gift') return m.reply('❌ هذا العنصر ليس هدية')
 
-      cooldown.set(sender, now)
       user.inventory[itemId]--
 
       const amount = Math.floor(Math.random() * (item.effect.max - item.effect.min + 1)) + item.effect.min
@@ -250,5 +239,4 @@ const handler = async (m, { conn, text, args, usedPrefix, sender }) => {
 handler.command = ['shop', 'متجر', 'محل', 'store']
 handler.usage = ['shop', 'shop عرض [boost|cosmetic|tool|gift]', 'shop مخزن', 'shop اشتر <عنصر> [كمية]', 'shop استخدم <عنصر> [@مستخدم]', 'shop اهدِ <عنصر> @مستخدم', 'shop تعزيزات']
 handler.category = 'bank'
-handler.cooldown = 3
 export default handler

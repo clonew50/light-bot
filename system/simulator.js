@@ -28,9 +28,20 @@ const CATEGORY_LABELS = {
   voices: ['الأصوات', '🎙️'],
   islamic: ['الإسلاميات', '🕌'],
   guild: ['النقابات', '🏰'],
+  math: ['الرياضيات والعلوم', '📐'],
+  cipher: ['التشفير والخطوط', '🔐'],
+  dev: ['تطوير وبرمجة', '💻'],
+  atlas: ['الأطلس والمعرفة', '🌍'],
+  rpg: ['المغامرات وRPG', '⚔️'],
+  empire: ['الاقتصاد والأعمال', '🏛️'],
+  design: ['الألوان والتصميم', '🎨'],
+  health: ['الصحة واللياقة', '🩺'],
+  creator: ['صنّاع المحتوى', '🎬'],
+  whatsapp: ['مزايا واتساب المتقدمة', '📲'],
   other: ['أخرى', '🔮']
 };
 
+let _normCache = null;
 export function normalizeCommandsList(client) {
   let raw = [];
   try {
@@ -38,8 +49,16 @@ export function normalizeCommandsList(client) {
   } catch {
     raw = [];
   }
-  const list = [];
-  for (const c of raw) {
+  const len = raw.length;
+  const firstRef = raw[0] || null;
+  const lastRef = len > 0 ? raw[len - 1] : null;
+  if (_normCache && _normCache.client === client && _normCache.len === len && _normCache.firstRef === firstRef && _normCache.lastRef === lastRef) {
+    return _normCache.list;
+  }
+  const list = new Array(len);
+  let outIdx = 0;
+  for (let i = 0; i < len; i++) {
+    const c = raw[i];
     if (!c) continue;
     const triggers = Array.isArray(c.command)
       ? c.command.map((x) => (x instanceof RegExp ? x.source : String(x)))
@@ -55,7 +74,7 @@ export function normalizeCommandsList(client) {
         : triggers.slice(0, 1);
     const cat = String(c.category || 'other');
     const [catLabel, catEmoji] = CATEGORY_LABELS[cat] || [cat, '📁'];
-    list.push({
+    list[outIdx++] = {
       primary: triggers[0] || usages[0] || 'cmd',
       triggers,
       usages,
@@ -67,24 +86,44 @@ export function normalizeCommandsList(client) {
       adminOnly: !!c.admin,
       ownerOnly: !!c.owner,
       hidden: !!c.hidden
-    });
+    };
+  }
+  list.length = outIdx;
+  if (len > 0) {
+    _normCache = { client, len, firstRef, lastRef, list };
   }
   return list;
 }
 
+let _matchCache = null;
 export function matchCommand(commands, rawCommandName) {
   const needle = String(rawCommandName || '').trim().toLowerCase();
-  if (!needle) return null;
-  for (const c of commands) {
-    if (!c) continue;
-    const triggers = Array.isArray(c.command) ? c.command : (c.command ? [c.command] : []);
-    for (const t of triggers) {
-      if (t instanceof RegExp) {
-        if (t.test(rawCommandName)) return c;
-      } else if (String(t).toLowerCase() === needle) {
-        return c;
+  if (!needle || !Array.isArray(commands)) return null;
+  const len = commands.length;
+  const firstRef = commands[0] || null;
+  const lastRef = len > 0 ? commands[len - 1] : null;
+  if (!_matchCache || _matchCache.len !== len || _matchCache.firstRef !== firstRef || _matchCache.lastRef !== lastRef) {
+    const exactMap = new Map();
+    const regexList = [];
+    for (let i = 0; i < len; i++) {
+      const c = commands[i];
+      if (!c) continue;
+      const triggers = Array.isArray(c.command) ? c.command : (c.command ? [c.command] : []);
+      for (const t of triggers) {
+        if (t instanceof RegExp) {
+          regexList.push({ re: t, cmd: c });
+        } else {
+          const key = String(t).toLowerCase();
+          if (!exactMap.has(key)) exactMap.set(key, c);
+        }
       }
     }
+    _matchCache = { len, firstRef, lastRef, exactMap, regexList };
+  }
+  const hit = _matchCache.exactMap.get(needle);
+  if (hit) return hit;
+  for (const { re, cmd } of _matchCache.regexList) {
+    if (re.test(rawCommandName)) return cmd;
   }
   return null;
 }
@@ -158,6 +197,21 @@ export async function simulateCommand(client, inputText, options = {}) {
         { id: '201000000002@s.whatsapp.net', admin: null }
       ]
     }),
+    onWhatsApp: async (...jids) => jids.map((j) => ({ jid: `${String(j).replace(/[^0-9]/g, '')}@s.whatsapp.net`, exists: true })),
+    getBusinessProfile: async (jid) => ({ wid: jid, description: 'حساب أعمال تجريبي', category: 'خدمات تقنية', email: 'info@example.com', website: ['https://example.com'] }),
+    fetchStatus: async () => [{ status: 'متاح — وضع المحاكاة', setAt: new Date().toISOString() }],
+    groupRequestParticipantsList: async () => [{ jid: '201099887766@s.whatsapp.net', request_method: 'invite_link', request_time: String(Math.floor(Date.now() / 1000)) }],
+    groupRequestParticipantsUpdate: async (_g, jids, action) => jids.map((jid) => ({ jid, status: '200', action })),
+    groupJoinApprovalMode: async () => {},
+    groupMemberAddMode: async () => {},
+    groupToggleEphemeral: async () => {},
+    createCallLink: async (type) => `https://call.whatsapp.com/sim-${type || 'audio'}-demo`,
+    fetchPrivacySettings: async () => ({ last: 'contacts', online: 'match_last_seen', profile: 'all', status: 'contacts', readreceipts: 'all', groupadd: 'contacts' }),
+    newsletterMetadata: async (_t, key) => ({ id: `${key}@newsletter`, name: 'قناة تجريبية', subscribers: 12500, description: 'وصف القناة التجريبي', verification: 'VERIFIED' }),
+    newsletterFollow: async () => {},
+    newsletterUnfollow: async () => {},
+    newsletterMute: async () => {},
+    newsletterUnmute: async () => {},
     sendMessage: async (chat, payload = {}) => {
       if (payload.react) {
         reactions.push(payload.react.text || '👍');
@@ -171,6 +225,30 @@ export async function simulateCommand(client, inputText, options = {}) {
           selectableCount: payload.poll.selectableCount || 1
         });
         return { key: { id: 'sim-poll-' + Date.now() } };
+      }
+      if (payload.pin) {
+        outputs.push({ type: 'text', text: `📌 تم ${payload.pin.type === 1 ? 'تثبيت' : 'إلغاء تثبيت'} الرسالة بنجاح.` });
+        return { key: { id: 'sim-pin-' + Date.now() } };
+      }
+      if (payload.disappearingMessagesInChat !== undefined) {
+        outputs.push({ type: 'text', text: `⏳ تم ضبط الرسائل المؤقتة: ${payload.disappearingMessagesInChat || 'إيقاف'}` });
+        return { key: { id: 'sim-eph-' + Date.now() } };
+      }
+      if (payload.limitSharing !== undefined) {
+        outputs.push({ type: 'text', text: `🛡️ تقييد المشاركة المتقدم: ${payload.limitSharing ? 'مفعّل' : 'متوقف'}` });
+        return { key: { id: 'sim-lshare-' + Date.now() } };
+      }
+      if (payload.location) {
+        outputs.push({ type: 'text', text: `📍 موقع: ${payload.location.name || ''} (${payload.location.degreesLatitude}, ${payload.location.degreesLongitude})` });
+        return { key: { id: 'sim-loc-' + Date.now() } };
+      }
+      if (payload.contacts) {
+        outputs.push({ type: 'text', text: `📇 بطاقة تواصل: ${payload.contacts.displayName || 'Contact'}` });
+        return { key: { id: 'sim-vcard-' + Date.now() } };
+      }
+      if (payload.event) {
+        outputs.push({ type: 'text', text: `📅 فعالية: ${payload.event.name}\n📝 ${payload.event.description || ''}` });
+        return { key: { id: 'sim-evt-' + Date.now() } };
       }
       if (payload.delete) {
         return { key: { id: 'sim-del-' + Date.now() } };
