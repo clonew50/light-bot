@@ -41,7 +41,57 @@ const cleanContext = (jid) => ({
     }
 });
 
-async function handler(m, { conn, bot, command, args }) {
+const resolveConn = (conn, bot, m) =>
+    conn || bot?.sock || (typeof m?.client === 'function' ? m.client() : null) || null;
+
+async function safeSendMenuInteractive(activeConn, m, payload) {
+    if (activeConn && typeof activeConn.sendButtonNormal === 'function') {
+        try {
+            return await activeConn.sendButtonNormal(m.chat, payload, m);
+        } catch (err) {
+            console.error('[menu2] sendButtonNormal fallback:', err?.message || err);
+        }
+    }
+    if (activeConn && typeof activeConn.sendMessage === 'function') {
+        try {
+            return await activeConn.sendMessage(m.chat, {
+                ...(payload.media ? { image: payload.media } : {}),
+                caption: payload.caption,
+                text: payload.media ? undefined : payload.caption,
+                footer: payload.footer,
+                buttons: payload.buttons,
+                mentions: payload.mentions,
+                contextInfo: payload.contextInfo
+            }, { quoted: m });
+        } catch (err) {
+            console.error('[menu2] sendMessage fallback:', err?.message || err);
+        }
+    }
+    if (typeof m?.reply === 'function') {
+        return await m.reply(payload.caption);
+    }
+    return null;
+}
+
+async function safeSendMediaCaption(activeConn, m, imageUrl, caption, contextInfo) {
+    if (activeConn && typeof activeConn.sendMessage === 'function') {
+        try {
+            return await activeConn.sendMessage(m.chat, {
+                image: { url: imageUrl },
+                caption,
+                contextInfo
+            }, { quoted: m });
+        } catch {}
+    }
+    if (typeof m?.reply === 'function') {
+        return await m.reply(caption);
+    }
+    return null;
+}
+
+async function handler(m, { conn, bot, command, args = [] }) {
+    const activeConn = resolveConn(conn, bot, m);
+    const senderJid = String(m?.sender || m?.chat || 'user@s.whatsapp.net');
     const selected = parseInt(args[0]);
     const now = new Date();
     const uptimeSeconds = process.uptime();
@@ -66,12 +116,15 @@ async function handler(m, { conn, bot, command, args }) {
     if (String(args[0] || '').trim().toLowerCase() === 'native') {
         const info = (bot && bot.config && bot.config.info) || {};
         const img = getImg(bot);
-        await sendNativeMenu(conn, m.chat, {
+        const res = await sendNativeMenu(activeConn, m.chat, {
             bot,
             info,
             images: img ? [img] : [],
             quoted: m
         });
+        if (!res?.sent && typeof m?.reply === 'function') {
+            await m.reply('❌ خدمة الأزرار التفاعلية غير متاحة في هذا الاتصال حالياً.');
+        }
         return;
     }
 
@@ -82,15 +135,15 @@ async function handler(m, { conn, bot, command, args }) {
             `┃ *لايت في الخدمة 📜*\n` +
             `╰─┈──┈─⟞🩸⟝─┈──┈─╯\n\n` +
             `❐═━━━═╊⊰🩸⊱╉═━━━═❐\n` +
-            `┃ 👤 *المستخدم:* @${m.sender.split("@")[0]}\n` +
+            `┃ 👤 *المستخدم:* @${senderJid.split("@")[0]}\n` +
             `┃ ⚙️ *التشغيل:* ${uptimeFormatted}\n` +
             `┃ 📅 *التاريخ:* ${date}\n` +
             `┃ ⏰ *الوقت:* ${time}\n` +
             `❐═━━━═╊⊰🩸⊱╉═━━━═❐\n\n` +
             `✨ *اختر قسماً من القائمة أو اكتب (.شرح)*`;
         
-        await conn.sendButtonNormal(m.chat, {
-            media: { url: "https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/0b22c6a0-3522-4e3d-b1b8-120642cb25b2.jpg" },
+        await safeSendMenuInteractive(activeConn, m, {
+            media: { url: getImg(bot) },
             mediaType: 'image',
             caption: menuText,
             footer: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻',
@@ -125,9 +178,9 @@ async function handler(m, { conn, bot, command, args }) {
                     }
                 }
             ],
-            mentions: [m.sender],
-            contextInfo: cleanContext(m.sender)
-        }, m);
+            mentions: [senderJid],
+            contextInfo: cleanContext(senderJid)
+        });
         return;
     }
 
@@ -136,23 +189,27 @@ async function handler(m, { conn, bot, command, args }) {
     const botImg = getImg(bot);
 
     if (!cat) {
-        await conn.sendMessage(m.chat, { 
-            image: { url: botImg },
-            caption: '❌ ┇ *اخـتـر رقـمـاً صـحـيـحـاً مـن الـقـائمة فـقـط.*', 
-            contextInfo: cleanContext(m.sender) 
-        }, { quoted: m });
+        await safeSendMediaCaption(
+            activeConn,
+            m,
+            botImg,
+            '❌ ┇ *اخـتـر رقـمـاً صـحـيـحـاً مـن الـقـائمة فـقـط.*',
+            cleanContext(senderJid)
+        );
         return;
     }
 
-    const cmds = await bot.getAllCommands();
+    const cmds = (typeof bot?.getAllCommands === 'function') ? await bot.getAllCommands() : [];
     const categoryCmds = cmds.filter(c => c.category === cat[2]);
     
     if (!categoryCmds.length) {
-        await conn.sendMessage(m.chat, { 
-            image: { url: botImg },
-            caption: `❌ ┇ *هـذا الـقـسـم لا يـحـتـوي عـلـى أوامـر حـالـيـاً.*`, 
-            contextInfo: cleanContext(m.sender) 
-        }, { quoted: m });
+        await safeSendMediaCaption(
+            activeConn,
+            m,
+            botImg,
+            `❌ ┇ *هـذا الـقـسـم لا يـحـتـوي عـلـى أوامـر حـالـيـاً.*`,
+            cleanContext(senderJid)
+        );
         return;
     }
 
@@ -182,7 +239,7 @@ async function handler(m, { conn, bot, command, args }) {
         `❐═━━━═╊⊰🩸⊱╉═━━━═❐${pagerNote}`;
 
     // إرسال كرسالة قائمة تفاعلية تحتوي على الأوامر مع إدراج زر تصفح بقية الأقسام
-    await conn.sendButtonNormal(m.chat, {
+    await safeSendMenuInteractive(activeConn, m, {
         media: { url: botImg },
         mediaType: 'image',
         caption: resultText.trim(),
@@ -196,8 +253,8 @@ async function handler(m, { conn, bot, command, args }) {
                 }
             }
         ],
-        contextInfo: cleanContext(m.sender)
-    }, m);
+        contextInfo: cleanContext(senderJid)
+    });
 }
 
 handler.command = ['اوامر','menu'];

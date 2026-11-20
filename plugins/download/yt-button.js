@@ -24,17 +24,30 @@ const handler = async (m, { conn, text }) => {
             image = oembed.data?.thumbnail_url || image;
         } catch {}
 
-        await conn.sendButtonNormal(m.chat, {
-            media: { url: image },
-            mediaType: 'image',
-            caption: `${title}`,
-            footer: "𝒀𝑶𝑼𝑻𝑼𝑩𝑬 𝑩𝑶𝑾𝑵𝑳𝑶𝑨𝑫",
-            buttons: [
-                { name: "quick_reply", params: { display_text: "🎼 ╎ تـحـمـيـل صـوت", id: `.يوت_اغنيه ${videoUrl}` } },
-                { name: "quick_reply", params: { display_text: "🎬 ╎ تـحـمـيـل فـيـديـو", id: `.يوتيوب ${videoUrl}` } }
-            ],
-            mentions: [m.sender]
-        }, m);
+        const buttons = [
+            { name: "quick_reply", params: { display_text: "🎼 ╎ تـحـمـيـل صـوت", id: `.يوت_اغنيه ${videoUrl}` } },
+            { name: "quick_reply", params: { display_text: "🎬 ╎ تـحـمـيـل فـيـديـو", id: `.يوتيوب ${videoUrl}` } }
+        ];
+        if (typeof conn?.sendButtonNormal === 'function') {
+            await conn.sendButtonNormal(m.chat, {
+                media: { url: image },
+                mediaType: 'image',
+                caption: `${title}`,
+                footer: "𝒀𝑶𝑼𝑻𝑼𝑩𝑬 𝑩𝑶𝑾𝑵𝑳𝑶𝑨𝑫",
+                buttons,
+                mentions: [m.sender]
+            }, m);
+        } else if (typeof conn?.sendMessage === 'function') {
+            await conn.sendMessage(m.chat, {
+                image: { url: image },
+                caption: `${title}`,
+                footer: "𝒀𝑶𝑼𝑻𝑼𝑩𝑬 𝑩𝑶𝑾𝑵𝑳𝑶𝑨𝑫",
+                buttons,
+                mentions: [m.sender]
+            }, { quoted: m });
+        } else {
+            await m.reply(`🎬 ${title}\n🔗 ${videoUrl}\n\n• صوت: .يوت_اغنيه ${videoUrl}\n• فيديو: .يوتيوب ${videoUrl}`);
+        }
     } catch (e) {
         console.error(e?.message || e);
         m.reply("❌ تعذر البحث في يوتيوب، جرب تاني بعد شوية");

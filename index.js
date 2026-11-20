@@ -111,6 +111,9 @@ applyMainBotSettingsOnBoot(client);
 client.commandSystem?.before?.(async (m, ctx) => {
   try {
     if (client.sock) installInteractiveButtonShim(client.sock);
+    if (ctx && !ctx.conn) {
+      ctx.conn = ctx.bot?.sock || (typeof m?.client === 'function' ? m.client() : null) || client.sock || null;
+    }
     if (ctx?.conn) installInteractiveButtonShim(ctx.conn);
 
     extractInteractiveButtonId(m, ctx);

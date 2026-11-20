@@ -121,7 +121,7 @@ const sendCategoryList = async (m, conn) => {
   rows.push({ title: '🎲 عشوائي', description: 'اختبار من تصنيف عشوائي', id: '.ترivia random' });
   const buttons = [{ name: 'single_select', params: { display_title: '📚 اختر تصنيف%', sections: [{ title: 'التصنيفات', rows }] } }];
   try {
-    if (typeof conn.sendButtonNormal === 'function') {
+    if (typeof conn?.sendButtonNormal === 'function') {
       await conn.sendButtonNormal(m.chat, {
         media: { url: 'https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/0b22c6a0-3522-4e3d-b1b8-120642cb25b2.jpg' },
         mediaType: 'image',
@@ -151,7 +151,7 @@ const sendQuestion = async (m, conn, chatId) => {
   }));
   const caption = `🧠 *سؤال ${g.idx + 1} / ${Q_PER_GAME}*\n📂 ${findCat(g.cat).emoji} ${findCat(g.cat).label}\n\n❓ *${q.q}*\n\nأ. ${q.o[0]}\nب. ${q.o[1]}\nج. ${q.o[2]}\nد. ${q.o[3]}\n\n💡 تلميحات متبقية: ${hintsLeft}\n⏳ الوقت: ٤٥ ثانية\nأغلب بلمس الخيار أو اكتب: .ترivia أ/ب/ج/د`;
   try {
-    if (typeof conn.sendButtonNormal === 'function') {
+    if (typeof conn?.sendButtonNormal === 'function') {
       const msg = await conn.sendButtonNormal(m.chat, {
         media: { url: 'https://i.supaimg.com/374589ce-56ae-4068-ba73-60f3b228637f/0b22c6a0-3522-4e3d-b1b8-120642cb25b2.jpg' },
         mediaType: 'image',
@@ -163,7 +163,11 @@ const sendQuestion = async (m, conn, chatId) => {
         clearTimeout(g.timer);
         const ans = q.o[q.a];
         delete global.gameTrivia[chatId];
-        await conn.sendMessage(m.chat, { text: `⏰ انتهى الوقت! الإجابة الصحيحة: *${ans}*\nاكتب .ترivia لبدء اختبار جديد.`, contextInfo: ctxInfo(m.sender) }, { quoted: m });
+        if (typeof conn?.sendMessage === 'function') {
+          await conn.sendMessage(m.chat, { text: `⏰ انتهى الوقت! الإجابة الصحيحة: *${ans}*\nاكتب .ترivia لبدء اختبار جديد.`, contextInfo: ctxInfo(m.sender) }, { quoted: m });
+        } else {
+          await m.reply?.(`⏰ انتهى الوقت! الإجابة الصحيحة: *${ans}*\nاكتب .ترivia لبدء اختبار جديد.`);
+        }
       }, Q_TIME_MS);
       return;
     }
