@@ -16,6 +16,7 @@ import { attachLiveness, isAlive, verifyRestartOutcome } from './system/liveness
 import { applyMainBotSettingsOnBoot, syncConnectedBotOwner, syncSubBotSelfOwner } from './system/botRegistry.js';
 import { extractInteractiveButtonId, installInteractiveButtonShim } from './system/buttonFix.js';
 import { tryHandleQuranCommand } from './system/quranPlugin.js';
+import { installImportedMediaListener, runImportedBeforeHooks } from './system/imported-compat.js';
 
 // أحداث حارس الإقلاع (bootGuard) بتتبعت من هنا بنوع مستقل — نفس الدالة اللي
 // بتترحّل لناقل الأحداث، بس kind='boot' عشان تبان في اللوحة كـ"إقلاع".
@@ -165,6 +166,8 @@ client.commandSystem?.before?.(async (m, ctx) => {
       if (ctx && typeof ctx === 'object') ctx.isOwner = true;
     }
 
+    await runImportedBeforeHooks({ m, ctx, bot: client });
+
     if (await tryHandleQuranCommand(m, ctx, client.config?.prefix)) {
       return true;
     }
@@ -216,7 +219,17 @@ startClientBounded(client, {
   // بيستخدمها الـ watchdog والـ healer. بدونها: bootGuard بيستخدم
   // () => false افتراضيًا، فربط شرعي أقدم من 90 ثانية بيتحسب فشل ويتكرر.
   isPairing: pairingActive,
+}).then((result) => {
+  installImportedMediaListener(client.sock, client);
+  return result;
 }).catch((e) => console.error('❌ [BOOT] خطأ غير متوقع في حارس التشغيل:', e?.message || e));
+
+// Reconnects replace the Baileys socket, so keep the imported media-command
+// listener attached to each new socket without accumulating old listeners.
+const importedMediaWatcher = setInterval(() => {
+  installImportedMediaListener(client.sock, client);
+}, 5_000);
+importedMediaWatcher.unref?.();
 
 /* =========== Healer — علاج Bad session تلقائيًا ========== */
 // البروفوكول موجود في system/healer.js — شرحه الكامل there.

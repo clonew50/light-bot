@@ -12,3 +12,4 @@ system/panel-config.json
 .git-pull-state.json
 tmp/
 system/.removed-*/
+data/crmdb.db*
