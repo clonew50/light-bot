@@ -1,5 +1,20 @@
-const run = async (m, { bot, conn }) => {
-  const errors = await bot.errors();
+const run = async (m, { bot, conn, client }) => {
+  // إطار meowsab بيمرّر `client` (الـ Client الكامل اللي فيه errors()) للبلجن،
+  // بينما `bot` ممكن يكون غلاف আরب مش فيه الدالة دي — فبنجرّب client الأول
+  // وبعدين bot كبديل (الاختبارات بتمرّر bot بس).
+  let errors = [];
+  try {
+    const source = (client && typeof client.errors === 'function') ? client
+      : (bot && typeof bot.errors === 'function') ? bot
+      : null;
+    if (source) {
+      const result = await source.errors();
+      if (Array.isArray(result)) errors = result;
+    }
+  } catch (e) {
+    console.error('[errors] تعذّر قراءة سجل الأخطاء:', e?.message || e);
+  }
+
   if (!Array.isArray(errors) || errors.length === 0) {
     return m.reply("✅ مفيش أخطاء مسجلة.");
   }

@@ -332,7 +332,13 @@ async function sendMusicPlayer(conn, chatId, html) {
 }
 
 let handler = async (m, { conn, text, usedPrefix, command }) => {
-    if (!text) throw `*⚠️ Masukkan judul lagu atau link YouTube!*\n\n*Contoh:* ${usedPrefix + command} chase atlantic - swim`;
+    if (!text) {
+        // بدل `throw` نص خام (اللي بيتسجّل في اللوج كـ "undefined" لأن النص
+        // ملوش .message) — بنرد بالاستخدام مباشرة.
+        return await conn.sendMessage(m.chat, {
+            text: `*⚠️ Masukkan judul lagu atau link YouTube!*\n\n*Contoh:* ${usedPrefix + command} chase atlantic - swim`
+        }, { quoted: m });
+    }
     await conn.sendMessage(m.chat, { react: { text: '🎧', key: m.key } });
     await conn.sendMessage(m.chat, { text: '⏳ *Sedang mencari dan menyiapkan audio...*' }, { quoted: m });
     try {

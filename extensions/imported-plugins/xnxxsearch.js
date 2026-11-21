@@ -1,6 +1,11 @@
 import fetch from 'node-fetch';
 import cheerio from 'cheerio';
 
+// هذه globals قديمة (emoji/msm) مش معرّفة في الإطار الحالي — بنعرّفها صراحةً
+// عشان الأمر ما يرميش "emoji is not defined".
+const emoji = '🔞';
+const msm = '⚠️';
+
 const handler = async (m, {text, usedPrefix, command}) => {
   if (!global.db.groups[m.chat].nsfw && m.isGroup) {
     return conn.reply(m.chat, `${emoji} El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#nsfw on*`, m);
