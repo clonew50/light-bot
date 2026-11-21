@@ -5,6 +5,10 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import {
+  installImportedRuntime,
+  refreshPluginRegistry
+} from '../system/imported-compat.js';
 
 const execFileAsync = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -116,6 +120,45 @@ test('adapted imported plugins expose valid metadata and unique exact commands',
 
   assert.equal(owners.has('menu'), false, 'the target menu command must remain owned by menu2');
   assert.equal(owners.has('menu3'), true, 'the supplied menu must be available as menu3');
+});
+
+test('legacy registry ignores generated mega packs and is not rebuilt for every message', async () => {
+  const commands = [
+    ...Array.from({ length: 12_000 }, (_, index) => ({
+      command: `mega_${index}`,
+      usage: [`mega_${index}`],
+      category: 'tools',
+      __filePath: path.join(repoRoot, 'plugins', 'packs', 'mega_test_pack.js')
+    })),
+    ...Array.from({ length: 12_000 }, (_, index) => ({
+      command: `normal_${index}`,
+      usage: [`normal_${index}`],
+      category: 'tools',
+      __filePath: path.join(repoRoot, 'plugins', 'imported', 'test_pack.js')
+    }))
+  ];
+
+  const started = Date.now();
+  const registry = await refreshPluginRegistry({ getAllCommands: async () => commands });
+  const elapsed = Date.now() - started;
+
+  assert.ok(elapsed < 5_000, `legacy registry refresh took ${elapsed}ms`);
+  assert.equal(registry['mega_test_pack.js'], undefined, 'generated mega packs must not be copied into the legacy registry');
+  assert.equal(registry['test_pack.js'].command.length, 2_000, 'a single plugin must have a bounded legacy command entry');
+
+  let registryReads = 0;
+  const bot = {
+    getAllCommands: async () => {
+      registryReads += 1;
+      return [];
+    }
+  };
+  await installImportedRuntime({
+    m: { sender: 'test@s.whatsapp.net', chat: 'test@s.whatsapp.net' },
+    ctx: { conn: { sendMessage: async () => {} } },
+    bot
+  });
+  assert.equal(registryReads, 0, 'the global message hook must not rebuild the command registry');
 });
 
 test('imported exact commands do not shadow existing target commands', async () => {

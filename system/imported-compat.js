@@ -5,6 +5,9 @@ const LEGACY_DB = Symbol('lightbot.legacyDb');
 const SOCKET_HELPERS = Symbol('lightbot.socketHelpers');
 const MEDIA_COMMAND_LISTENER = Symbol('lightbot.mediaCommandListener');
 const LEGACY_DB_CACHE = new WeakMap();
+const LEGACY_REGISTRY_TTL_MS = 5 * 60 * 1000;
+const LEGACY_REGISTRY_MAX_COMMANDS = 10_000;
+const LEGACY_REGISTRY_MAX_PER_FILE = 2_000;
 
 const CATEGORY_MAP = new Map(Object.entries({
   owner: 'owner',
@@ -617,10 +620,6 @@ function legacyPluginShape(command) {
   };
 }
 
-function uniqueStrings(values) {
-  return [...new Set(values.map((value) => String(value).trim()).filter(Boolean))];
-}
-
 function pluginRegistryStem(command, index) {
   const sourceFile = command?.__filePath || command?.file || '';
   const raw = sourceFile
@@ -634,20 +633,18 @@ function mergeLegacyPluginShape(group, shape) {
   if (!group) {
     group = {
       ...shape,
-      command: [],
-      usage: [],
-      help: [],
-      tags: [],
-      aliases: [],
+      command: new Set(),
+      usage: new Set(),
+      tags: new Set(),
+      aliases: new Set(),
       _total: 0,
       _disabled: 0
     };
   }
-  group.command = uniqueStrings([...group.command, ...commandNames(shape.command)]);
-  group.usage = uniqueStrings([...group.usage, ...asArray(shape.usage)]);
-  group.help = [...group.usage];
-  group.tags = uniqueStrings([...group.tags, ...asArray(shape.tags)]);
-  group.aliases = uniqueStrings([...group.aliases, ...asArray(shape.aliases)]);
+  for (const name of commandNames(shape.command)) group.command.add(name);
+  for (const usage of asArray(shape.usage)) group.usage.add(String(usage));
+  for (const tag of asArray(shape.tags)) group.tags.add(String(tag));
+  for (const alias of asArray(shape.aliases)) group.aliases.add(String(alias));
   group.execute ||= shape.execute;
   group.name ||= shape.name;
   group.description ||= shape.description;
@@ -674,9 +671,25 @@ function mergeLegacyPluginShape(group, shape) {
   return group;
 }
 
+function finalizeLegacyPluginShape(group) {
+  const usage = [...group.usage];
+  const result = {
+    ...group,
+    command: [...group.command],
+    usage,
+    help: usage,
+    tags: [...group.tags],
+    aliases: [...group.aliases]
+  };
+  result.disabled = result._disabled === result._total;
+  delete result._total;
+  delete result._disabled;
+  return result;
+}
+
 export async function refreshPluginRegistry(bot) {
   const now = Date.now();
-  if (now - pluginRegistryAt < 30_000 && Object.keys(pluginRegistry).length) return pluginRegistry;
+  if (now - pluginRegistryAt < LEGACY_REGISTRY_TTL_MS && Object.keys(pluginRegistry).length) return pluginRegistry;
   let commands = [];
   try {
     commands = (await bot?.getAllCommands?.()) || bot?.commandSystem?.registry?.getAll?.() || [];
@@ -684,9 +697,15 @@ export async function refreshPluginRegistry(bot) {
   const next = {};
   const groupKeys = new Map();
   const usedKeys = new Set();
+  let accepted = 0;
   for (const [index, command] of commands.entries()) {
-    const shape = legacyPluginShape(command);
+    if (accepted >= LEGACY_REGISTRY_MAX_COMMANDS) break;
     const sourceFile = command?.__filePath || command?.file || '';
+    // The target contains generated mega packs with >100k commands. Copying
+    // those into the legacy Yono registry makes every incoming message very
+    // slow and can exhaust the process heap, so they are intentionally omitted.
+    if (/(^|[\\/])plugins[\\/]packs[\\/]/i.test(sourceFile)) continue;
+    const shape = legacyPluginShape(command);
     const identity = sourceFile || `command:${pluginRegistryStem(command, index)}`;
     let key = groupKeys.get(identity);
     if (!key) {
@@ -697,15 +716,17 @@ export async function refreshPluginRegistry(bot) {
       usedKeys.add(key);
       groupKeys.set(identity, key);
     }
-    next[key] = mergeLegacyPluginShape(next[key], shape);
+    const group = next[key];
+    if (group && group._total >= LEGACY_REGISTRY_MAX_PER_FILE) continue;
+    next[key] = mergeLegacyPluginShape(group, shape);
     next[key].filename = key;
+    accepted += 1;
   }
-  for (const shape of Object.values(next)) {
-    shape.disabled = shape._disabled === shape._total;
-    delete shape._total;
-    delete shape._disabled;
+  const finalized = {};
+  for (const [key, group] of Object.entries(next)) {
+    finalized[key] = finalizeLegacyPluginShape(group);
   }
-  pluginRegistry = next;
+  pluginRegistry = finalized;
   pluginRegistryAt = now;
   global.plugins = pluginRegistry;
   return pluginRegistry;
@@ -790,7 +811,7 @@ export function createLegacyContext(m, ctx = {}, bot = null) {
   return legacy;
 }
 
-export async function installImportedRuntime({ m, ctx = {}, bot = null } = {}) {
+export async function installImportedRuntime({ m, ctx = {}, bot = null, refreshRegistry = false } = {}) {
   const conn = ctx.conn || bot?.sock || global.conn || null;
   if (conn) {
     installSocketHelpers(conn);
@@ -806,7 +827,7 @@ export async function installImportedRuntime({ m, ctx = {}, bot = null } = {}) {
     global.db.data.settings ||= {};
   }
   buildLegacyGlobals(bot || ctx.bot, conn);
-  await refreshPluginRegistry(bot || ctx.bot);
+  if (refreshRegistry) await refreshPluginRegistry(bot || ctx.bot);
   ensureUser(m);
   enrichLegacyQuotedMessage(m);
   installImportedMediaListener(conn, bot || ctx.bot);
@@ -823,7 +844,7 @@ export function adaptImportedPlugin(source, options = {}) {
   if (!command) throw new Error(`Imported plugin has no command metadata: ${options.fileName || 'unknown'}`);
   const handler = {
     execute: async (m, ctx, bot) => {
-      const runtime = await installImportedRuntime({ m, ctx, bot });
+      const runtime = await installImportedRuntime({ m, ctx, bot, refreshRegistry: true });
       const legacyCtx = createLegacyContext(m, ctx, bot);
       try {
         return await execute.call(runtime.conn, m, legacyCtx, bot);
@@ -853,7 +874,7 @@ export function adaptImportedPlugin(source, options = {}) {
   if (metadataSource.limit !== undefined) handler.limit = metadataSource.limit;
   if (typeof metadataSource.before === 'function') {
     handler.before = async (m, ctx, bot) => {
-      const runtime = await installImportedRuntime({ m, ctx, bot });
+      const runtime = await installImportedRuntime({ m, ctx, bot, refreshRegistry: true });
       const legacyCtx = createLegacyContext(m, ctx, bot);
       const result = await metadataSource.before.call(runtime.conn, m, legacyCtx);
       return result === true;
