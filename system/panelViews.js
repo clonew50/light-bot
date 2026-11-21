@@ -298,8 +298,8 @@ export function renderPublicPortalHtml(err = '') {
       </div>
 
       <form onsubmit="event.preventDefault();startSubPair()">
-        <label class="lbl" for="pairPhone">رقم واتساب مع رمز الدولة (بدون +)</label>
-        <input id="pairPhone" class="ltr mono" placeholder="2010xxxxxxxx" inputmode="numeric" required>
+        <label class="lbl" for="pairPhone">رقم واتساب مع رمز الدولة (بدون + أو 0 في البداية، مثال: 201505362172)</label>
+        <input id="pairPhone" class="ltr mono" placeholder="201505362172" inputmode="numeric" required>
         <div class="actions">
           <button type="submit" class="pri" id="pairBtn" style="width:100%">إصدار كود الربط وحفظ الكود</button>
         </div>
@@ -550,10 +550,19 @@ function applyMyBotView(bot,forceHydrate){
   }
   updateSteps(bot,currentPairCode);
 
-  if(bot.pairCode || bot.controlCode){
+  if(bot.pairCode || bot.controlCode || bot.pairError){
     document.getElementById('pairOutput').style.display='block';
-    document.getElementById('pairCodeDisplay').textContent=bot.pairCode||'جاري الإصدار...';
+    document.getElementById('pairCodeDisplay').textContent=bot.pairCode||(bot.pairError?'تعذّر الإصدار':'جاري الإصدار...');
     document.getElementById('controlCodeDisplay').textContent=currentControlCode||'—';
+  }
+  const pairErrEl=document.getElementById('pairErr');
+  if(pairErrEl){
+    if(bot.pairError){
+      pairErrEl.textContent=bot.pairError;
+      pairErrEl.style.display='block';
+    }else if(bot.pairCode || bot.connected){
+      pairErrEl.style.display='none';
+    }
   }
 }
 function setMyMode(mode,silent){

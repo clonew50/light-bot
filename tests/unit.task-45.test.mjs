@@ -339,3 +339,123 @@ test('yt downloader: SaveTube AES-128-CBC fallback works when innertube trips bo
     fs.rmSync(tmpLoader, { force: true });
   }
 });
+
+test('config & sub.js: DEFAULT_BROWSER is Chrome (companion_platform_id=1) instead of LightBot (9 / 400 bad-request)', () => {
+  assert.equal(DEFAULT_BROWSER, 'Chrome');
+  const cfg = buildConfig({});
+  assert.equal(cfg.browser, 'Chrome');
+  assert.equal(getCompanionPlatformId(Browsers.ubuntu(cfg.browser)), '1');
+
+  const subSrc = fs.readFileSync(path.join(repoRoot, 'sub.js'), 'utf8');
+  assert.match(subSrc, /installSubBotsPairingFix/);
+  assert.match(subSrc, /browser:\s*config\.browser\s*\|\|\s*'Chrome'/);
+});
+
+test('mainBotFix: validatePairingPhone handles Arabic digits, 00 prefix, 2001x typo, and rejects local 0-prefix', () => {
+  assert.deepEqual(validatePairingPhone('٢٠١٥٠٥٣٦٢١٧٢'), { ok: true, phone: '201505362172' });
+  assert.deepEqual(validatePairingPhone('00201505362172'), { ok: true, phone: '201505362172' });
+  assert.deepEqual(validatePairingPhone('2001012345678'), { ok: true, phone: '201012345678' });
+  const localErr = validatePairingPhone('01505362172');
+  assert.equal(localErr.ok, false);
+  assert.match(localErr.error, /صفر/);
+});
+
+test('mainBotFix: real Baileys WS waits for pair-device/QR and rejects on CB:iq 400 error while resetting creds.me', async () => {
+  const ws = new EventEmitter();
+  ws.isOpen = true;
+  const ev = new EventEmitter();
+  const creds = { registered: false, me: undefined, pairingCode: undefined };
+  let origCalledBeforeQr = false;
+  let qrDelivered = false;
+
+  const sock = {
+    ws,
+    ev,
+    authState: { creds },
+    async sendNode() {},
+    async requestPairingCode(phone, code) {
+      if (!qrDelivered) origCalledBeforeQr = true;
+      creds.me = { id: `${phone}@s.whatsapp.net`, name: '~' };
+      creds.pairingCode = code;
+      // Simulate WhatsApp rejecting pairing IQ with 400 bad-request
+      setImmediate(() => {
+        ws.emit('CB:iq', {
+          tag: 'iq',
+          attrs: { type: 'error', id: 'iq-1' },
+          content: [{ tag: 'error', attrs: { code: '400', text: 'bad-request' } }],
+        });
+      });
+      return code;
+    },
+  };
+
+  wrapSocketPairing(sock, { fallbackPhone: () => '201505362172' });
+
+  const reqPromise = sock.requestPairingCode('201505362172', 'VENI1234');
+  // Emit qr 40ms later — wrapper must wait for qr before invoking origReq
+  setTimeout(() => {
+    qrDelivered = true;
+    ev.emit('connection.update', { qr: 'REAL-QR-REF' });
+  }, 40);
+
+  await assert.rejects(reqPromise, /400/);
+  assert.equal(origCalledBeforeQr, false, 'requestPairingCode must wait until pair-device/qr arrives');
+  assert.equal(creds.me, undefined, 'failed pairing must clear unregistered creds.me');
+  assert.equal(creds.pairingCode, undefined);
+});
+
+test('installSubBotsPairingFix: blocks VENI1234 on SubBot sockets and clears unregistered creds.me on restart', async () => {
+  const pairEvents = [];
+  const subBots = { bots: new Map() };
+  installSubBotsPairingFix(subBots, {
+    onPairCode: (uid, code) => pairEvents.push({ uid, code }),
+  });
+
+  const ws = new EventEmitter();
+  ws.isOpen = true;
+  const ev = new EventEmitter();
+  let authSaved = false;
+  let currentSock = null;
+
+  const bot = {
+    id: 'sub-99',
+    phoneNumber: '201505362172',
+    stopped: false,
+    auth: {
+      state: { creds: { registered: false, me: { id: '201505362172@s.whatsapp.net', name: '~' } } },
+      save: async () => { authSaved = true; },
+    },
+    get sock() { return currentSock; },
+    set sock(v) { currentSock = v; },
+    async start() {
+      this.sock = {
+        ws,
+        ev,
+        authState: { creds: { registered: false } },
+        async sendNode() {},
+        async requestPairingCode(phone, code) {
+          assert.notEqual(code, 'VENI1234');
+          setImmediate(() => {
+            ws.emit('CB:iq', {
+              tag: 'iq',
+              attrs: { type: 'result', id: 'iq-ok' },
+              content: [{ tag: 'link_code_companion_reg', attrs: { stage: 'companion_hello' } }],
+            });
+          });
+          return code;
+        },
+      };
+      ev.emit('connection.update', { qr: 'SUB-QR' });
+    },
+  };
+
+  subBots.bots.set('sub-99', bot);
+  await bot.start();
+  assert.equal(authSaved, true, 'unregistered creds.me must be cleaned before SubBot restart');
+  assert.equal(bot.auth.state.creds.me, undefined);
+
+  const code = await bot.sock.requestPairingCode('201505362172', 'VENI1234');
+  assert.notEqual(code, 'VENI1234');
+  assert.match(code, /^[A-Z0-9]{8}$/);
+  assert.deepEqual(pairEvents, [{ uid: 'sub-99', code }]);
+});

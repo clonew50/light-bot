@@ -10,6 +10,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { toAsciiDigits, validatePairingPhone, generateMainPairCode } from './mainBotFix.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -21,14 +22,16 @@ function storeFilePath() {
 }
 
 export function normalizePhone(raw) {
-  const s = String(raw || '').trim();
+  const s = toAsciiDigits(raw).trim();
   if (s.endsWith('@lid') || s.endsWith('@s.whatsapp.net') || s.endsWith('@g.us')) {
     const parts = s.split('@')[0].split(':');
     const digits = parts[0].replace(/[^0-9]/g, '');
     if (digits.length >= 4) return s; // Keep full JID/LID format if valid
     return '';
   }
-  const digits = s.replace(/[^0-9]/g, '');
+  let digits = s.replace(/[^0-9]/g, '');
+  if (digits.startsWith('00') && digits.length >= 10) digits = digits.slice(2);
+  if (/^200(1[0125]\d{8})$/.test(digits)) digits = '20' + digits.slice(3);
   if (!/^\d{4,20}$/.test(digits)) return '';
   return digits;
 }
@@ -376,11 +379,12 @@ export function serializeSubBot(phone, subBots = global.subBots, opts = {}) {
   return out;
 }
 
-export async function requestSubBotPairing(phoneRaw, { subBots = global.subBots, isAdmin = false, waitMs = 2600 } = {}) {
-  const phone = normalizePhone(phoneRaw);
-  if (!phone) {
-    return { ok: false, statusCode: 400, error: 'رقم الهاتف غير صالح — اكتب الرقم مع رمز الدولة (8 إلى 15 رقماً بدون +)' };
+export async function requestSubBotPairing(phoneRaw, { subBots = global.subBots, isAdmin = false, waitMs = 4500 } = {}) {
+  const checked = validatePairingPhone(phoneRaw);
+  if (!checked.ok) {
+    return { ok: false, statusCode: 400, error: checked.error };
   }
+  const phone = checked.phone;
   const store = loadBotsStore();
   if (!isAdmin) {
     if (store.mainBot.noSub || global.db?.noSub) {
@@ -394,6 +398,7 @@ export async function requestSubBotPairing(phoneRaw, { subBots = global.subBots,
   const rec = ensureSubBotRecord(phone);
   rec.pairStatus = 'pairing';
   rec.pairError = null;
+  rec.lastPairCode = '';
   saveBotsStore(store);
 
   if (!subBots || typeof subBots.add !== 'function') {
@@ -402,7 +407,7 @@ export async function requestSubBotPairing(phoneRaw, { subBots = global.subBots,
       pendingManager: true,
       phone,
       controlCode: rec.controlCode,
-      pairCode: rec.lastPairCode || '',
+      pairCode: '',
       bot: serializeSubBot(phone, subBots),
       message: 'تم تجهيز كود التحكم الخاص بك وحفظه، بانتظار جاهزية محرك البوتات الفرعية لإصدار كود واتساب.'
     };
@@ -425,6 +430,14 @@ export async function requestSubBotPairing(phoneRaw, { subBots = global.subBots,
     };
   }
 
+  // Always refresh static SubBots pairing code so fallback VENI1234 can never be used
+  try {
+    const freshCode = generateMainPairCode();
+    if (typeof subBots.constructor?.pariCode === 'function') {
+      subBots.constructor.pariCode(freshCode);
+    }
+  } catch {}
+
   let resolvedCode = '';
   let resolvedErr = '';
   let targetUid = '';
@@ -433,6 +446,7 @@ export async function requestSubBotPairing(phoneRaw, { subBots = global.subBots,
     if (targetUid && id !== targetUid) return;
     const b = subBots.get?.(id);
     if (!targetUid && b && normalizePhone(b.phoneNumber) !== phone) return;
+    if (!code || String(code).toUpperCase() === 'VENI1234') return;
     resolvedCode = code;
     rec.uid = id;
     rec.lastPairCode = String(code || '');
@@ -476,7 +490,7 @@ export async function requestSubBotPairing(phoneRaw, { subBots = global.subBots,
     phone,
     uid: rec.uid,
     controlCode: rec.controlCode,
-    pairCode: resolvedCode || rec.lastPairCode || '',
+    pairCode: resolvedCode || '',
     error: resolvedErr || undefined,
     bot: serializeSubBot(phone, subBots),
     message: resolvedCode

@@ -984,7 +984,7 @@ async function handle(req, res, client) {
 
         case 'set-login': {
           const loginMode = json?.loginMode === 'qr' ? 'qr' : 'code';
-          const phone = String(json?.phone || '').replace(/[^0-9]/g, '');
+          const phone = sanitizePhone(json?.phone || '');
           panelCfg.loginMode = loginMode;
           panelCfg.phone = phone;
           savePanelConfig(panelCfg);

@@ -2,24 +2,68 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const PAIR_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const PAIR_CODE_CHARS = '23456789ABCDEFGHJKMNPQRSTVWXYZ';
 const NON_RETRYABLE_STATUS = new Set([401, 403, 411, 440]);
 const SESSION_LOGGED_OUT_CODES = new Set([401, 403]);
 
+export function toAsciiDigits(raw) {
+  return String(raw || '')
+    .replace(/[\u0660-\u0669]/g, (c) => String(c.charCodeAt(0) - 0x0660))
+    .replace(/[\u06f0-\u06f9]/g, (c) => String(c.charCodeAt(0) - 0x06f0));
+}
+
 export function sanitizePhone(raw) {
-  let s = String(raw || '').trim();
+  let s = toAsciiDigits(raw).trim();
   if (s.includes('@')) s = s.split('@')[0];
   if (s.includes(':')) s = s.split(':')[0];
-  const digits = s.replace(/[^0-9]/g, '');
+  let digits = s.replace(/[^0-9]/g, '');
+  if (digits.startsWith('00') && digits.length >= 10) {
+    digits = digits.slice(2);
+  }
+  // Auto-fix common Egyptian typo: 20 + 010xxxxxxxx -> 2010xxxxxxxx
+  if (/^200(1[0125]\d{8})$/.test(digits)) {
+    digits = '20' + digits.slice(3);
+  }
   if (!/^\d{6,20}$/.test(digits)) return '';
   return digits;
 }
 
+export function validatePairingPhone(raw) {
+  const s = toAsciiDigits(raw).trim();
+  const rawDigits = s.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  if (!rawDigits) {
+    return {
+      ok: false,
+      phone: '',
+      error: 'أدخل رقم واتساب مع رمز الدولة بدون + (8 إلى 15 رقماً، مثال: 201505362172)'
+    };
+  }
+  if (/^0[1-9]\d{7,12}$/.test(rawDigits)) {
+    return {
+      ok: false,
+      phone: '',
+      error: 'الرقم يبدأ بصفر محلي — اكتب رمز الدولة في البداية بدون صفر أو + (مثال: 201505362172 بدلاً من 01505362172)'
+    };
+  }
+  const phone = sanitizePhone(raw);
+  if (!phone || phone.length < 8 || phone.length > 15 || phone.startsWith('0')) {
+    return {
+      ok: false,
+      phone: '',
+      error: 'رقم الهاتف غير صالح — اكتب الرقم مع رمز الدولة بدون + أو أصفار زائدة (مثال: 201505362172)'
+    };
+  }
+  return { ok: true, phone };
+}
+
 export function generateMainPairCode() {
-  const bytes = crypto.randomBytes(8);
-  let out = '';
-  for (let i = 0; i < 8; i++) out += PAIR_CODE_CHARS[bytes[i] % PAIR_CODE_CHARS.length];
-  return out;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const bytes = crypto.randomBytes(8);
+    let out = '';
+    for (let i = 0; i < 8; i++) out += PAIR_CODE_CHARS[bytes[i] % PAIR_CODE_CHARS.length];
+    if (out !== 'VENI1234') return out;
+  }
+  return 'LB2489XY';
 }
 
 export function isSessionRegistered(sessionDir) {
@@ -78,9 +122,38 @@ function isWsOpen(ws) {
   return false;
 }
 
-function waitForSocketReady(sock, timeoutMs = 10000) {
+function hasRealBaileysWs(sock) {
+  return Boolean(sock?.ws && typeof sock.ws.on === 'function' && typeof sock.sendNode === 'function');
+}
+
+function trackPairDeviceReady(sock) {
+  if (!sock || sock.__pairReadyTracked) return;
+  sock.__pairReadyTracked = true;
+  const markReady = () => { sock.__pairDeviceReady = true; };
+  try {
+    sock.ev?.on?.('connection.update', (u) => {
+      if (u?.qr) markReady();
+      if (u?.connection === 'close') sock.__pairClosed = true;
+    });
+  } catch {}
+  try {
+    sock.ws?.on?.('CB:iq,type:set,pair-device', markReady);
+  } catch {}
+}
+
+/**
+ * Waits until a real Baileys socket finishes Noise validateConnection() and receives
+ * WhatsApp's pair-device IQ (emitting `qr`), so requestPairingCode never corrupts
+ * creds.me mid-handshake. Falls back to `isWsOpen` for plain unit-test mock sockets.
+ */
+export function waitForPairingReady(sock, timeoutMs = 15000) {
   if (!sock) return Promise.resolve(false);
-  if (isWsOpen(sock.ws)) return Promise.resolve(true);
+  trackPairDeviceReady(sock);
+  if (sock.__pairDeviceReady) return Promise.resolve(true);
+
+  const realWs = hasRealBaileysWs(sock);
+  if (!realWs && isWsOpen(sock.ws)) return Promise.resolve(true);
+
   return new Promise((resolve) => {
     let done = false;
     let poll = null;
@@ -92,32 +165,285 @@ function waitForSocketReady(sock, timeoutMs = 10000) {
       if (timer) clearTimeout(timer);
       try { sock.ev?.off?.('connection.update', onEv); } catch {}
       try { sock.ev?.removeListener?.('connection.update', onEv); } catch {}
+      try { sock.ws?.off?.('CB:iq,type:set,pair-device', onPairDevice); } catch {}
+      try { sock.ws?.removeListener?.('CB:iq,type:set,pair-device', onPairDevice); } catch {}
       resolve(ok);
+    };
+    const onPairDevice = () => {
+      sock.__pairDeviceReady = true;
+      finish(true);
     };
     const onEv = (u) => {
       if (u?.connection === 'close') { finish(false); return; }
-      if (isWsOpen(sock.ws) || u?.qr || u?.connection === 'open') {
+      if (u?.qr) {
+        sock.__pairDeviceReady = true;
+        finish(true);
+        return;
+      }
+      if (!realWs && (isWsOpen(sock.ws) || u?.connection === 'open')) {
         finish(true);
       }
     };
     try { sock.ev?.on?.('connection.update', onEv); } catch {}
+    try { sock.ws?.on?.('CB:iq,type:set,pair-device', onPairDevice); } catch {}
     poll = setInterval(() => {
-      if (isWsOpen(sock.ws)) finish(true);
-    }, 150);
+      if (sock.__pairDeviceReady) { finish(true); return; }
+      if (!realWs && isWsOpen(sock.ws)) finish(true);
+    }, 120);
     poll.unref?.();
-    timer = setTimeout(() => finish(isWsOpen(sock.ws)), timeoutMs);
+    timer = setTimeout(() => {
+      finish(Boolean(sock.__pairDeviceReady || (!realWs && isWsOpen(sock.ws))));
+    }, timeoutMs);
     timer.unref?.();
   });
 }
 
+function mapPairingIqError(code, text) {
+  const c = String(code || '');
+  const t = String(text || '');
+  if (c === '429' || /rate/i.test(t)) {
+    return new Error('طلبات ربط كثيرة متتالية على هذا الرقم (429) — انتظر دقيقة ثم حاول مجدداً');
+  }
+  if (c === '406' || /not-acceptable/i.test(t)) {
+    return new Error('رفض واتساب هذا الرقم أو الجهاز (406) — تحقق من الرقم مع رمز الدولة بدون + أو أصفار زائدة');
+  }
+  if (c === '400' || /bad-request/i.test(t)) {
+    return new Error('رفض واتساب طلب إصدار الكود (400) — تأكد من صحة الرقم مع رمز الدولة وإعدادات المتصفح');
+  }
+  return new Error(`رفض واتساب طلب الربط (${c || t || 'error'})`);
+}
+
+function invokeAndVerifyPairingIq(sock, origReq, phone, customCode) {
+  const realWs = typeof sock.ws?.on === 'function';
+  if (!realWs) {
+    return origReq(phone, customCode);
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let ackTimer = null;
+    const cleanup = () => {
+      if (ackTimer) clearTimeout(ackTimer);
+      try { sock.ws?.off?.('CB:iq', onIq); } catch {}
+      try { sock.ws?.removeListener?.('CB:iq', onIq); } catch {}
+      try { sock.ev?.off?.('connection.update', onConn); } catch {}
+      try { sock.ev?.removeListener?.('connection.update', onConn); } catch {}
+    };
+    let returnedCode = '';
+    const resetUnregisteredCreds = () => {
+      try {
+        if (sock.authState?.creds && !sock.authState.creds.registered) {
+          sock.authState.creds.me = undefined;
+          sock.authState.creds.pairingCode = undefined;
+        }
+      } catch {}
+    };
+    const onConn = (u) => {
+      if (u?.connection === 'close' && !settled) {
+        settled = true;
+        cleanup();
+        resetUnregisteredCreds();
+        const { code, message } = disconnectInfo(u);
+        reject(new Error(`انقطع اتصال واتساب أثناء إصدار الكود (${code ?? (message || 'closed')})`));
+      }
+    };
+    const onIq = (node) => {
+      if (settled || !node?.attrs) return;
+      const t = node.attrs.type;
+      const firstTag = Array.isArray(node.content) ? node.content[0]?.tag : '';
+      if (t === 'set' && firstTag === 'pair-device') return;
+      if (t === 'result' && firstTag === 'link_code_companion_reg') {
+        settled = true;
+        cleanup();
+        resolve(returnedCode || customCode);
+        return;
+      }
+      if (t === 'error') {
+        const errNode = Array.isArray(node.content) ? node.content.find((x) => x?.tag === 'error') : null;
+        settled = true;
+        cleanup();
+        resetUnregisteredCreds();
+        reject(mapPairingIqError(errNode?.attrs?.code, errNode?.attrs?.text));
+      }
+    };
+    try { sock.ws.on('CB:iq', onIq); } catch {}
+    try { sock.ev?.on?.('connection.update', onConn); } catch {}
+
+    Promise.resolve()
+      .then(() => origReq(phone, customCode))
+      .then((code) => {
+        returnedCode = code || customCode;
+        if (settled) return;
+        ackTimer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(returnedCode);
+        }, 2500);
+        ackTimer.unref?.();
+      })
+      .catch((err) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resetUnregisteredCreds();
+        reject(err);
+      });
+  });
+}
+
+export function wrapSocketPairing(sock, {
+  fallbackPhone = () => '',
+  onCode = () => {},
+  onError = () => {},
+  isCurrentSock = () => true,
+} = {}) {
+  if (!sock || typeof sock.requestPairingCode !== 'function' || sock.__pairWrapped) return;
+  sock.__pairWrapped = true;
+  trackPairDeviceReady(sock);
+  const origReq = sock.requestPairingCode.bind(sock);
+
+  sock.requestPairingCode = async (phoneArg, customCodeArg) => {
+    if (sock.__pairCodeResult) return sock.__pairCodeResult;
+    if (sock.__pairPromise) return sock.__pairPromise;
+
+    const rawInput = phoneArg || fallbackPhone();
+    const checked = validatePairingPhone(rawInput);
+    if (!checked.ok) {
+      const err = new Error(checked.error || 'رقم الهاتف غير صالح للربط');
+      onError(err);
+      throw err;
+    }
+    const phone = checked.phone;
+
+    const candidate = String(customCodeArg || '').trim().toUpperCase();
+    const customCode = candidate && /^[A-Z0-9]{8}$/.test(candidate) && candidate !== 'VENI1234'
+      ? candidate
+      : generateMainPairCode();
+
+    sock.__pairPromise = (async () => {
+      try {
+        const ready = await waitForPairingReady(sock, 15000);
+        if (!ready && !isWsOpen(sock.ws)) {
+          throw new Error('انتهت مهلة فتح اتصال واتساب قبل إصدار الكود');
+        }
+        await new Promise((r) => setTimeout(r, 150));
+        let code;
+        try {
+          code = await invokeAndVerifyPairingIq(sock, origReq, phone, customCode);
+        } catch (firstErr) {
+          const msg = String(firstErr?.message || '');
+          if (/400|406|429|غير صالح|بصفر/.test(msg) || !isCurrentSock(sock) || !isWsOpen(sock.ws)) {
+            throw firstErr;
+          }
+          await new Promise((r) => setTimeout(r, 1000));
+          code = await invokeAndVerifyPairingIq(sock, origReq, phone, customCode);
+        }
+        const finalCode = String(code || customCode).toUpperCase();
+        if (finalCode === 'VENI1234') {
+          throw new Error('تم حظر الكود الافتراضي — أعد طلب كود جديد');
+        }
+        sock.__pairCodeResult = finalCode;
+        onCode(finalCode, phone);
+        return finalCode;
+      } catch (err) {
+        sock.__pairPromise = null;
+        onError(err);
+        throw err;
+      }
+    })();
+
+    return sock.__pairPromise;
+  };
+}
+
+/**
+ * Hooks SubBots (`meowsab` Ae / ft) so every spawned SubBot socket:
+ *  1) Never sends "VENI1234"
+ *  2) Waits for pair-device/QR readiness instead of a blind 2s pre-Noise timer
+ *  3) Verifies WhatsApp's CB:iq response instead of surfacing rejected 400/429 codes
+ *  4) Clears unregistered `creds.me` before reconnect so `ft.start()` doesn't misdetect login state
+ */
+export function installSubBotsPairingFix(subBots, {
+  onPairCode = () => {},
+  onPairError = () => {},
+} = {}) {
+  if (!subBots || subBots.__subPairFixInstalled) return;
+  subBots.__subPairFixInstalled = true;
+
+  const hookSubBotInstance = (bot) => {
+    if (!bot || bot.__subSockHooked) return;
+    bot.__subSockHooked = true;
+
+    const attachSock = (sock) => {
+      if (!sock) return;
+      wrapSocketPairing(sock, {
+        fallbackPhone: () => bot.phoneNumber || bot.cfg?.phoneNumber || '',
+        isCurrentSock: (s) => bot.sock === s && !bot.stopped,
+        onCode: (code, phone) => onPairCode(bot.id, code, phone),
+        onError: (err) => {
+          onPairError(bot.id, err);
+          try { bot.emit?.('error', bot.id, err); } catch {}
+        },
+      });
+    };
+
+    const desc = Object.getOwnPropertyDescriptor(bot, 'sock');
+    if (desc && typeof desc.get === 'function' && typeof desc.set === 'function') {
+      const prevGet = desc.get;
+      const prevSet = desc.set;
+      Object.defineProperty(bot, 'sock', {
+        configurable: true,
+        enumerable: true,
+        get() { return prevGet.call(this); },
+        set(val) {
+          prevSet.call(this, val);
+          if (val) attachSock(val);
+        },
+      });
+    } else {
+      let cur = bot.sock ?? null;
+      Object.defineProperty(bot, 'sock', {
+        configurable: true,
+        enumerable: true,
+        get() { return cur; },
+        set(val) {
+          cur = val;
+          if (val) attachSock(val);
+        },
+      });
+    }
+
+    if (bot.sock) attachSock(bot.sock);
+
+    if (typeof bot.start === 'function' && !bot.__startWrapped) {
+      bot.__startWrapped = true;
+      const origStart = bot.start.bind(bot);
+      bot.start = async (...args) => {
+        try {
+          const creds = bot.auth?.state?.creds;
+          if (creds && !creds.registered && creds.me) {
+            creds.me = undefined;
+            creds.pairingCode = undefined;
+            await bot.auth.save?.();
+          }
+        } catch {}
+        return origStart(...args);
+      };
+    }
+  };
+
+  if (subBots.bots instanceof Map) {
+    for (const bot of subBots.bots.values()) hookSubBotInstance(bot);
+    const origSet = subBots.bots.set.bind(subBots.bots);
+    subBots.bots.set = (key, val) => {
+      hookSubBotInstance(val);
+      return origSet(key, val);
+    };
+  }
+}
+
 /**
  * Runtime connection & pairing fix for meowsab's Client (`En`).
- * Fixes:
- *  1) `client.reconnectAttempts` was `undefined`, so `undefined < 10` was false and Client never auto-reconnected.
- *  2) `on=Ko` set `this.isRunning = false` leaving `this.running = true`, blocking `client.start()` retries.
- *  3) `Client.start()` called `requestPairingCode` in a blind 2000ms timer before WS handshake was ready,
- *     never retried on failure, and swallowed errors without notifying the web panel.
- *  4) Normalizes phoneNumber and prevents concurrent double pairing calls on the same socket.
  */
 export function installMainBotConnectionFix(client, opts = {}) {
   if (!client || client.__mainBotFixInstalled) return client?.__mainBotFixHandle || null;
@@ -162,61 +488,23 @@ export function installMainBotConnectionFix(client, opts = {}) {
   }
 
   function wrapRequestPairingCode(sock) {
-    if (!sock || typeof sock.requestPairingCode !== 'function' || sock.__pairWrapped) return;
-    sock.__pairWrapped = true;
-    const origReq = sock.requestPairingCode.bind(sock);
-
-    sock.requestPairingCode = async (phoneArg, customCodeArg) => {
-      if (sock.__pairCodeResult) return sock.__pairCodeResult;
-      if (sock.__pairPromise) return sock.__pairPromise;
-
-      const phone = sanitizePhone(phoneArg || client.config?.phoneNumber);
-      if (!phone) {
-        const err = new Error('رقم الهاتف غير صالح للربط');
-        state.lastError = err.message;
+    wrapSocketPairing(sock, {
+      fallbackPhone: () => client.config?.phoneNumber,
+      isCurrentSock: (s) => s === client.sock,
+      onCode: (code, phone) => {
+        state.lastIssuedCode = code;
+        state.lastError = null;
+        onPairingCode(code, phone);
+      },
+      onError: (err) => {
+        state.lastError = err?.message || String(err);
         onPairingError(err);
-        throw err;
-      }
-
-      const customCode = customCodeArg && /^[A-Z0-9]{8}$/i.test(String(customCodeArg)) && customCodeArg !== 'VENI1234'
-        ? String(customCodeArg).toUpperCase()
-        : generateMainPairCode();
-
-      sock.__pairPromise = (async () => {
-        try {
-          const ready = await waitForSocketReady(sock, 10000);
-          if (!ready && !isWsOpen(sock.ws)) {
-            throw new Error('انتهت مهلة فتح اتصال واتساب قبل إصدار الكود');
-          }
-          // Small settle delay after WS open for Noise handshake readiness
-          await new Promise((r) => setTimeout(r, 400));
-          let code;
-          try {
-            code = await origReq(phone, customCode);
-          } catch (firstErr) {
-            if (sock !== client.sock || !isWsOpen(sock.ws)) throw firstErr;
-            await new Promise((r) => setTimeout(r, 1200));
-            code = await origReq(phone, customCode);
-          }
-          sock.__pairCodeResult = code || customCode;
-          state.lastIssuedCode = sock.__pairCodeResult;
-          state.lastError = null;
-          onPairingCode(sock.__pairCodeResult, phone);
-          return sock.__pairCodeResult;
-        } catch (err) {
-          sock.__pairPromise = null;
-          state.lastError = err?.message || String(err);
-          onPairingError(err);
-          onEvent('warn', `⚠️ تعذّر إصدار كود ربط البوت الرئيسي: ${state.lastError}`);
-          throw err;
-        }
-      })();
-
-      return sock.__pairPromise;
-    };
+        onEvent('warn', `⚠️ تعذّر إصدار كود ربط البوت الرئيسي: ${state.lastError}`);
+      },
+    });
   }
 
-  function triggerPairingForSock(sock) {
+  function triggerPairingForSock(sock, immediate = false) {
     if (!sock || sock !== client.sock) return;
     if (client.config?.printQR) return;
     const phone = sanitizePhone(client.config?.phoneNumber);
@@ -235,7 +523,7 @@ export function installMainBotConnectionFix(client, opts = {}) {
         sock.__pairTriggered = false;
         logError('⚠️ [MAIN] فشل طلب كود الربط:', e?.message || e);
       }
-    }, 1500);
+    }, immediate ? 120 : 1200);
     timer.unref?.();
   }
 
@@ -280,7 +568,7 @@ export function installMainBotConnectionFix(client, opts = {}) {
       const { connection, qr } = update || {};
 
       if ((qr || connection === 'connecting') && !client.config?.printQR && !sock.authState?.creds?.registered) {
-        triggerPairingForSock(sock);
+        triggerPairingForSock(sock, Boolean(qr));
       }
 
       if (connection === 'open') {
@@ -421,14 +709,18 @@ export async function requestMainBotPairing(client, options = {}) {
   } = options;
 
   const mode = loginMode === 'qr' ? 'qr' : 'code';
-  const phone = sanitizePhone(rawPhone);
+  let phone = sanitizePhone(rawPhone);
 
-  if (mode === 'code' && (!phone || phone.length < 8 || phone.length > 15)) {
-    return {
-      ok: false,
-      statusCode: 400,
-      error: 'أدخل رقم البوت الرئيسي مع رمز الدولة بدون + (8 إلى 15 رقماً)'
-    };
+  if (mode === 'code') {
+    const checked = validatePairingPhone(rawPhone);
+    if (!checked.ok) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: checked.error
+      };
+    }
+    phone = checked.phone;
   }
 
   if (panelCfg) {
@@ -507,7 +799,7 @@ export async function requestMainBotPairing(client, options = {}) {
     if (gotOpen) break;
     if (mode === 'code' && gotCode) break;
     if (mode === 'qr' && gotQr) break;
-    if (gotErr && /غير صالح|401|403/.test(gotErr)) break;
+    if (gotErr && /غير صالح|بصفر|400|401|403|406|429/.test(gotErr)) break;
     await new Promise((r) => setTimeout(r, 200));
   }
 
@@ -533,10 +825,15 @@ export async function requestMainBotPairing(client, options = {}) {
 
 export { SESSION_LOGGED_OUT_CODES };
 export default {
+  toAsciiDigits,
   sanitizePhone,
+  validatePairingPhone,
   generateMainPairCode,
   isSessionRegistered,
   backupUnregisteredSession,
+  waitForPairingReady,
+  wrapSocketPairing,
+  installSubBotsPairingFix,
   installMainBotConnectionFix,
   requestMainBotPairing
 };

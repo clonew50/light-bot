@@ -1,3 +1,5 @@
+import { validatePairingPhone } from "../../system/mainBotFix.js";
+
 const run = async (m, { args, conn, bot }) => {
 /*
 if (subBots.list().length >= 30) {
@@ -13,9 +15,9 @@ if (subBots.list().length >= 30) {
 
   try {
     // تنظيف الرقم المدخل من المسافات أو الرموز الزائدة
-    const num = args[0].replace(/[+\s-]/g, '');
-
-    if (!/^\d+$/.test(num)) return m.reply("⚠️ رقم الهاتف غير صالح، تأكد من كتابة أرقام صحيحة.");
+    const checked = validatePairingPhone(args[0]);
+    if (!checked.ok) return m.reply(`⚠️ ${checked.error}`);
+    const num = checked.phone;
 
     // ─── بوابة موافقة المطور (todo 29e) ───
     // ممنوع أي مستخدم ينصّب بوت فرعي: لازم يكون المطور نفسه، أو الرقم مسجّل

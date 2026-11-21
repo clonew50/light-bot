@@ -10,6 +10,7 @@ import {
   syncSubBotSelfOwner
 } from "./system/botRegistry.js";
 import { installInteractiveButtonShim } from "./system/buttonFix.js";
+import { installSubBotsPairingFix } from "./system/mainBotFix.js";
 
 // خريطة لتخزين حالة الوضع لكل بوت فرعي (المفتاح هو uid أو رقم البوت)
 const subBotModes = new Map();
@@ -39,6 +40,14 @@ const persistPairCode = (code, meta = {}) => {
 
 async function sub(client) {
   global.subBots = new SubBots(client.commandSystem)
+  installSubBotsPairingFix(global.subBots, {
+    onPairCode: (uid, code) => {
+      try { recordSubPairEvent(uid, code, global.subBots); } catch {}
+    },
+    onPairError: (uid, error) => {
+      try { recordSubStatusEvent(uid, 'error', error?.message || String(error), global.subBots); } catch {}
+    }
+  });
 
   // كود البداية: عشوائي ومخزّن — الإطار بيرجّع لـ "VENI1234" من غيره
   const bootCode = generatePairCode();
@@ -53,6 +62,7 @@ async function sub(client) {
     prefix: config.prefix,
     fromMe: null,
     info: config.info,
+    browser: config.browser || 'Chrome',
     printQR: false
   });
 

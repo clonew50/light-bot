@@ -12,8 +12,8 @@
  * export buildInfo(env)  → بيانات البوت المعروضة (nameBot / urls / copyright ...)
  */
 
-/** البصمة الثابتة الافتراضية للجهاز */
-export const DEFAULT_BROWSER = 'LightBot';
+/** البصمة الثابتة الافتراضية للجهاز — واتساب يرفض المتصفحات غير المعروفة (400 bad-request) عند الربط بالكود */
+export const DEFAULT_BROWSER = 'Chrome';
 
 /* =========== onError — خطّاف أخطاء الإطار (todo 4 / GAP-11) ===========
    الإطار (node_modules/meowsab/dist) بينادي this.config.onError?.(n)
