@@ -75,6 +75,40 @@ function commandNames(command) {
   return asArray(command).map((value) => String(value)).filter(Boolean);
 }
 
+function isCatchAllRegex(value) {
+  if (!(value instanceof RegExp)) return false;
+  if (value.source === '(?:)' || value.source === '' || value.source === '.*' || value.source === '.+') return true;
+  try {
+    return value.test('') && value.test('menu2') && value.test('__lightbot_unmatched_probe__');
+  } catch {
+    return false;
+  }
+}
+
+function extractCustomPrefixCommands(customPrefix) {
+  if (!(customPrefix instanceof RegExp)) return [];
+  const src = String(customPrefix.source || '');
+  const groupMatch = src.match(/^\^?\(([^)]+)\)\$?$/);
+  if (groupMatch) {
+    return groupMatch[1]
+      .split('|')
+      .map((part) => part.replace(/\\(.)/g, '$1').trim())
+      .filter((part) => /^[\p{L}\p{N}_-]+$/u.test(part));
+  }
+  return [];
+}
+
+function deriveImportedCommand(metadataSource) {
+  const raw = metadataSource?.command;
+  if (!isCatchAllRegex(raw)) return raw;
+  const fromUsage = asArray(metadataSource?.usage)
+    .map((item) => String(item || '').trim().split(/\s+/)[0])
+    .filter(Boolean);
+  const fromPrefix = extractCustomPrefixCommands(metadataSource?.customPrefix);
+  const merged = [...new Set([...fromUsage, ...fromPrefix])];
+  return merged.length ? merged : /(?!)/;
+}
+
 function deriveUsage(source, command) {
   const usage = source?.usage ?? source?.help;
   if (Array.isArray(usage) && usage.length) return usage.map(String);
@@ -773,6 +807,12 @@ export function createLegacyContext(m, ctx = {}, bot = null) {
   const database = getLegacyDb(global.db);
   const prefix = ctx.prefix || ctx.usedPrefix || m?.usedPrefix || '.';
   const command = ctx.command || m?.command || String(m?.text || '').replace(/^\S+\s*/, '').trim();
+  const rawBody = typeof m?.body === 'string' ? m.body.trim() : '';
+  const derivedNoPrefix = ctx.noPrefix !== undefined
+    ? String(ctx.noPrefix)
+    : (rawBody && prefix && rawBody.startsWith(prefix)
+      ? rawBody.slice(prefix.length).trim()
+      : String(ctx.text ?? m?.text ?? rawBody));
   const args = Array.isArray(ctx.args)
     ? ctx.args
     : Array.isArray(m?.args)
@@ -786,6 +826,7 @@ export function createLegacyContext(m, ctx = {}, bot = null) {
     chat: m?.chat || ctx.chat || '',
     sender: m?.sender || ctx.sender || '',
     text: ctx.text ?? m?.text ?? '',
+    noPrefix: derivedNoPrefix,
     args,
     command,
     usedPrefix: ctx.usedPrefix || prefix,
@@ -803,7 +844,7 @@ export function createLegacyContext(m, ctx = {}, bot = null) {
   };
   if (ctx && typeof ctx === 'object') {
     for (const [key, value] of Object.entries(legacy)) {
-      if (ctx[key] === undefined || key === 'satanic' || key === 'isCreator' || key === 'isPrems' || key === 'prefix' || key === 'db') {
+      if (ctx[key] === undefined || key === 'satanic' || key === 'isCreator' || key === 'isPrems' || key === 'prefix' || key === 'db' || key === 'noPrefix') {
         try { ctx[key] = value; } catch {}
       }
     }
@@ -840,8 +881,9 @@ export function adaptImportedPlugin(source, options = {}) {
   const execute = typeof source === 'function' ? source : source.execute;
   if (typeof execute !== 'function') throw new Error(`Imported plugin has no executable handler: ${options.fileName || 'unknown'}`);
   const metadataSource = typeof source === 'function' ? source : source;
-  const command = metadataSource.command;
-  if (!command) throw new Error(`Imported plugin has no command metadata: ${options.fileName || 'unknown'}`);
+  const rawCommand = metadataSource.command;
+  if (!rawCommand) throw new Error(`Imported plugin has no command metadata: ${options.fileName || 'unknown'}`);
+  const command = deriveImportedCommand(metadataSource);
   const handler = {
     execute: async (m, ctx, bot) => {
       const runtime = await installImportedRuntime({ m, ctx, bot, refreshRegistry: true });
@@ -850,7 +892,6 @@ export function adaptImportedPlugin(source, options = {}) {
         return await execute.call(runtime.conn, m, legacyCtx, bot);
       } catch (error) {
         console.error(`[imported:${options.fileName || 'unknown'}]`, error);
-        try { await m?.reply?.('⚠️ فشل تنفيذ الأمر. راجع سجل البوت لمزيد من التفاصيل.'); } catch {}
         throw error;
       }
     }

@@ -109,19 +109,25 @@ const defaultMenu = {
         .filter((h, i, arr) => arr.indexOf(h) === i)
         .length
 
-      conn.sendButtonNormal(m.chat, {
-        document: { url: img.profile.bot },
-        jpegThumbnail: await conn.resize(
-          Buffer.from(await (await fetch(await global.img.profile.bot)).arrayBuffer()),
-          100, 100
-        ),
+      let jpegThumbnail
+      try {
+        const thumbUrl = await global.img?.profile?.bot
+        if (thumbUrl) {
+          jpegThumbnail = await conn.resize(Buffer.from(await (await fetch(thumbUrl)).arrayBuffer()), 100, 100)
+        }
+      } catch {}
+
+      const portalUrl = global.serverUrl || process.env.PUBLIC_URL || 'https://github.com/clonew50/light-bot'
+      await conn.sendButtonNormal(m.chat, {
+        ...(global.img?.profile?.bot ? { document: { url: global.img.profile.bot } } : {}),
+        ...(jpegThumbnail ? { jpegThumbnail } : {}),
         mimetype: 'image/webp',
         caption: TeksBefore,
         fileName: global.settings.botname,
         fileLength: '665666646645000',
         nativeFlow: [{},
           { text: '📢', url: 'https://whatsapp.com/channel/0029VaVJo460bIdoxTVoJY3e' },
-          { text: '🌐', url: getServerUrl(), useWebview: false },
+          { text: '🌐', url: portalUrl, useWebview: false },
           { text: '\u0000', sections: [
             {
               highlight_label: '✦ SHOW ALL MENU',
@@ -218,12 +224,16 @@ const defaultMenu = {
     )
 
     // ===========================[ SEND MENU ]===================
-    conn.reply(m.chat, text, {
+    let orderThumb
+    try {
+      if (global.img?.profile?.sender) orderThumb = await conn.resize(global.img.profile.sender, 150, 150)
+    } catch {}
+    await conn.reply(m.chat, text, {
       key: { remoteJid: '0@s.whatsapp.net' },
       message: {
         orderMessage: {
           orderId: '780642630945098',
-          thumbnail: await conn.resize(global.img.profile.sender, 150, 150),
+          ...(orderThumb ? { thumbnail: orderThumb } : {}),
           itemCount: 666,
           status: 1,
           surface: 1,

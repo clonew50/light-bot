@@ -11,15 +11,23 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..');
 
+import { Browsers } from '@whiskeysockets/baileys';
+import { getCompanionPlatformId } from '@whiskeysockets/baileys/lib/Utils/companion-reg-client-utils.js';
+
 const {
   sanitizePhone,
+  validatePairingPhone,
   generateMainPairCode,
   isSessionRegistered,
   backupUnregisteredSession,
   installMainBotConnectionFix,
+  wrapSocketPairing,
+  installSubBotsPairingFix,
   requestMainBotPairing,
 } = await import(pathToFileURL(path.join(repoRoot, 'system', 'mainBotFix.js')).href);
+const { DEFAULT_BROWSER, buildConfig } = await import(pathToFileURL(path.join(repoRoot, 'system', 'config.js')).href);
 const { isSocketOpen, isAlive, markOpen } = await import(pathToFileURL(path.join(repoRoot, 'system', 'liveness.js')).href);
+const { createLegacyContext } = await import(pathToFileURL(path.join(repoRoot, 'system', 'imported-compat.js')).href);
 
 test('liveness: recognizes Baileys v7 WebSocketClient shape (ws.isOpen + ws.socket.readyState) as open', () => {
   const baileysV7Client = {
@@ -458,4 +466,74 @@ test('installSubBotsPairingFix: blocks VENI1234 on SubBot sockets and clears unr
   assert.notEqual(code, 'VENI1234');
   assert.match(code, /^[A-Z0-9]{8}$/);
   assert.deepEqual(pairEvents, [{ uid: 'sub-99', code }]);
+});
+
+test('imported-compat: catch-all RegExp plugins never hijack unknown commands and noPrefix is populated', async () => {
+  const { Client } = await import('meowsab');
+  const bot = new Client({
+    commandsPath: path.join(repoRoot, 'plugins', 'imported'),
+    prefix: ['.'],
+  });
+  await bot.commandSystem.loadFile(path.join(repoRoot, 'plugins', 'imported', 'owner-exec.js'));
+  await bot.commandSystem.loadFile(path.join(repoRoot, 'plugins', 'imported', 'owner-exec2.js'));
+  await bot.commandSystem.loadFile(path.join(repoRoot, 'plugins', 'imported', 'rem.js'));
+  await bot.commandSystem.loadFile(path.join(repoRoot, 'plugins', 'imported', 'menu.js'));
+  await bot.commandSystem.loadFile(path.join(repoRoot, 'plugins', 'menu.js'));
+
+  assert.equal(bot.commandSystem.registry.findByName('__nonexistent_cmd_probe__', true), undefined);
+  assert.equal(bot.commandSystem.registry.findByName('', true), undefined);
+
+  const menu2Match = bot.commandSystem.registry.findByName('menu2', true)?.command;
+  assert.ok(menu2Match, 'menu2 alias must resolve cleanly');
+  assert.equal(menu2Match.__filePath, path.join(repoRoot, 'plugins', 'menu.js'));
+
+  const awamer3Match = bot.commandSystem.registry.findByName('اوامر3', true)?.command;
+  assert.ok(awamer3Match, 'اوامر3 alias must resolve cleanly');
+  assert.equal(awamer3Match.__filePath, path.join(repoRoot, 'plugins', 'imported', 'menu.js'));
+
+  const ctx = createLegacyContext({ chat: 'u@s.whatsapp.net', sender: 'u@s.whatsapp.net', body: '.> 1+1' }, { prefix: '.', command: '>' });
+  assert.equal(ctx.noPrefix, '> 1+1');
+});
+
+test('menu2 (menuV2) & اوامر3 (menu3) & main-menu execute without crashing under offline/minimal sockets', async () => {
+  const relayed = [];
+  const replies = [];
+  const sent = [];
+  const sock = {
+    user: { id: '201505362172@s.whatsapp.net', jid: '201505362172@s.whatsapp.net' },
+    async sendMessage(jid, payload) { sent.push({ jid, payload }); return { key: { id: 's1' } }; },
+    async relayMessage(jid, msg) { relayed.push({ jid, msg }); return { key: { id: 'r1' } }; },
+  };
+  globalThis.db = { users: {}, groups: {}, data: { sticker: {}, stats: {}, settings: {} } };
+  const bot = {
+    sock,
+    config: { prefix: ['.'], owners: ['201505362172@s.whatsapp.net'], info: { nameBot: 'LightBot', images: [] } },
+    async getAllCommands() {
+      return [{ command: ['menu3'], usage: ['menu3'], category: 'info', __filePath: path.join(repoRoot, 'plugins', 'imported', 'menu.js') }];
+    },
+  };
+  const m = {
+    chat: '201505362172@s.whatsapp.net',
+    sender: '201505362172@s.whatsapp.net',
+    pushName: 'Clonew50',
+    body: '.اوامر3',
+    async reply(t) { replies.push(t); return { key: { id: 'rep' } }; },
+  };
+
+  const menuMod = await import(pathToFileURL(path.join(repoRoot, 'plugins', 'menu.js')).href);
+  const menuV2 = (Array.isArray(menuMod.default) ? menuMod.default : [menuMod.default]).find((h) => h.aliases?.includes('menu2'));
+  assert.ok(menuV2);
+  await menuV2(m, { conn: sock, sock, bot, command: 'menu2', usedPrefix: '.', args: [] });
+  assert.ok(relayed.length >= 1, 'menu2 must relay rich menu');
+
+  relayed.length = 0;
+  const importedMenu = await import(pathToFileURL(path.join(repoRoot, 'plugins', 'imported', 'menu.js')).href);
+  await importedMenu.default.execute(m, { conn: sock, bot, command: 'اوامر3', usedPrefix: '.', prefix: '.', args: [] }, bot);
+  assert.ok(relayed.length >= 1 || replies.length >= 1, 'اوامر3 must send menu even without video upload');
+
+  const mainMenu = await import(pathToFileURL(path.join(repoRoot, 'plugins', 'imported', 'main-menu.js')).href);
+  sent.length = 0;
+  replies.length = 0;
+  await mainMenu.default.execute(m, { conn: sock, bot, command: 'mainmenu', usedPrefix: '.', prefix: '.', args: [] }, bot);
+  assert.ok(sent.length >= 1 || relayed.length >= 1, 'mainmenu must send button menu without ReferenceError');
 });

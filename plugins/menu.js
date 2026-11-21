@@ -243,7 +243,7 @@ const menuV2 = async (m, { conn, bot, command, usedPrefix, sock }) => {
     const prefix = usedPrefix || '.';
 
     let commands = [];
-    try { commands = (await bot.getAllCommands()) || []; } catch { commands = []; }
+    try { commands = (await bot?.getAllCommands?.()) || []; } catch { commands = []; }
     const { byCat, ordered } = collect(commands);
 
     const cats = ordered.map((key) => {
@@ -354,7 +354,8 @@ const menuV2 = async (m, { conn, bot, command, usedPrefix, sock }) => {
 };
 
 menuV2.command = ['اوامر2'];
-menuV2.usage = ['اوامر2'];
+menuV2.aliases = ['menu2'];
+menuV2.usage = ['اوامر2', 'menu2'];
 menuV2.category = 'info';
 menuV2.usePrefix = true;
 
@@ -397,7 +398,7 @@ const clean = () => {
 };
 
 const getImg = (bot) => {
-    const { images } = bot.config.info;
+    const images = bot?.config?.info?.images || global.config?.info?.images || 'https://files.catbox.moe/hm9iq4.jpg';
     return Array.isArray(images) ? images[Math.floor(Math.random() * images.length)] : images;
 };
 
@@ -423,7 +424,7 @@ const context = (jid, img) => ({
 const menuV1 = async (m, { conn, bot }) => {
     clean();
 
-    const cmds = await bot.getAllCommands();
+    const cmds = (typeof bot?.getAllCommands === 'function' ? await bot.getAllCommands() : []) || [];
     const cats = {};
 
     cmds.forEach(c => {

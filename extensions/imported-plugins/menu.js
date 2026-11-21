@@ -2,7 +2,7 @@ import moment from 'moment-timezone'
 import axios from 'axios'
 import { prepareWAMessageMedia, generateWAMessageFromContent } from '@whiskeysockets/baileys'
 
-const now = moment().tz('Africa/Casablanca')
+// live timestamp is computed per invocation inside handler
 
 function clockString(ms) {
   let h = Math.floor(ms / 3600000)
@@ -76,34 +76,38 @@ let handler = async (m, { conn, usedPrefix, args }) => {
   }
   conn.menuLastRequest = Date.now()
 
-  await conn.relayMessage(m.chat, {
-    interactiveMessage: {
-      header: { title: "Yono BOT" },
-      body: { text: "Mohon tunggu sebentar, Yono BOT sedang menyiapkan daftar perintah..." },
-      footer: { text: "\u0000" },
-      nativeFlowMessage: { buttons: [{ name: "inapp_signup", buttonParamsJson: "{}" }] },
-      contextInfo: {
-        forwardingScore: 99, isForwarded: true,
-        participant: "0@s.whatsapp.net",
-        remoteJid: "status@broadcast",
-        quotedMessage: {
-          orderMessage: {
-            orderId: "2026",
-            thumbnail: "[STRIPPED 2727 bytes]",
-            orderTitle: "Yono BOT - 2026 ELEMENTS",
-            sellerJid: "0@s.whatsapp.net",
-            totalAmount1000: 2026000,
-            totalCurrencyCode: "IDR",
-            message: "YONO - 2026 DOCS",
-            surface: 0, itemCount: 2026
+  if (typeof conn?.relayMessage === 'function') {
+    try {
+      await conn.relayMessage(m.chat, {
+        interactiveMessage: {
+          header: { title: "Yono BOT" },
+          body: { text: "Mohon tunggu sebentar, Yono BOT sedang menyiapkan daftar perintah..." },
+          footer: { text: "\u0000" },
+          nativeFlowMessage: { buttons: [{ name: "inapp_signup", buttonParamsJson: "{}" }] },
+          contextInfo: {
+            forwardingScore: 99, isForwarded: true,
+            participant: "0@s.whatsapp.net",
+            remoteJid: "status@broadcast",
+            quotedMessage: {
+              orderMessage: {
+                orderId: "2026",
+                thumbnail: "[STRIPPED 2727 bytes]",
+                orderTitle: "Yono BOT - 2026 ELEMENTS",
+                sellerJid: "0@s.whatsapp.net",
+                totalAmount1000: 2026000,
+                totalCurrencyCode: "IDR",
+                message: "YONO - 2026 DOCS",
+                surface: 0, itemCount: 2026
+              }
+            }
           }
-        }
-      }
-    },
-    messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 }
-  }, {})
+        },
+        messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 }
+      }, {})
+    } catch {}
+  }
 
-  await new Promise(r => setTimeout(r, 500))
+  await new Promise(r => setTimeout(r, 200))
 
   const cmd = (args[0] || 'list').toLowerCase()
   let tag = '@' + m.sender.split('@')[0]
@@ -132,7 +136,7 @@ let handler = async (m, { conn, usedPrefix, args }) => {
   const totalUser = Object.keys(global.db?.users || {}).length
   const countTag = (t) => tagCount[t] || 0
   const ping = `${Math.floor(Math.random() * 80 + 50)} ms`
-  const date = now.format('DD MMMM YYYY')
+  const date = moment().tz('Africa/Casablanca').format('DD MMMM YYYY')
   const name = m.pushName || 'woli'
 
   let menuTitle = 'MENU UTAMA'
@@ -161,22 +165,28 @@ let handler = async (m, { conn, usedPrefix, args }) => {
     return
   }
 
-  let media
-  try {
-    const res = await axios.get(videoUrl, { responseType: 'arraybuffer', maxRedirects: 5, timeout: 30000, headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'video/mp4,video/*,*/*' } })
-    let buffer = Buffer.from(res.data)
-    if (buffer.length < 10000 || buffer.toString('utf8', 0, 300).includes('<html')) {
-      let html = buffer.toString()
-      let found = html.match(/https?:\/\/[^"'\s]+\.mp4/gi)
-      if (found && found[0]) {
-        let r2 = await axios.get(found[0], { responseType: 'arraybuffer', maxRedirects: 5, timeout: 30000 })
-        buffer = Buffer.from(r2.data)
-      } else throw new Error('Link tmpfiles mati')
+  let media = null
+  if (typeof conn?.waUploadToServer === 'function') {
+    try {
+      const res = await axios.get(videoUrl, { responseType: 'arraybuffer', maxRedirects: 5, timeout: 10000, headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'video/mp4,video/*,*/*' } })
+      let buffer = Buffer.from(res.data)
+      if (buffer.length < 10000 || buffer.toString('utf8', 0, 300).includes('<html')) {
+        let html = buffer.toString()
+        let found = html.match(/https?:\/\/[^"'\s]+\.mp4/gi)
+        if (found && found[0]) {
+          let r2 = await axios.get(found[0], { responseType: 'arraybuffer', maxRedirects: 5, timeout: 10000 })
+          buffer = Buffer.from(r2.data)
+        } else throw new Error('Link tmpfiles mati')
+      }
+      media = await prepareWAMessageMedia({ video: buffer, gifPlayback: true, mimetype: 'video/mp4' }, { upload: conn.waUploadToServer })
+    } catch (e) {
+      console.log('Video gagal:', e.message)
+      try {
+        media = await prepareWAMessageMedia({ video: { url: videoUrl }, gifPlayback: true }, { upload: conn.waUploadToServer })
+      } catch {
+        media = null
+      }
     }
-    media = await prepareWAMessageMedia({ video: buffer, gifPlayback: true, mimetype: 'video/mp4' }, { upload: conn.waUploadToServer })
-  } catch (e) {
-    console.log('Video gagal:', e.message)
-    media = await prepareWAMessageMedia({ video: { url: videoUrl }, gifPlayback: true }, { upload: conn.waUploadToServer })
   }
 
   const userInfo = {
@@ -186,9 +196,11 @@ let handler = async (m, { conn, usedPrefix, args }) => {
   const bloksWidget = buildMetaCards(menuText, devNumber, menuTitle, userInfo)
 
   const interactiveMessage = {
-    body: { text: "\u0000" },
+    body: { text: media?.videoMessage ? "\u0000" : menuText },
     footer: { text: "\u0000" },
-    header: { hasMediaAttachment: true, subtitle: '', videoMessage: media.videoMessage },
+    header: media?.videoMessage
+      ? { hasMediaAttachment: true, subtitle: '', videoMessage: media.videoMessage }
+      : { hasMediaAttachment: false, title: menuTitle, subtitle: '' },
     nativeFlowMessage: {
       buttons: buildNativeButtons(totalCommands, usedPrefix, countTag, [...valid, 'all']),
       messageParamsJson: JSON.stringify({}),
@@ -209,22 +221,36 @@ let handler = async (m, { conn, usedPrefix, args }) => {
     participant: '0@s.whatsapp.net'
   }
 
-  const msg = generateWAMessageFromContent(m.chat, { interactiveMessage: interactiveMessage }, { userJid: conn.user.id, quoted: fkontak })
+  const userJid = conn?.user?.id || conn?.authState?.creds?.me?.id || m.chat
+  if (typeof conn?.relayMessage === 'function') {
+    try {
+      const msg = generateWAMessageFromContent(m.chat, { interactiveMessage: interactiveMessage }, { userJid, quoted: fkontak })
+      await conn.relayMessage(m.chat, msg.message, {
+        messageId: msg.key.id,
+        additionalNodes: [{
+          tag: "biz",
+          attrs: { actual_actors: "2", host_storage: "2", privacy_mode_ts: "1710184201" },
+          content: [
+            { tag: "engagement", attrs: { customer_service_state: "open", conversation_state: "open" } },
+            { tag: "interactive", attrs: { type: "native_flow", v: "1" }, content: [{ tag: "native_flow", attrs: { v: "9", name: "mixed" } }] }
+          ]
+        }]
+      })
+      return
+    } catch (relayErr) {
+      console.error('[menu3] relayMessage fallback:', relayErr?.message || relayErr)
+    }
+  }
 
-  await conn.relayMessage(m.chat, msg.message, {
-    messageId: msg.key.id,
-    additionalNodes: [{
-      tag: "biz",
-      attrs: { actual_actors: "2", host_storage: "2", privacy_mode_ts: "1710184201" },
-      content: [
-        { tag: "engagement", attrs: { customer_service_state: "open", conversation_state: "open" } },
-        { tag: "interactive", attrs: { type: "native_flow", v: "1" }, content: [{ tag: "native_flow", attrs: { v: "9", name: "mixed" } }] }
-      ]
-    }]
-  })
+  if (typeof conn?.reply === 'function') {
+    await conn.reply(m.chat, `${menuTitle}\n\n${menuText}`, m)
+  } else if (typeof m?.reply === 'function') {
+    await m.reply(`${menuTitle}\n\n${menuText}`)
+  }
 }
 
 handler.usage = ['menu3']
 handler.category = 'main'
 handler.command = ['menu3']
+handler.aliases = ['اوامر3', 'أوامر3']
 export default handler
