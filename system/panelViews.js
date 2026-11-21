@@ -1373,7 +1373,7 @@ function renderInstall(d){
   const box=document.getElementById('installBody');
   const activeId=document.activeElement?document.activeElement.id:'';
   if(activeId==='lm' || activeId==='ph') return;
-  const sig=[!!d.connected,d.pairingCode||'',d.qr?'1':'0',d.loginMode||'',d.configuredPhone||''].join('|');
+  const sig=[!!d.connected,d.pairingCode||'',d.pairingError||'',d.qr?'1':'0',d.loginMode||'',d.configuredPhone||''].join('|');
   if(sig===lastInstallSig) return;
   lastInstallSig=sig;
   if(d.connected){
@@ -1381,6 +1381,9 @@ function renderInstall(d){
     return;
   }
   let html='';
+  if(d.pairingError){
+    html+='<div class="err-banner" style="margin-bottom:10px">'+esc(d.pairingError)+'</div>';
+  }
   if(d.pairingCode){
     html+='<div class="hint">افتح واتساب ← الأجهزة المرتبطة ← الربط برقم الهاتف واكتب الكود:</div><div class="code">'+esc(d.pairingCode)+'</div>';
   }
@@ -1388,19 +1391,40 @@ function renderInstall(d){
     html+='<div class="qrbox"><div class="hint">امسح رمز QR من واتساب:</div><img src="'+d.qr+'" alt="QR"></div>';
   }
   if(!d.pairingCode && !d.qr){
-    html+='<div class="hint">في انتظار صدور QR أو كود الربط للبوت الرئيسي...</div>';
+    html+=(d.loginMode==='code' && !d.configuredPhone)
+      ? '<div class="hint">أدخل رقم واتساب البوت الرئيسي أدناه ثم اضغط <b>ربط فوري (بدون إغلاق)</b> لإصدار كود الاقتران.</div>'
+      : '<div class="hint">في انتظار صدور QR أو كود الربط للبوت الرئيسي...</div>';
   }
   html+='<div style="margin-top:12px">'
      +'<label class="lbl">طريقة الربط</label>'
      +'<select id="lm"><option value="code"'+(d.loginMode==='code'?' selected':'')+'>كود ربط (برقم الهاتف)</option>'
      +'<option value="qr"'+(d.loginMode==='qr'?' selected':'')+'>رمز QR</option></select>'
      +'<label class="lbl">رقم البوت الرئيسي</label>'
-     +'<input id="ph" class="ltr mono" value="'+esc(d.configuredPhone)+'" placeholder="2010xxxxxxx">'
-     +'<div class="actions"><button type="button" class="pri" onclick="applyLogin()">حفظ وإعادة التشغيل</button>'
+     +'<input id="ph" class="ltr mono" value="'+esc(d.configuredPhone)+'" placeholder="2010xxxxxxxx">'
+     +'<div class="actions"><button type="button" class="pri" onclick="pairMainNow()">ربط فوري (بدون إغلاق)</button>'
+     +'<button type="button" class="sky" onclick="applyLogin()">حفظ وإعادة التشغيل</button>'
      +'<button type="button" class="ghost" onclick="refresh()">تحديث</button></div></div>';
   box.innerHTML=html;
 }`}
 
+async function pairMainNow(){
+  const lm=document.getElementById('lm');
+  const ph=document.getElementById('ph');
+  const loginMode=lm?lm.value:'code';
+  const phone=ph?ph.value.trim():'';
+  if(loginMode==='code' && !phone){toast('أدخل رقم البوت الرئيسي أولاً');return;}
+  toast('جاري بدء ربط البوت الرئيسي...');
+  try{
+    const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'pair-main',loginMode,phone})});
+    const d=await r.json();
+    lastInstallSig='';
+    toast(d.message||d.error||'تم');
+    await refresh();
+  }catch(e){
+    toast('تعذّر إرسال طلب الربط');
+  }
+}
 async function applyLogin(){
   const loginMode=document.getElementById('lm').value;
   const phone=document.getElementById('ph').value.trim();

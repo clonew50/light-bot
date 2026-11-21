@@ -2,7 +2,7 @@ import { Client, Utils } from 'meowsab';
 import { group, access } from "./system/control.js";
 import UltraDB from "./system/UltraDB.js";
 import sub from './sub.js';
-import { readPanelConfig, startWebPanel, panelRuntime, pushEvent as panelPushEvent, pairingActive, setCleanRestart } from './system/webPanel.js';
+import { readPanelConfig, startWebPanel, panelRuntime, pushEvent as panelPushEvent, pairingActive, setCleanRestart, attachMainBotConnectionFix } from './system/webPanel.js';
 import { attachHealer } from './system/healer.js';
 import { applyUpdate } from './system/autoUpdate.mjs';
 import { buildConfig, buildInfo, lastClientError } from './system/config.js';
@@ -180,6 +180,7 @@ client.commandSystem?.before?.(async (m, ctx) => {
 const panelCfg = readPanelConfig();
 config.printQR = panelCfg.loginMode === 'qr'; // qr => true | code => false
 if (panelCfg.phone) config.phoneNumber = panelCfg.phone;
+attachMainBotConnectionFix(client);
 
 /* =========== Session Backup — حماية جلسة واتساب من التلف ========== */
 // لو session/creds.json اتلخبط أو اتقطع → نرجّعه من النسخة الاحتياطية قبل

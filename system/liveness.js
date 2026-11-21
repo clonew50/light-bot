@@ -77,7 +77,11 @@ export function isSocketOpen(client) {
   let ready = false;
   try {
     const ws = sock.ws;
-    ready = !!ws && typeof ws.readyState === 'number' ? ws.readyState === 1 : false;
+    if (ws) {
+      if (typeof ws.readyState === 'number') ready = ws.readyState === 1;
+      else if (typeof ws.socket?.readyState === 'number') ready = ws.socket.readyState === 1;
+      else if (typeof ws.isOpen === 'boolean') ready = ws.isOpen;
+    }
   } catch { ready = false; }
   return !!(ready && sock.user);
 }

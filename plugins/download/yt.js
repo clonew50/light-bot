@@ -1,4 +1,5 @@
 import axios from 'axios';
+import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { accessSync, constants } from 'node:fs';
 import { promisify } from 'node:util';
@@ -7,9 +8,11 @@ const execFileAsync = promisify(execFile);
 
 // ── bounds ────────────────────────────────────────────────────────────────────
 const REQUEST_TIMEOUT = 25000;
+const INSTANCE_TIMEOUT = 7000;
 const MEDIA_SEND_CAP = 16 * 1024 * 1024;
 const DOCUMENT_SEND_CAP = 1900 * 1024 * 1024;
 const YTDLP_TIMEOUT = 120000;
+const SAVETUBE_KEY = Buffer.from('C5D58EF67A7584E4A29F6C35BBC4EB12', 'hex');
 
 // ── innertube clients ─────────────────────────────────────────────────────────
 // Public keys that ship inside youtube.com pages — no API key needed. Verified
@@ -65,10 +68,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-const withTimeout = async (promise, message) => {
+const withTimeout = async (promise, message, timeoutMs = REQUEST_TIMEOUT) => {
   let handle;
   const timer = new Promise((_, reject) => {
-    handle = setTimeout(() => reject(new Error(message)), REQUEST_TIMEOUT);
+    handle = setTimeout(() => reject(new Error(message)), timeoutMs);
+    handle.unref?.();
   });
   try {
     return await Promise.race([promise, timer]);
@@ -78,10 +82,12 @@ const withTimeout = async (promise, message) => {
 };
 
 const fetchJson = async (url, options = {}) => {
+  const timeoutMs = Number(options.timeout) > 0 ? Number(options.timeout) : REQUEST_TIMEOUT;
   try {
     const { data } = await withTimeout(
-      axios.get(url, { ...options, timeout: REQUEST_TIMEOUT, headers: { ...LOADER_HEADERS, ...(options.headers || {}) } }),
-      'انتهت مهلة الاتصال بسيرفر التحميل'
+      axios.get(url, { ...options, timeout: timeoutMs, headers: { ...LOADER_HEADERS, ...(options.headers || {}) } }),
+      'انتهت مهلة الاتصال بسيرفر التحميل',
+      timeoutMs
     );
     return data;
   } catch (error) {
@@ -94,6 +100,33 @@ const fetchJson = async (url, options = {}) => {
     }
     throw error;
   }
+};
+
+const probeMediaUrl = async (url) => {
+  if (!url || !/^https?:\/\//i.test(String(url))) {
+    throw new Error('رابط التحميل غير صالح');
+  }
+  const res = await withTimeout(
+    axios.get(url, {
+      timeout: INSTANCE_TIMEOUT,
+      headers: { ...LOADER_HEADERS, Range: 'bytes=0-0' },
+      responseType: 'stream',
+      maxRedirects: 5,
+      validateStatus: () => true
+    }),
+    'انتهت مهلة التحقق من رابط التحميل',
+    INSTANCE_TIMEOUT
+  );
+  try { res?.data?.destroy?.(); } catch {}
+  const status = Number(res?.status || 200);
+  const ctype = String(res?.headers?.['content-type'] || '').toLowerCase();
+  if (status >= 400) {
+    throw new Error(`رابط التحميل رجع كود ${status}`);
+  }
+  if (/^(text\/html|application\/json)/i.test(ctype)) {
+    throw new Error(`رابط التحميل رجع محتوى غير صالح (${ctype})`);
+  }
+  return url;
 };
 
 const extractVideoId = (value) => {
@@ -242,7 +275,7 @@ const fetchViaInnertube = async (videoId) => {
       const details = data?.videoDetails;
 
       if (playability?.status === 'OK' && details) {
-        const muxed = (data?.streamingData?.formatStreams || []).filter((f) => f?.url);
+        const muxed = (data?.streamingData?.formatStreams || data?.streamingData?.formats || []).filter((f) => f?.url);
         const adaptive = (data?.streamingData?.adaptiveFormats || []).filter((f) => f?.url);
         if (muxed.length || adaptive.length) {
           return {
@@ -311,66 +344,175 @@ const fetchViaYtDlp = async (videoId, isAudio) => {
   }
 };
 
-// ── provider 3: piped API instances ───────────────────────────────────────────
+// ── provider 3: SaveTube encrypted API (verified live) ───────────────────────
+
+const decryptSaveTube = (b64) => {
+  const buf = Buffer.from(String(b64 || ''), 'base64');
+  if (buf.length <= 16) throw new Error('بيانات SaveTube غير مكتملة');
+  const iv = buf.subarray(0, 16);
+  const enc = buf.subarray(16);
+  const decipher = crypto.createDecipheriv('aes-128-cbc', SAVETUBE_KEY, iv);
+  const decrypted = Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
+  return JSON.parse(decrypted);
+};
+
+const fetchViaSaveTube = async (videoId, isAudio) => {
+  const cdnData = await fetchJson('https://media.savetube.vip/api/random-cdn', { timeout: INSTANCE_TIMEOUT });
+  const cdn = String(cdnData?.cdn || '').trim();
+  if (!cdn) throw new Error('SaveTube لم يُعد سيرفر متاح');
+
+  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const infoRes = await withTimeout(
+    axios.post(
+      `https://${cdn}/v2/info`,
+      { url: watchUrl },
+      {
+        timeout: INSTANCE_TIMEOUT,
+        headers: { ...LOADER_HEADERS, 'Content-Type': 'application/json', Origin: 'https://yt.savetube.me', Referer: 'https://yt.savetube.me/' }
+      }
+    ),
+    'انتهت مهلة SaveTube info',
+    INSTANCE_TIMEOUT
+  );
+  const infoB64 = infoRes?.data?.data;
+  if (!infoB64) throw new Error('SaveTube لم يُعد بيانات الفيديو');
+
+  const info = decryptSaveTube(infoB64);
+  const key = info?.key;
+  if (!key) throw new Error('SaveTube لم يُعد مفتاح التحميل');
+
+  const qualities = isAudio ? ['128'] : ['720', '480', '360', '240'];
+  const downloadType = isAudio ? 'audio' : 'video';
+  let lastErr = new Error('SaveTube لم يوفّر رابط تحميل');
+
+  for (const quality of qualities) {
+    try {
+      const dlRes = await withTimeout(
+        axios.post(
+          `https://${cdn}/download`,
+          { id: videoId, downloadType, quality, key },
+          {
+            timeout: REQUEST_TIMEOUT,
+            headers: { ...LOADER_HEADERS, 'Content-Type': 'application/json', Origin: 'https://yt.savetube.me', Referer: 'https://yt.savetube.me/' }
+          }
+        ),
+        'انتهت مهلة تجهيز رابط SaveTube',
+        REQUEST_TIMEOUT
+      );
+      const dlUrl = dlRes?.data?.data?.downloadUrl;
+      if (!dlUrl) continue;
+      await probeMediaUrl(dlUrl);
+      return {
+        source: 'savetube',
+        directUrl: dlUrl,
+        title: info?.title || '',
+        mimeType: isAudio ? 'audio/mpeg' : 'video/mp4',
+        fileNameExt: isAudio ? 'mp3' : 'mp4',
+        quality: isAudio ? '128kbps' : `${quality}p`
+      };
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+    }
+  }
+  throw lastErr;
+};
+
+// ── provider 4: Nayan downloader ──────────────────────────────────────────────
+
+const fetchViaNayan = async (videoId, isAudio) => {
+  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const data = await fetchJson(
+    `https://nayan-video-downloader.vercel.app/ytdown?url=${encodeURIComponent(watchUrl)}`,
+    { timeout: INSTANCE_TIMEOUT }
+  );
+  const item = data?.data || data || {};
+  const candidates = isAudio
+    ? [item.audio, item.mp3, item.audioUrl]
+    : [item.video, item.video_hd, item.hd, item.sd, item.videoUrl];
+  const dlUrl = candidates.find((u) => typeof u === 'string' && /^https?:\/\//i.test(u));
+  if (!dlUrl) throw new Error('سيرفر Nayan لم يرجع رابطاً صالحاً');
+  await probeMediaUrl(dlUrl);
+  return {
+    source: 'nayan',
+    directUrl: dlUrl,
+    title: item?.title || '',
+    mimeType: isAudio ? 'audio/mpeg' : 'video/mp4',
+    fileNameExt: isAudio ? 'mp3' : 'mp4',
+    quality: 'auto'
+  };
+};
+
+// ── provider 5: DavidCyril API ────────────────────────────────────────────────
+
+const fetchViaDavidCyril = async (videoId, isAudio) => {
+  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const endpoint = isAudio ? 'ytmp3' : 'ytmp4';
+  const data = await fetchJson(
+    `https://apis.davidcyriltech.my.id/download/${endpoint}?url=${encodeURIComponent(watchUrl)}`,
+    { timeout: INSTANCE_TIMEOUT }
+  );
+  const res = data?.result || data || {};
+  const dlUrl = [res.download_url, res.url, data?.download_url].find((u) => typeof u === 'string' && /^https?:\/\//i.test(u));
+  if (!dlUrl) throw new Error('سيرفر DavidCyril لم يرجع رابطاً');
+  await probeMediaUrl(dlUrl);
+  return {
+    source: 'davidcyril',
+    directUrl: dlUrl,
+    title: res?.title || '',
+    mimeType: isAudio ? 'audio/mpeg' : 'video/mp4',
+    fileNameExt: isAudio ? 'mp3' : 'mp4',
+    quality: res?.quality || 'auto'
+  };
+};
+
+// ── provider 6: piped API instances ───────────────────────────────────────────
 
 const fetchViaPiped = async (videoId) => {
-  let lastError = new Error('مفيش instance من Piped ردّ');
-
-  for (const base of PIPED_INSTANCES) {
-    try {
-      const data = await fetchJson(`${base}/streams/${videoId}`);
-      // Piped mixes progressive and video-only streams; keep only real muxed
-      // (videoOnly !== true) and drop the LBRY placeholder (itag -1).
+  try {
+    return await Promise.any(PIPED_INSTANCES.map(async (base) => {
+      const data = await fetchJson(`${base}/streams/${videoId}`, { timeout: INSTANCE_TIMEOUT });
       const muxed = (data?.videoStreams || [])
         .filter((f) => f?.url && f.videoOnly !== true && f.itag !== -1)
         .map((f) => ({ ...f, mimeType: f.mimeType || f.type }));
       const adaptive = (data?.audioStreams || []).filter((f) => f?.url).map((f) => ({ ...f, mimeType: f.mimeType || f.type }));
-      if (muxed.length || adaptive.length) {
-        return {
-          source: 'piped',
-          title: data?.title || '',
-          author: data?.uploaderName || '',
-          thumbnail: data?.thumbnailUrl || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-          durationSeconds: Number(data?.duration) || 0,
-          muxed,
-          adaptive
-        };
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-    }
+      if (!muxed.length && !adaptive.length) throw new Error('لا توجد تدفقات في Piped');
+      return {
+        source: 'piped',
+        title: data?.title || '',
+        author: data?.uploaderName || '',
+        thumbnail: data?.thumbnailUrl || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        durationSeconds: Number(data?.duration) || 0,
+        muxed,
+        adaptive
+      };
+    }));
+  } catch {
+    throw new Error('مفيش instance من Piped ردّ');
   }
-
-  throw lastError;
 };
 
-// ── provider 4: invidious instances ───────────────────────────────────────────
+// ── provider 7: invidious instances ───────────────────────────────────────────
 
 const fetchViaInvidious = async (videoId) => {
-  let lastError = new Error('مفيش instance من Invidious ردّ');
-
-  for (const base of INVIDIOUS_INSTANCES) {
-    try {
-      const data = await fetchJson(`${base}/api/v1/videos/${videoId}`);
+  try {
+    return await Promise.any(INVIDIOUS_INSTANCES.map(async (base) => {
+      const data = await fetchJson(`${base}/api/v1/videos/${videoId}`, { timeout: INSTANCE_TIMEOUT });
       const muxed = (data?.formatStreams || []).filter((f) => f?.url).map((f) => ({ ...f, mimeType: f.mimeType || f.type }));
       const adaptive = (data?.adaptiveFormats || []).filter((f) => f?.url).map((f) => ({ ...f, mimeType: f.mimeType || f.type }));
-      if (muxed.length || adaptive.length) {
-        return {
-          source: 'invidious',
-          title: data?.title || '',
-          author: data?.author || '',
-          thumbnail: (data?.videoThumbnails || []).slice(-1)[0]?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-          durationSeconds: Number(data?.lengthSeconds) || 0,
-          muxed,
-          adaptive
-        };
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-    }
+      if (!muxed.length && !adaptive.length) throw new Error('لا توجد تدفقات في Invidious');
+      return {
+        source: 'invidious',
+        title: data?.title || '',
+        author: data?.author || '',
+        thumbnail: (data?.videoThumbnails || []).slice(-1)[0]?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        durationSeconds: Number(data?.lengthSeconds) || 0,
+        muxed,
+        adaptive
+      };
+    }));
+  } catch {
+    throw new Error('مفيش instance من Invidious ردّ');
   }
-
-  throw lastError;
 };
 
 // ── provider 5: loader.to (kept as last resort) ───────────────────────────────
@@ -500,10 +642,12 @@ const chooseFromYtDlp = (result, isAudio) => {
 };
 
 const getDownload = async (videoId, isAudio) => {
-  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
   const attempts = [
     () => fetchViaInnertube(videoId),
     () => fetchViaYtDlp(videoId, isAudio),
+    () => fetchViaSaveTube(videoId, isAudio),
+    () => fetchViaNayan(videoId, isAudio),
+    () => fetchViaDavidCyril(videoId, isAudio),
     () => fetchViaPiped(videoId),
     () => fetchViaInvidious(videoId),
     () => fetchViaLoader(videoId, isAudio)
@@ -518,6 +662,18 @@ const getDownload = async (videoId, isAudio) => {
 
       if (info?.source === 'yt-dlp') {
         return chooseFromYtDlp(info, isAudio);
+      }
+      if (info?.directUrl) {
+        return {
+          url: info.directUrl,
+          mimeType: info.mimeType || (isAudio ? 'audio/mpeg' : 'video/mp4'),
+          fileNameExt: info.fileNameExt || extensionFromMime(info.mimeType, isAudio ? 'mp3' : 'mp4'),
+          kind: isAudio ? 'audio' : 'video',
+          size: Number.POSITIVE_INFINITY,
+          quality: info.quality || info.source,
+          source: info.source,
+          title: info.title || ''
+        };
       }
       if (info?.source === 'loader.to') {
         return {
@@ -544,9 +700,11 @@ const getDownload = async (videoId, isAudio) => {
     }
   }
 
-  // If every provider failed and YouTube only ever complained about a bot
-  // check, surface that reason instead of a generic transport error.
-  throw softError || lastError;
+  // All providers failed — report an accurate final message rather than promising pending retries.
+  if (softError) {
+    throw new Error('يوتيوب طلب فحص البوت، وتعذّر التحميل من جميع السيرفرات البديلة حالياً');
+  }
+  throw lastError;
 };
 
 const safeFileName = (title, extension) => {
