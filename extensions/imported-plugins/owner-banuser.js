@@ -4,6 +4,7 @@ let handler = async (m, { text }) => {
 	if (m.isGroup) who = m.mentionedJid[0];
 	else who = m.chat;
 	if (!who) throw 'Tag??';
+	global.db.users[who] ||= {};
 	global.db.users[who].banned = true;
 	m.reply('Success!');
 };

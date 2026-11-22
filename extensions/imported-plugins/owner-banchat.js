@@ -1,4 +1,5 @@
 let handler = async (m) => {
+	global.db.groups[m.chat] ||= {};
 	global.db.groups[m.chat].isBanned = true;
 	m.reply('Done!');
 };

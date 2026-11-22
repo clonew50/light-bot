@@ -185,7 +185,9 @@ try {
   assert.ok(relayed[0][1]?.botForwardedMessage?.message?.richResponseMessage);
 
   const menu = await import(pathToFileURL(path.join(bridgeRoot, 'menu.js')).href);
-  assert.deepEqual(menu.default.command, ['menu3']);
+  // menu3 now also owns the Arabic triggers directly (so `.اوامر3`/`.أوامر3`
+  // fire without relying on alias support), in addition to `menu3`.
+  assert.deepEqual(menu.default.command, ['menu3', 'اوامر3', 'أوامر3']);
   assert.equal(menu.default.usage[0], 'menu3');
   assert.equal(menu.default.category, 'info');
 

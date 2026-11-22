@@ -3,7 +3,7 @@
  * ===========================================================================
  * Fake client only (no bot boot, no network). Asserts:
  *   (a) plugins/native/quickmenu.js exports a reusable sendNativeMenu renderer
- *       and `.قائمة` lists the `native` category with no category lost
+ *       and `.قائمة` lists every visible category (the `native` section is hidden)
  *   (b) both text menus keep working and offer the native surface
  *   (c) every plugin file that declares a `.command` also declares `.usage`
  *       and `.category` (fails listing the offending file path)
@@ -102,26 +102,26 @@ function stripLineComments(src) {
 }
 
 /* ── (a) reusable renderer ───────────────────────────────────────────── */
-test('quickmenu exports sendNativeMenu and it lists every live category', async () => {
+test('quickmenu exports sendNativeMenu and it lists every visible category', async () => {
   assert.equal(typeof quickmenu.sendNativeMenu, 'function');
   const { conn, native } = makeConn();
   const res = await quickmenu.sendNativeMenu(conn, 'test@s.whatsapp.net', {
     bot: makeBot(), info: INFO, images: INFO.images, quoted: null
   });
   assert.ok(res.sent >= 1);
-  // 7 commands across 5 categories => 5 quick_reply buttons, all in one message
-  assert.equal(res.categories, 5);
+  // 7 commands across 5 categories, but `native` is hidden => 4 quick_reply buttons
+  assert.equal(res.categories, 4);
   assert.equal(native.length, 1);
   const buttons = native[0].payload.buttons;
-  assert.equal(buttons.length, 5);
+  assert.equal(buttons.length, 4);
   for (const b of buttons) {
     assert.equal(b.name, 'quick_reply');
     assert.ok(b.params.id.startsWith('.'), `id must be prefixed: ${b.params.id}`);
   }
   const flat = JSON.stringify(buttons);
-  assert.match(flat, /native/, 'the native category must appear');
-  // no category lost: tools/search/owner/native/games all present
-  for (const key of ['tools', 'search', 'owner', 'native', 'games']) {
+  assert.doesNotMatch(flat, /native/, 'the native category must be hidden');
+  // no visible category lost: tools/search/owner/games all present
+  for (const key of ['tools', 'search', 'owner', 'games']) {
     assert.match(flat, new RegExp(key), `category missing: ${key}`);
   }
 });
@@ -131,13 +131,13 @@ test('quickmenu refuses without the interactive transport', async () => {
   assert.deepEqual(res, { sent: 0, categories: 0 });
 });
 
-test('.قائمة lists the native category', async () => {
+test('.قائمة hides the native category', async () => {
   const { conn, native } = makeConn();
   const m = makeM();
   await quickmenu.default(m, { conn, bot: makeBot(), text: '', args: [], command: 'قائمة', usedPrefix: '.' });
   assert.ok(native.length >= 1);
   const flat = JSON.stringify(native[0].payload.buttons);
-  assert.match(flat, /native/);
+  assert.doesNotMatch(flat, /native/, 'the native category must not be listed');
 });
 
 /* ── (b) text menus keep working ─────────────────────────────────────── */
@@ -164,7 +164,8 @@ test('menu (V1) zero-arg sends the native quick-reply surface', async () => {
   assert.ok(native.length >= 1, 'menuV1 must send the native menu');
   const buttons = native.flatMap((n) => n.payload.buttons);
   assert.ok(buttons.every((b) => b.name === 'quick_reply'));
-  assert.ok(buttons.some((b) => b.params.id === '.قسم native'), 'native category button present');
+  assert.doesNotMatch(JSON.stringify(buttons), /native/, 'native category button must be hidden');
+  assert.ok(buttons.some((b) => b.params.id === '.قسم tools'), 'tools category button present');
 });
 
 /* ── (c) metadata scan ───────────────────────────────────────────────── */

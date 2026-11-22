@@ -384,27 +384,127 @@ export async function searchPinterestImages(query, count = 12, fetchImpl = fetch
 }
 
 /* ── 7. Spotify oEmbed + YouTube Search/Resolve ── */
-export async function resolveSpotifyTrack(spotifyUrl, fetchImpl = fetch) {
-  const res = await fetchImpl(`https://open.spotify.com/oembed?url=${encodeURIComponent(spotifyUrl)}`, {
-    headers: { 'User-Agent': BUA },
-    signal: AbortSignal.timeout(12_000)
+
+// مهلة للعمليات اللي مبنبني على Promise (زي yt-search/ruhend) اللي مفيهاش AbortSignal.
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+    timer.unref?.();
   });
-  if (!res.ok) throw new Error(`Spotify oEmbed HTTP ${res.status}`);
-  const oembed = await res.json();
-  const title = String(oembed?.title || '').trim();
-  if (!title) throw new Error('تعذر قراءة بيانات أغنية سبوتيفاي');
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
-  const ytRes = await ruhend.ytsearch(title);
-  const videos = ytRes?.video || ytRes?.results || ytRes?.data || [];
-  const first = Array.isArray(videos) ? videos[0] : null;
-  if (!first?.videoId && !first?.url) throw new Error('لم يتم العثور على مطابقة يوتيوب للأغنية');
+const YT_ID_RE = /(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([A-Za-z0-9_-]{11})/;
+function pickVideoId(v) {
+  if (!v) return '';
+  if (typeof v.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(v.videoId)) return v.videoId;
+  const m = String(v.url || v.link || '').match(YT_ID_RE);
+  return m ? m[1] : '';
+}
 
-  const videoId = first.videoId || (first.url.match(/[?&]v=([A-Za-z0-9_-]{11})/) || [])[1];
+// البحث عن مطابقة يوتيوب لأغنية:
+//   1) yt-search — بيقرأ نتائج يوتيوب مباشرة (من غير بوابة وسيطة خارجية، فما
+//      بيرجعش 504 زي rest.search بتاع ruhend).
+//   2) ruhend.ytsearch كبديل لو الأول فشل.
+async function searchYouTubeMatch(query) {
+  const q = String(query || '').trim();
+  if (!q) return null;
+
+  try {
+    const mod = await withTimeout(import('yt-search'), 8000, 'تعذّر تحميل yt-search');
+    const yts = mod?.default || mod;
+    const r = await withTimeout(yts(q), 12000, 'انتهت مهلة yt-search');
+    const videos = r?.videos || r?.results || (Array.isArray(r) ? r : []);
+    for (const v of (Array.isArray(videos) ? videos : [])) {
+      const videoId = pickVideoId(v);
+      if (videoId) {
+        return {
+          videoId,
+          title: v.title || '',
+          thumbnail: v.thumbnail || v.image || '',
+          author: v.author?.name || v.author || ''
+        };
+      }
+    }
+  } catch {
+    // نكمل للبديل
+  }
+
+  try {
+    const ytRes = await withTimeout(ruhend.ytsearch(q), 15000, 'انتهت مهلة ruhend ytsearch');
+    const videos = ytRes?.video || ytRes?.results || ytRes?.data || [];
+    const first = Array.isArray(videos) ? videos[0] : null;
+    const videoId = pickVideoId(first);
+    if (videoId) {
+      return {
+        videoId,
+        title: first.title || '',
+        thumbnail: first.thumbnail || '',
+        author: first.authorName || first.author || ''
+      };
+    }
+  } catch {
+    // تجاهل
+  }
+
+  return null;
+}
+
+export async function resolveSpotifyTrack(spotifyUrl, fetchImpl = fetch) {
+  const url = String(spotifyUrl || '').trim();
+  let title = '';
+  let thumbnail = '';
+
+  // 1) oEmbed — أسرع مصدر للعنوان/الصورة، بس ممكن يرجّع 5xx مؤقتاً — مش قاتل.
+  try {
+    const res = await fetchImpl(`https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`, {
+      headers: { 'User-Agent': BUA },
+      signal: AbortSignal.timeout(10_000)
+    });
+    if (res.ok) {
+      const oembed = await res.json();
+      title = String(oembed?.title || '').trim();
+      thumbnail = oembed?.thumbnail_url || '';
+    }
+  } catch {
+    // نكمل للبديل
+  }
+
+  // 2) fallback: صفحة الـ embed فيها og:title/og:image — نستخرج منها العنوان.
+  if (!title) {
+    const id = (url.match(/\/track\/([A-Za-z0-9]{22})/) || [])[1];
+    if (id) {
+      try {
+        const res = await fetchImpl(`https://open.spotify.com/embed/track/${id}`, {
+          headers: { 'User-Agent': BUA },
+          signal: AbortSignal.timeout(10_000)
+        });
+        const html = await res.text();
+        const ogTitle = html.match(/property="og:title"\s+content="([^"]+)"/i) || html.match(/content="([^"]+)"\s+property="og:title"/i);
+        const ogImage = html.match(/property="og:image"\s+content="([^"]+)"/i) || html.match(/content="([^"]+)"\s+property="og:image"/i);
+        if (!title) {
+          const t = html.match(/<title>([^<]+)<\/title>/i);
+          if (t) title = t[1].replace(/\s*[-|]\s*Spotify.*$/i, '').trim();
+        }
+        if (ogTitle) title = ogTitle[1].trim();
+        if (!thumbnail && ogImage) thumbnail = ogImage[1];
+      } catch {
+        // تجاهل
+      }
+    }
+  }
+
+  if (!title) throw new Error('تعذر قراءة بيانات أغنية سبوتيفاي (السيرفر رد مؤقتاً)');
+
+  const match = await searchYouTubeMatch(title);
+  if (!match?.videoId) throw new Error('لم يتم العثور على مطابقة يوتيوب للأغنية');
+
   return {
     name: title,
-    thumbnail: oembed.thumbnail_url || first.thumbnail || '',
-    videoId,
-    youtubeUrl: videoId ? `https://www.youtube.com/watch?v=${videoId}` : first.url
+    thumbnail: thumbnail || match.thumbnail || '',
+    videoId: match.videoId,
+    youtubeUrl: `https://www.youtube.com/watch?v=${match.videoId}`
   };
 }
 

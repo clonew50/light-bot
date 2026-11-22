@@ -10,7 +10,6 @@
 
 /* Category metadata: key (handler.category) -> [arabic label, emoji]. */
 export const CAT_META = {
-  native:     ['الأوامر التفاعلية', '🧩'],
   downloads:  ['التحميل', '📂'],
   group:      ['المجموعات', '🛡️'],
   sticker:    ['الملصقات', '🃏'],
@@ -34,6 +33,9 @@ export const CAT_META = {
 };
 
 const CAT_ORDER = Object.keys(CAT_META);
+
+// أقسام مخفية من القوائم (مش بتتعرض كقسم للمستخدم).
+const HIDDEN_CATEGORIES = new Set(['native']);
 
 export const metaOf = (key) => CAT_META[key] || [key, '📁'];
 
@@ -120,6 +122,7 @@ export async function collectCategories(bot) {
     const usages = usagesOf(c).map((u) => u.trim()).filter(Boolean);
     if (!usages.length) continue;
     const key = typeof c.category === 'string' && c.category ? c.category : 'other';
+    if (HIDDEN_CATEGORIES.has(key)) continue;
     if (!byCat.has(key)) byCat.set(key, []);
     const bucket = byCat.get(key);
     for (const u of usages) if (!bucket.includes(u)) bucket.push(u);

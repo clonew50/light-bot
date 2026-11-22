@@ -27,7 +27,6 @@ const CAT_META = {
     voices:    ['الأصوات', '🎙️'],
     islamic:   ['الإسلاميات', '🕌'],
     guild:     ['النقابات', '🏰'],
-    native:    ['الأوامر التفاعلية', '🧩'],
     other:     ['أخرى', '🔮']
 };
 const CAT_ORDER = Object.keys(CAT_META);
@@ -43,6 +42,7 @@ function collect(commands) {
         const usages = usagesOf(c);
         if (!usages.length) continue;
         const key = c.category || 'other';
+        if (key === 'native') continue; // إخفاء قسم الأوامر التفاعلية
         if (!byCat.has(key)) byCat.set(key, []);
         byCat.get(key).push(c);
     }
@@ -382,8 +382,7 @@ const CATEGORIES = [
     [15, 'الـالــقــاب', 'nicknames', '🏷️'],
     [16, 'الـلـوجـوهــات', 'logos', '🎨'],
     [17, 'تـغـيـر الاصـوات', 'voices', '🎙️'],
-    [18, 'أخــرى', 'other', '🔮'],
-    [19, 'الأوامـر الـتـفـاعـلـيـة', 'native', '🧩']
+    [18, 'أخــرى', 'other', '🔮']
 ];
 
 const getCat = n => CATEGORIES.find(c => c[0] === n);

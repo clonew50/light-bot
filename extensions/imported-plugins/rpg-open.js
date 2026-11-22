@@ -62,6 +62,9 @@ const rewards = {
 	// }
 };
 let handler = async (m, { command, args, usedPrefix }) => {
+	// بديل محلي لـ Array/Number.prototype.getRandom (اتشال في todo 29):
+	// الق array => عنصر عشوائي، الرقم => نفسه (قيمة ثابتة).
+	const getRandom = (v) => (Array.isArray(v) ? v[Math.floor(Math.random() * v.length)] : v);
 	let user = global.db.users[m.sender];
 	let listCrate = Object.fromEntries(Object.entries(rewards).filter(([v]) => v && v in user));
 	let info = `
@@ -93,7 +96,7 @@ Ketik *${usedPrefix}buy ${type} ${count - user[type]}* Untuk Membeli
 	for (let i = 0; i < count; i++)
 		for (let [reward, value] of Object.entries(listCrate[type]))
 			if (reward in user) {
-				const total = value.getRandom();
+				const total = getRandom(value);
 				if (total) {
 					user[reward] += total * 1;
 					crateReward[reward] = (crateReward[reward] || 0) + total * 1;

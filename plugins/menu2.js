@@ -18,8 +18,7 @@ const CATEGORIES = [
     [15, 'الـنقابـــــات', 'nicknames', '🏷️'],
     [16, 'الـلـوجـوهــات', 'logos', '🎨'],
     [17, 'تـغـيـر الاصـوات', 'voices', '🎙️'],
-    [18, 'الاسلاميات', 'islamic', '🕌'],
-    [19, 'الأوامـر الـتـفـاعـلـيـة', 'native', '🧩']
+    [18, 'الاسلاميات', 'islamic', '🕌']
 ];
 
 const getCat = n => CATEGORIES.find(c => c[0] === n);
@@ -228,7 +227,9 @@ async function handler(m, { conn, bot, command, args = [] }) {
             .join('\n');
     }).join('\n');
 
-    const pagerNote = totalPages > 1 ? `\n📄 *صفحة ${page} من ${totalPages}* (${totalCmds.toLocaleString()} أمر) — اكتب \`.${command} ${selected} ${page < totalPages ? page + 1 : 1}\`` : '';
+    const pagerNote = totalPages > 1
+        ? `\n\n📄 *صفحة ${page} من ${totalPages}* (${totalCmds.toLocaleString()} أمر) — استخدم الأزرار تحت أو اكتب \`.${command} ${selected} ${page < totalPages ? page + 1 : 1}\``
+        : '';
 
     const resultText =
         `╭─┈──┈─⟞${cat[3]}⟝─┈──┈─╮\n` +
@@ -238,21 +239,36 @@ async function handler(m, { conn, bot, command, args = [] }) {
         `${cmdsList}\n` +
         `❐═━━━═╊⊰🩸⊱╉═━━━═❐${pagerNote}`;
 
-    // إرسال كرسالة قائمة تفاعلية تحتوي على الأوامر مع إدراج زر تصفح بقية الأقسام
+    // أزرار التنقل بين الصفحات — بدل ما المستخدم يكتب أمر الصفحة يدويًا.
+    const navButtons = [];
+    if (page > 1) {
+        navButtons.push({
+            name: "quick_reply",
+            params: { display_text: "◀️ الصفحة السابقة", id: `.${command} ${selected} ${page - 1}` }
+        });
+    }
+    if (page < totalPages) {
+        navButtons.push({
+            name: "quick_reply",
+            params: { display_text: "الصفحة التالية ▶️", id: `.${command} ${selected} ${page + 1}` }
+        });
+    }
+    // زر تصفح بقية الأقسام (single_select) موجود دايمًا.
+    navButtons.push({
+        name: "single_select",
+        params: {
+            title: "📜 تصفح الأقسام الأخرى",
+            sections: sections
+        }
+    });
+
+    // إرسال كرسالة قائمة تفاعلية تحتوي على الأوامر + أزرار التنقل بين الصفحات
     await safeSendMenuInteractive(activeConn, m, {
         media: { url: botImg },
         mediaType: 'image',
         caption: resultText.trim(),
         footer: '𝑳𝑰𝑮𝑯𝑻 ┇🩸┇ 𝑩𝑶𝑻',
-        buttons: [
-            {
-                name: "single_select",
-                params: {
-                    title: "📜 تصفح الأقسام الأخرى",
-                    sections: sections
-                }
-            }
-        ],
+        buttons: navButtons,
         contextInfo: cleanContext(senderJid)
     });
 }

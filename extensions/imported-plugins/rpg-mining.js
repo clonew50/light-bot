@@ -1,4 +1,7 @@
 const cooldown = 300000;
+// بديل محلي لـ Array/Number.prototype.getRandom (اتشال في todo 29):
+// الق array => عنصر عشوائي، الرقم => نفسه (قيمة ثابتة).
+const getRandom = (v) => (Array.isArray(v) ? v[Math.floor(Math.random() * v.length)] : v);
 let handler = async (m) => {
 	let user = global.db.users[m.sender];
 	let now = Date.now();
@@ -10,14 +13,14 @@ let handler = async (m) => {
 	let text = 'Kamu Telah Menambang dan tersesat';
 	for (const lost in rewards.lost)
 		if (user[lost]) {
-			const total = rewards.lost[lost].getRandom();
+			const total = getRandom(rewards.lost[lost]);
 			user[lost] -= total * 1;
 			if (total) text += `\n*${global.rpg.emoticon(lost)}${lost}:* ${toRupiah(total)}`;
 		}
 	text += '\n\nTapi Kamu Mendapatkan';
 	for (const rewardItem in rewards.reward)
 		if (rewardItem in user) {
-			const total = rewards.reward[rewardItem].getRandom();
+			const total = getRandom(rewards.reward[rewardItem]);
 			user[rewardItem] += total * 1;
 			if (total) text += `\n*${global.rpg.emoticon(rewardItem)}${rewardItem}:* ${toRupiah(total)}`;
 		}
