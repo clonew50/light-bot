@@ -1,0 +1,73 @@
+import fetch from 'node-fetch'
+
+let handler = async (m, { conn, usedPrefix: _p }) => {
+  try {
+    let images = [
+      "https://files.catbox.moe/x39202.jpeg",
+      "https://files.catbox.moe/o33zli.jpeg",
+      "https://files.catbox.moe/ffij55.jpeg",
+      "https://files.catbox.moe/4s1wse.jpeg"
+    ]
+
+    let index = Math.floor(Date.now() / 5000) % images.length
+    let imgUrl = images[index]
+
+    // Thumbnail
+    let thumbUrl = `https://wsrv.nl/?url=${encodeURIComponent(imgUrl)}&w=300&h=300&fit=cover&output=jpg`
+    let thumbRes = await fetch(thumbUrl)
+    let thumbBuffer = Buffer.from(await thumbRes.arrayBuffer())
+
+    let botName = 'Rem Bot 🌺'
+    let userName = m.pushName || 'User'
+    let senderName = db.data.users[m.sender]?.name || userName
+
+    let teks = `❀.─━━━━🌷━━━━─.❀
+   ⌊🌺 | ${botName} | 🌺⌋
+❀.─━━━━🌷━━━━─.❀
+
+*👤 المستخدم:* ${userName}
+*🤖 البوت:* ${botName}
+
+*✨ مرحبا بك*
+لرؤية الأوامر اضغط على زر القائمة
+
+❀.─━━━━🌷━━━━─.❀
+> ${botName}`
+
+    // ================= التوثيق من الكود التاني =================
+    const allQuoted = {
+      key: { remoteJid: '0@s.whatsapp.net' },
+      message: {
+        contactMessage: {
+          displayName: senderName,
+          vcard: `BEGIN:VCARD\nVERSION:3.0\nN:;a,;;;\nFN:${senderName}\nitem1.TEL;waid=${m.sender.split('@')[0]}:${m.sender.split('@')[0]}\nitem1.X-ABLabel:Ponsel\nEND:VCARD`,
+        },
+      },
+    }
+
+    await conn.sendMessage(m.chat, {
+      document: { url: imgUrl },
+      mimetype: 'image/jpeg',
+      fileName: `${botName}.jpg`,
+      fileLength: 1024000,
+      jpegThumbnail: thumbBuffer,
+      caption: teks,
+      footer: botName,
+      nativeFlow: [
+        {},
+        { text: '👑', url: `https://wa.me/212674375708` },
+        { text: '🌐', id: `${_p}ping` },
+        { text: '🪭', id: `${_p}جميع_الاوامر` }
+      ]
+    }, { quoted: allQuoted })
+
+  } catch (e) {
+    console.log(e)
+    m.reply(`❌ خطأ: ${e.message}`)
+  }
+}
+
+handler.help = ['اوامر', 'menu']
+handler.tags = ['main']
+handler.command = /^(اوامر|المهام)$/i
+export default handler

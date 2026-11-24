@@ -45,7 +45,7 @@ await conn.relayMessage(m.chat, {
 }
 
 handler.command = /^(dino|dinosaurus|pelaridino|dinorun)$/i
-handler.usage = ['dino']
-handler.category = 'games'
+handler.help = ['dino']
+handler.tags = ['permainan']
 
 export default handler

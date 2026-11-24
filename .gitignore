@@ -1,15 +1,19 @@
 node_modules/
-.npm/
-*.zip
-*.log
-sub/
+npm-debug.log*
+yarn-error.log*
+
+# Runtime SQLite sidecar files (transient)
+data/*.db-wal
+data/*.db-shm
+
+# WhatsApp session / auth state
 session/
-agent-backups/
-agent-models.json
-agent-sessions.json
-system/database.json
-system/panel-config.json
-.git-pull-state.json
-tmp/
-system/.removed-*/
-data/crmdb.db*
+auth_info*/
+baileys_auth_info/
+
+# Env & secrets
+.env
+
+# OS / editor
+.DS_Store
+*.swp
