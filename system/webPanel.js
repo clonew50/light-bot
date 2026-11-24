@@ -253,15 +253,24 @@ export function startWebPanel() {
 		process.env.WEB_PORT || process.env.PORT || process.env.SERVER_PORT || process.env.P_SERVER_PORT || 3732
 	);
 
-	server.on('error', (e) => {
-		console.error('[WEB] فشل تشغيل اللوحة:', e && e.message);
-		pushPanelEvent('فشل تشغيل اللوحة: ' + (e && e.message));
-	});
-
-	server.listen(port, '0.0.0.0', () => {
-		console.log('🌐 [WEB] لوحة التحكم شغالة على: http://0.0.0.0:' + port);
-		pushPanelEvent('لوحة التحكم شغالة على المنفذ ' + port);
-	});
+	let attempts = 0;
+	const maxAttempts = 10;
+	function tryListen() {
+		server.once('error', (e) => {
+			if (e && e.code === 'EADDRINUSE' && attempts < maxAttempts) {
+				attempts++;
+				setTimeout(tryListen, 500); // إعادة المحاولة بعد تحرير المنفذ (بعد إعادة التشغيل)
+				return;
+			}
+			console.error('[WEB] فشل تشغيل اللوحة:', e && e.message);
+			pushPanelEvent('فشل تشغيل اللوحة: ' + (e && e.message));
+		});
+		server.listen(port, '0.0.0.0', () => {
+			console.log('🌐 [WEB] لوحة التحكم شغالة على: http://0.0.0.0:' + port);
+			pushPanelEvent('لوحة التحكم شغالة على المنفذ ' + port);
+		});
+	}
+	tryListen();
 
 	return server;
 }

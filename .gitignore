@@ -8,8 +8,12 @@ data/*.db-shm
 
 # WhatsApp session / auth state
 session/
+sessions/
 auth_info*/
 baileys_auth_info/
+
+# Panel runtime config (contains secret/password)
+system/panel-config.json
 
 # Env & secrets
 .env
