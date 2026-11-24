@@ -1,5 +1,5 @@
 import { delay } from 'baileys'
-import { AIRich } from '../lib/nnn.js'
+import { AIRich } from '../lib/AIRich.js'
 
 const handler = async (m, { conn }) => {
 	const rich = new AIRich(conn)

@@ -1,5 +1,5 @@
 // plugins/test-nixel.js - Test AIRich Card - REM BOT
-import AIRich from '../lib/airich.js' // إلا ما عندكش هاد الملف، شوف الملاحظة لتحت
+import AIRich from '../lib/AIRich.js' // إلا ما عندكش هاد الملف، شوف الملاحظة لتحت
 
 let handler = async (m, { conn }) => {
   try {

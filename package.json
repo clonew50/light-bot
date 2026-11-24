@@ -40,6 +40,8 @@
   "license": "ISC",
   "dependencies": {
     "@aqul/akinator-api": "^3.0.1",
+    "@napi-rs/canvas": "^0.1.44",
+    "jimp": "^0.22.10",
     "awesome-phonenumber": "^2.73.0",
     "axios": "^1.6.0",
     "baileys": "github:rexxzyid/elaina-baileys",

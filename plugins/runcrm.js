@@ -1,4 +1,6 @@
 // plugins/runcrm.js
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
 const fs = require('fs')
 const path = require('path')
 
@@ -121,4 +123,4 @@ handler.tags = ['owner']
 handler.command = /^(runcrm)$/i
 handler.owner = true
 
-module.exports = handler
+export default handler

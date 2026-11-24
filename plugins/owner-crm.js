@@ -1,7 +1,9 @@
 // plugins/crm.js
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
 const fs = require('fs')
 const path = require('path')
-const { generateWAMessageFromContent } = require('@whiskeysockets/baileys')
+const { generateWAMessageFromContent } = require('baileys')
 
 function unwrap(content) {
 if (!content || typeof content !== 'object') return content
@@ -306,4 +308,4 @@ handler.tags = ['owner']
 handler.command = /^(crm|crm2)$/i
 handler.owner = true
 
-module.exports = handler
+export default handler

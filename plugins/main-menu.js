@@ -1,7 +1,6 @@
 import { promises } from 'fs'
 import { join } from 'path'
 import os from 'os'
-import { plugins } from '../../lib/utils/plugins.js'
 
 let handler = async (m, { conn, usedPrefix: _p, args, isPrems, isOwner, command: cmd }) => {
 
@@ -79,7 +78,7 @@ const defaultMenu = {
     // ===========================[ MENU 404 ]======================
     if (teks === '404') {
       const jsonlist = arrayTags.filter(v => v !== 'all').map(v => {
-        const tagCommands = Object.values(plugins)
+        const tagCommands = Object.values(global.plugins || {})
           .filter(plugin => !plugin.disabled && plugin.tags?.includes(v) && plugin.help)
           .flatMap(plugin => Array.isArray(plugin.help) ? plugin.help : [plugin.help])
           .map(h => h.split(' ')[0])
@@ -102,7 +101,7 @@ const defaultMenu = {
         }
       })
 
-      const totalCommands = Object.values(plugins)
+      const totalCommands = Object.values(global.plugins || {})
         .filter(plugin => !plugin.disabled && plugin.help)
         .flatMap(plugin => Array.isArray(plugin.help) ? plugin.help : [plugin.help])
         .map(h => h.split(' ')[0])
@@ -146,7 +145,7 @@ const defaultMenu = {
     // ===========================[ ARRAY PLUGINS ]=================
     const totalreg  = Object.keys(db.data.users).length
     const rtotalreg = Object.values(db.data.users).filter(u => u.registered === true).length
-    const help = Object.values(plugins)
+    const help = Object.values(global.plugins || {})
       .filter(plugin => !plugin.disabled)
       .map(plugin => ({
         help:    Array.isArray(plugin.help) ? plugin.help : [plugin.help],

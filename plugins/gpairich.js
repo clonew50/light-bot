@@ -1,4 +1,4 @@
-import { AIRich } from '../lib/NIXCODE.js';
+import { AIRich } from '../lib/AIRich.js';
 
 let handler = async (m, { conn }) => {
   try {

@@ -5,7 +5,7 @@
 //﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌//
 
 import { prepareWAMessageMedia } from 'baileys';
-import { AIRich } from 'crypto';
+import { AIRich } from '../lib/AIRich.js';
 const handler = async (m, { conn }) => {
     try {
         await conn.sendMessage(m.chat, { react: { text: '⏳', key: m.key } });

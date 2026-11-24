@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 import { fileTypeFromBuffer } from 'file-type';
-const { proto, prepareWAMessageMedia } = (await import('@adiwajshing/baileys')).default;
+const { proto, prepareWAMessageMedia } = await import('baileys');
 
 /**
  * @param {Object} m

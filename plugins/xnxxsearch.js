@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import cheerio from 'cheerio';
+import * as cheerio from 'cheerio';
 
 const handler = async (m, {text, usedPrefix, command}) => {
   if (!db.data.chats[m.chat].nsfw && m.isGroup) {
