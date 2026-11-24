@@ -28,6 +28,8 @@ import syntaxerror from 'syntax-error';
 import Database from 'better-sqlite3';
 import { makeWASocket, protoType, serialize } from './lib/simple.js';
 import useSQLite from './lib/useSQLite.js';
+import { readPanelConfig, startWebPanel, pushPanelEvent } from './system/webPanel.js';
+import { applyUpdate } from './system/autoUpdate.mjs';
 
 const { Browsers, fetchLatestWaWebVersion, makeCacheableSignalKeyStore } = global.baileys;
 
@@ -35,6 +37,15 @@ protoType();
 serialize();
 
 const __dirname = global.__dirname(import.meta.url);
+
+// إعادة التشغيل: index.js (العميل الأب) بيعيد تشغيل الـworker عند استقبال 'restart'
+global.restartBot = (reason = 'restart') => {
+	try {
+		parentPort.postMessage('restart');
+	} catch {}
+	return true;
+};
+global.restartBotClean = global.restartBot;
 
 global.prefix = new RegExp('^[' + '‎xzXZ/!#$%+£¢€¥^°=¶∆×÷π√✓©®:;?&.\\-'.replace(/[|\\{}[\]()^$+*?.-]/g, '\\$&') + ']');
 
@@ -84,6 +95,19 @@ global.loadDatabase = function () {
 
 loadDatabase();
 
+// إعدادات لوحة التحكم (طريقة الربط + الرقم) قبل الاتصال
+const panelCfg = readPanelConfig();
+const loginMode = panelCfg.loginMode === 'qr' ? 'qr' : 'code';
+if (panelCfg.phone) global.pairingNumber = panelCfg.phone;
+global.__panelState = {
+	connection: 'starting',
+	lastQR: null,
+	pairingCode: null,
+	phone: String(global.pairingNumber),
+	mode: loginMode,
+	startedAt: Date.now(),
+};
+
 const { state, saveCreds } = await useSQLite('sessions');
 const { version } = await fetchLatestWaWebVersion();
 
@@ -109,17 +133,24 @@ const connectionOptions = {
 global.conn = makeWASocket(connectionOptions);
 
 if (!conn.authState.creds.registered) {
-	console.log(chalk.bgWhite(chalk.blue('Generating code...')));
-	try {
-		setTimeout(async () => {
-			let code = await conn.requestPairingCode(global.pairingNumber);
-			code = code?.match(/.{1,4}/g)?.join('-') || code;
-			console.log(chalk.black(chalk.bgGreen('Your Pairing Code : ')), chalk.black(chalk.white(code)));
-		}, 3000);
-	} catch (e) {
-		console.log(e);
-		fs.rmSync('./sessions', { recursive: true, force: true });
-		parentPort.postMessage('restart');
+	if (loginMode === 'qr') {
+		console.log(chalk.bgWhite(chalk.blue('QR mode — امسح الرمز من لوحة التحكم')));
+		pushPanelEvent('وضع QR — بانتظار المسح من اللوحة');
+	} else {
+		console.log(chalk.bgWhite(chalk.blue('Generating code...')));
+		try {
+			setTimeout(async () => {
+				let code = await conn.requestPairingCode(global.pairingNumber);
+				code = code?.match(/.{1,4}/g)?.join('-') || code;
+				global.__panelState.pairingCode = code;
+				console.log(chalk.black(chalk.bgGreen('Your Pairing Code : ')), chalk.black(chalk.white(code)));
+				pushPanelEvent('كود الربط: ' + code);
+			}, 3000);
+		} catch (e) {
+			console.log(e);
+			fs.rmSync('./sessions', { recursive: true, force: true });
+			parentPort.postMessage('restart');
+		}
 	}
 }
 
@@ -136,7 +167,14 @@ if (global.db) {
 }
 
 async function connectionUpdate(update) {
-	const { receivedPendingNotifications, connection, lastDisconnect, isOnline } = update;
+	const { receivedPendingNotifications, connection, lastDisconnect, isOnline, qr } = update;
+
+	if (qr && global.__panelState) global.__panelState.lastQR = qr;
+	if (connection && global.__panelState) {
+		global.__panelState.connection = connection;
+		if (connection === 'open') global.__panelState.connectedAt = Date.now();
+		pushPanelEvent('الاتصال: ' + connection);
+	}
 
 	if (connection === 'connecting') console.log(chalk.redBright('⚡ Mengaktifkan Bot, Mohon tunggu sebentar...'));
 	if (connection === 'open') console.log(chalk.green('✅ Tersambung'));
@@ -239,7 +277,7 @@ global.reloadHandler = async function (restartConn) {
 	return true;
 };
 
-const pluginFolder = global.__dirname(join(__dirname, './plugins/index'));
+const pluginFolder = global.__dirname(join(__dirname, './plugins'));
 const pluginFilter = (filename) => /\.js$/.test(filename);
 global.plugins = {};
 
@@ -299,6 +337,31 @@ global.reload = async (_ev, filename) => {
 Object.freeze(global.reload);
 fs.watch(pluginFolder, global.reload);
 await global.reloadHandler();
+
+// لوحة التحكم الويب
+try {
+	startWebPanel();
+} catch (e) {
+	console.error('[WEB] تعذّر تشغيل اللوحة:', e && e.message);
+}
+
+// التحديث التلقائي الدوري (يتعطّل أثناء الربط، ويتوقف بـ AUTO_UPDATE=0)
+const AUTO_UPDATE = process.env.AUTO_UPDATE !== '0';
+const AUTO_UPDATE_INTERVAL_MIN = Number(process.env.AUTO_UPDATE_INTERVAL_MIN) || 60;
+if (AUTO_UPDATE && AUTO_UPDATE_INTERVAL_MIN > 0) {
+	setInterval(async () => {
+		if (!conn.authState.creds.registered) return; // لا نقطع عملية الربط
+		try {
+			await applyUpdate({
+				log: (t) => console.log(t),
+				event: (m) => pushPanelEvent(m),
+			});
+		} catch (e) {
+			console.error('[UPDATE]', e && e.message);
+		}
+	}, AUTO_UPDATE_INTERVAL_MIN * 60 * 1000);
+	console.log('🔁 [UPDATE] التحديث التلقائي كل ' + AUTO_UPDATE_INTERVAL_MIN + ' دقيقة (يتوقف بـ AUTO_UPDATE=0)');
+}
 
 async function _quickTest() {
 	const results = await Promise.all(
