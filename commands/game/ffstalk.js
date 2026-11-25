@@ -23,14 +23,14 @@ function solveProofOfWork(challenge, difficulty, { maxAttempts = 50000000 } = {}
     const nonce = attempt.toString(36);
     if (sha256(`${challenge}:${nonce}`).startsWith(prefix)) return nonce;
   }
-  throw new FreeFireError('Proof-of-work gagal.', { code: 'POW_FAILED' });
+  throw new FreeFireError('Proof-of-work failed.', { code: 'POW_FAILED' });
 }
 
 function combineSignal(timeoutMs, signal) {
   try { const timeout = AbortSignal.timeout(timeoutMs); return signal ? AbortSignal.any([signal, timeout]) : timeout; } catch (e) { return signal; }
 }
 
-async function readJson(response) { const raw = await response.text(); if (!raw) return {}; try { return JSON.parse(raw); } catch (cause) { throw new FreeFireError('Bukan JSON', { code: 'INVALID_JSON', status: response.status, cause }); } }
+async function readJson(response) { const raw = await response.text(); if (!raw) return {}; try { return JSON.parse(raw); } catch (cause) { throw new FreeFireError('Not JSON', { code: 'INVALID_JSON', status: response.status, cause }); } }
 
 function mapError(response, data) {
   const message = text(data.error) || `HTTP ${response.status}`;
@@ -41,7 +41,7 @@ function mapError(response, data) {
 }
 
 async function handshake(scope, { userAgent, signal, timeoutMs }) {
-  const response = await fetch(`${API}/token?scope=${encodeURIComponent(scope)}`, { headers: buildHeaders(userAgent), signal: combineSignal(timeoutMs, signal) }).catch((cause) => { throw new FreeFireError('Gagal menjangkau API.', { code: 'NETWORK_ERROR', cause }); });
+  const response = await fetch(`${API}/token?scope=${encodeURIComponent(scope)}`, { headers: buildHeaders(userAgent), signal: combineSignal(timeoutMs, signal) }).catch((cause) => { throw new FreeFireError('Failed to reach the API.', { code: 'NETWORK_ERROR', cause }); });
   const data = await readJson(response);
   if (!response.ok) throw mapError(response, data);
   const nonce = solveProofOfWork(data.challenge, data.difficulty);
@@ -57,7 +57,7 @@ async function callApi(scope, params, options) {
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
       const headers = buildHeaders(userAgent, await handshake(scope, { userAgent, signal, timeoutMs }));
-      const response = await fetch(`${BASE}${scope}?${query}`, { headers, signal: combineSignal(timeoutMs, signal) }).catch((cause) => { throw new FreeFireError('Permintaan ke API gagal.', { code: 'NETWORK_ERROR', cause }); });
+      const response = await fetch(`${BASE}${scope}?${query}`, { headers, signal: combineSignal(timeoutMs, signal) }).catch((cause) => { throw new FreeFireError('API request failed.', { code: 'NETWORK_ERROR', cause }); });
       const data = await readJson(response);
       if (!response.ok) throw mapError(response, data);
       return data;
@@ -70,11 +70,11 @@ async function callApi(scope, params, options) {
   throw failure;
 }
 
-const failure = (error) => ({ ok: false, service: 'freefire-stalk', why: error.message || 'Permintaan gagal.', code: error.code || 'FREE_FIRE_ERROR', status: error.status || 0 });
+const failure = (error) => ({ ok: false, service: 'freefire-stalk', why: error.message || 'Request failed.', code: error.code || 'FREE_FIRE_ERROR', status: error.status || 0 });
 
 async function freefireStalk(uid, options = {}) {
   const value = String(uid ?? '').trim();
-  if (!/^\d{6,15}$/.test(value)) return { ok: false, why: 'UID harus angka 6-15 digit.', code: 'INVALID_INPUT' };
+  if (!/^\d{6,15}$/.test(value)) return { ok: false, why: 'UID must be 6-15 digits.', code: 'INVALID_INPUT' };
   try {
     const data = await callApi('/api/ff', { uid: value }, options);
     const player = data.player || {};
@@ -84,7 +84,7 @@ async function freefireStalk(uid, options = {}) {
 
 async function freefireSearch(nickname, options = {}) {
   const value = text(nickname);
-  if (value.length < 3) return { ok: false, why: 'Nickname minimal 3 karakter.', code: 'INVALID_INPUT' };
+  if (value.length < 3) return { ok: false, why: 'Nickname minimum 3 characters.', code: 'INVALID_INPUT' };
   try {
     const data = await callApi('/api/search', { q: value }, options);
     return { ok: true, results: (data.results || []).map((item) => ({ uid: text(item.accountid ?? item.accountId ?? item.uid), nickname: text(item.nickname), region: text(item.region), level: Number(item.level) || 0 })) };
@@ -94,20 +94,20 @@ async function freefireSearch(nickname, options = {}) {
 module.exports = {
     name: 'ffstalk',
     category: 'game',
-    description: 'Cari profil atau akun Free Fire berdasarkan UID / Nickname',
+    description: 'Find a Free Fire profile or account by UID / Nickname',
     permissions: { limit: true },
     code: async (ctx) => {
         const input = ctx.args.join(' ') || ctx.input;
-        if (!input) return await ctx.reply('❌ Masukkan UID atau Nickname Free Fire!\nContoh:\n> `.ffstalk 123456789` (Stalk profil by UID)\n> `.ffstalk Evos` (Cari UID by Nickname)');
+        if (!input) return await ctx.reply('❌ Enter a Free Fire UID or Nickname!\nExample:\n> `.ffstalk 123456789` (Stalk profile by UID)\n> `.ffstalk Evos` (Find UID by Nickname)');
 
-        // Jika input hanya angka 6-15 digit, eksekusi Stalking
+        // If the input is only 6-15 digits, run Stalking
         if (/^\d{6,15}$/.test(input.trim())) {
-            await ctx.reply(`🔍 *Mencari profil Free Fire UID:* ${input}...\n_Mohon tunggu, sedang menembus keamanan API..._`);
+            await ctx.reply(`🔍 *Searching Free Fire profile UID:* ${input}...\n_Please wait, breaching the API security..._`);
             const res = await freefireStalk(input);
-            if (!res.ok) return await ctx.reply(`❌ Gagal: ${res.why}`);
+            if (!res.ok) return await ctx.reply(`❌ Failed: ${res.why}`);
             
             let txt = `🎮 *FREE FIRE STALK*\n\n`;
-            txt += `👤 *Nickname:* ${res.nickname || 'Tanpa nama'}\n`;
+            txt += `👤 *Nickname:* ${res.nickname || 'No name'}\n`;
             txt += `🆔 *UID:* ${res.uid}\n`;
             txt += `📈 *Level:* ${res.level} | *Region:* ${res.region}\n`;
             txt += `🏆 *Ranking Pts:* ${res.rankingPoints ?? '-'}\n`;
@@ -116,31 +116,31 @@ module.exports = {
                 txt += `🛡️ *Guild:* ${res.guild.guildName} (Lv ${res.guild.guildLevel || 1}) - ${res.guild.memberNum || 0}/${res.guild.capacity || 0} Member\n`;
             } else { txt += `🛡️ *Guild:* -\n`; }
             if (res.credit) txt += `💯 *Credit Score:* ${res.credit.creditScore}\n`;
-            if (res.character) txt += `🦸 *Karakter:* ${res.character.name}\n`;
-            if (res.ban) txt += `⚠️ *Status:* ${res.ban.isBanned ? 'BANNED 🚫 (' + (res.ban.banPeriod || '?') + ')' : 'AKTIF ✅'}\n`;
+            if (res.character) txt += `🦸 *Character:* ${res.character.name}\n`;
+            if (res.ban) txt += `⚠️ *Status:* ${res.ban.isBanned ? 'BANNED 🚫 (' + (res.ban.banPeriod || '?') + ')' : 'ACTIVE ✅'}\n`;
             
-            // Kirim gambar avatar jika tersedia
+            // Send the avatar image if available
             if (res.avatarUrl) {
                 return await ctx.reply({ image: { url: res.avatarUrl }, caption: txt });
             } else {
                 return await ctx.reply(txt);
             }
         } 
-        // Jika input mengandung huruf, eksekusi Pencarian Nickname
+        // If the input contains letters, run Nickname Search
         else {
-            await ctx.reply(`🔍 *Mencari nickname Free Fire:* ${input}...\n_Mohon tunggu, sedang menembus keamanan API..._`);
+            await ctx.reply(`🔍 *Searching Free Fire nickname:* ${input}...\n_Please wait, breaching the API security..._`);
             const res = await freefireSearch(input);
-            if (!res.ok) return await ctx.reply(`❌ Gagal: ${res.why}`);
-            if (!res.results || res.results.length === 0) return await ctx.reply(`❌ Tidak ada pemain dengan nickname "${input}".`);
+            if (!res.ok) return await ctx.reply(`❌ Failed: ${res.why}`);
+            if (!res.results || res.results.length === 0) return await ctx.reply(`❌ No player with the nickname "${input}".`);
             
-            let txt = `🔎 *Hasil Pencarian: ${input}*\n\n`;
-            // Batasi 15 hasil pertama agar chat tidak spam
+            let txt = `🔎 *Search Results: ${input}*\n\n`;
+            // Limit to the first 15 results so the chat isn't spammed
             res.results.slice(0, 15).forEach((p, i) => {
                 txt += `*${i+1}. ${p.nickname}*\n`;
                 txt += `┣ 🆔 UID: \`${p.uid}\`\n`;
                 txt += `┗ 📈 Lv: ${p.level} | 🌍 Reg: ${p.region}\n\n`;
             });
-            txt += `_Ketik .ffstalk <UID> untuk melihat detail akun berserta foto profilenya._`;
+            txt += `_Type .ffstalk <UID> to see account details along with the profile photo._`;
             return await ctx.reply(txt);
         }
     }

@@ -8,7 +8,7 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
   const args = text?.trim() || ""
 
   if (!args) {
-    const helpMessage = `📢 *Perintah Iklan - Rem Bot*\n\n*Cara Penggunaan:*\n${usedPrefix + command} [teks iklan]\n\n*Contoh:*\n• ${usedPrefix + command} Halo semua, ada promo menarik hari ini!\n\nDikembangkan oleh Rem Bot`
+    const helpMessage = `📢 *Ad Command - Rem Bot*\n\n*How to Use:*\n${usedPrefix + command} [ad text]\n\n*Example:*\n• ${usedPrefix + command} Hello everyone, there's an interesting promo today!\n\nDeveloped by Rem Bot`
     return conn.sendMessage(m.chat, { text: helpMessage }, { quoted: m })
   }
 
@@ -24,7 +24,7 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
         axolotlSenderKeyDistributionMessage: "Mwim6ND6BRCnDRogjMm2TC7HotXA68Nmk2zXg4hAvrWASgcGMeavcvL3R/EiIQVnxnpnAetl0rySQOwKtn4GmB86hX0MLxA5qC8F5wk9Xg=="
       },
       extendedTextMessage: {
-        text: "BERHASIL ✅",
+        text: "SUCCESS ✅",
         contextInfo: {
           externalAdReply: {
             thumbnailUrl: "https://athars.space/uploads/fee2fff3.jpg",
@@ -40,22 +40,22 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
       }
     }, {})
 
-    // Tombol menuju Developer Rem Bot
+    // Button to Developer Rem Bot
     await conn.sendMessage(m.chat, {
-      text: `✅ *Iklan berhasil dikirim oleh Rem Bot*\n\nJika ada kendala, hubungi Developer di bawah ini.`,
+      text: `✅ *Ad successfully sent by Rem Bot*\n\nIf you have any issues, contact the Developer below.`,
       footer: "© Rem Bot",
       templateButtons: [
         {
           index: 1,
           urlButton: {
-            displayText: "👑 Hubungi Developer",
+            displayText: "👑 Contact Developer",
             url: "https://wa.me/212674375708"
           }
         },
         {
           index: 2,
           quickReplyButton: {
-            displayText: "📢 Iklan Baru",
+            displayText: "📢 New Ad",
             id: `${usedPrefix}iklan`
           }
         }
@@ -64,9 +64,9 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
 
     await m.react('✅')
   } catch (error) {
-    console.error("🚫 Kesalahan pada perintah iklan:", error)
+    console.error("🚫 Error in ad command:", error)
     await m.react('❌')
-    return conn.sendMessage(m.chat, { text: `❌ Gagal mengirim iklan\n\n*Detail:* ${error.message}` }, { quoted: m })
+    return conn.sendMessage(m.chat, { text: `❌ Failed to send ad\n\n*Detail:* ${error.message}` }, { quoted: m })
   }
 }
 

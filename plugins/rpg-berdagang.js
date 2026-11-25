@@ -1,9 +1,9 @@
 let handler = async (m) => {
 	const dapat = Math.floor(Math.random() * 5000);
 	const who = m.mentionedJid[0];
-	if (!who) throw 'Tag salah satu lah, yang kamu ingin berdagang bareng';
+	if (!who) throw 'Tag someone, the person you want to trade with';
 
-	if (!global.db.data.users[who]) return m.reply('Pengguna tidak ada didalam data base');
+	if (!global.db.data.users[who]) return m.reply('User does not exist in the database');
 
 	const user = global.db.data.users[m.sender];
 	const partner = global.db.data.users[who];
@@ -12,10 +12,10 @@ let handler = async (m) => {
 	const _timers = now - user.lastdagang;
 	const timers = clockString(28800000 - _timers);
 
-	if (now - user.lastdagang < 28800000) return m.reply(`Anda sudah berdagang, tunggu ${timers} lagi.`);
+	if (now - user.lastdagang < 28800000) return m.reply(`You have already traded, wait ${timers} more.`);
 
-	if (partner.money < 5000) throw 'Target tidak memiliki modal, minimal 5000';
-	if (user.money < 5000) throw 'Kamu tidak memiliki modal, minimal 5000';
+	if (partner.money < 5000) throw 'Target does not have capital, minimum 5000';
+	if (user.money < 5000) throw 'You do not have capital, minimum 5000';
 
 	partner.money -= dapat;
 	user.money -= dapat;
@@ -24,9 +24,9 @@ let handler = async (m) => {
 
 	m.reply(
 		`
-Mohon tunggu kak..
-Kamu dan @${who.split('@')[0]} sedang berdagang...
-Kedua pihak meletakkan modal: -${dapat}
+Please wait..
+You and @${who.split('@')[0]} are trading...
+Both parties put up capital: -${dapat}
         `.trim()
 	);
 
@@ -36,10 +36,10 @@ Kedua pihak meletakkan modal: -${dapat}
 
 		m.reply(
 			`
-Selamat! Hasil dagang pertama telah keluar.
+Congratulations! The first trade result is out.
 
-Kamu mendapat +15000 (Total: ${user.money})
-@${who.split('@')[0]} mendapat +15000 (Total: ${partner.money})`
+You get +15000 (Total: ${user.money})
+@${who.split('@')[0]} gets +15000 (Total: ${partner.money})`
 		);
 	}, 3600000);
 
@@ -49,10 +49,10 @@ Kamu mendapat +15000 (Total: ${user.money})
 
 		m.reply(
 			`
-Selamat! Hasil dagang kedua telah keluar.
+Congratulations! The second trade result is out.
 
-Kamu mendapat +15000 (Total: ${user.money})
-@${who.split('@')[0]} mendapat +15000 (Total: ${partner.money})`
+You get +15000 (Total: ${user.money})
+@${who.split('@')[0]} gets +15000 (Total: ${partner.money})`
 		);
 	}, 7200000);
 };

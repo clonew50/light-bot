@@ -4,11 +4,11 @@ let handler = async (m, { text, usedPrefix, command }) => {
 		const regex = /(https?:\/\/(?:www\.)?instagram\.com\/(p|reel)\/[a-zA-Z0-9_-]+\/?)/;
 		const parseUrl = input.match(regex)?.[0];
 
-		if (!parseUrl) throw `# Cara Penggunaan\n\n` + `> Masukkan URL Instagram untuk mengunduh konten\n\n` + `# Contoh Penggunaan\n` + `> *${usedPrefix + command} https://www.instagram.com/*`;
+		if (!parseUrl) throw `# How to Use\n\n` + `> Enter an Instagram URL to download content\n\n` + `# Usage Example\n` + `> *${usedPrefix + command} https://www.instagram.com/*`;
 
 		const res = await igdl(parseUrl);
 
-		if (res.error) throw 'Gagal ambil konten dari Instagram~';
+		if (res.error) throw 'Failed to fetch content from Instagram~';
 
 		const result = res.info;
 
@@ -31,7 +31,7 @@ let handler = async (m, { text, usedPrefix, command }) => {
 		}
 	} catch (err) {
 		console.error('Instagram Error:', err.message);
-		m.reply('Ada error waktu ambil media IG-nya~');
+		m.reply('There was an error fetching the IG media~');
 	}
 };
 

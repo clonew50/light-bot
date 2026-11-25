@@ -6,19 +6,19 @@ const BOT = 'REM BOT';
 const DEV = '212674375708';
 const BG_URL = 'https://litter.catbox.moe/4evj2u.jpg';
 
-// تفعيل الترحيب فالمجموعة
-// اكتب.welcome on /.welcome off
+// Enable welcome in the group
+// Type .welcome on / .welcome off
 let handler = async (m, { conn, usedPrefix, command, args }) => {
   if (command === 'welcome') {
     if (args[0] === 'on') {
       global.db.data.chats[m.chat].welcome = true;
-      return m.reply(`✅ *Welcome ON - ${BOT}*\nSekarang setiap ada yang masuk akan disambut otomatis`);
+      return m.reply(`✅ *Welcome ON - ${BOT}*\nNow everyone who joins will be welcomed automatically`);
     }
     if (args[0] === 'off') {
       global.db.data.chats[m.chat].welcome = false;
       return m.reply(`❌ *Welcome OFF - ${BOT}*`);
     }
-    return m.reply(`*Cara pakai:*\n${usedPrefix}welcome on = aktifkan\n${usedPrefix}welcome off = matikan\n${usedPrefix}one = test welcome\n\nStatus: ${global.db.data.chats[m.chat].welcome? 'ON ✅' : 'OFF ❌'}`);
+    return m.reply(`*How to use:*\n${usedPrefix}welcome on = enable\n${usedPrefix}welcome off = disable\n${usedPrefix}one = test welcome\n\nStatus: ${global.db.data.chats[m.chat].welcome? 'ON ✅' : 'OFF ❌'}`);
   }
 
   if (command === 'one') {
@@ -27,7 +27,7 @@ let handler = async (m, { conn, usedPrefix, command, args }) => {
     const img = await makeWelcome(conn, who);
     await conn.sendMessage(m.chat, {
       image: img,
-      caption: `🚀 *TEST WELCOME - ${BOT}*\n\n👋 Selamat datang @${who.split('@')[0]}!\n\n© ${BOT} - DEV ${DEV}`,
+      caption: `🚀 *TEST WELCOME - ${BOT}*\n\n👋 Welcome @${who.split('@')[0]}!\n\n© ${BOT} - DEV ${DEV}`,
       mentions: [who]
     }, { quoted: m });
     await conn.sendMessage(m.chat, { react: { text: '✅', key: m.key } });
@@ -40,7 +40,7 @@ handler.command = /^(welcome|one|testwelcome)$/i;
 handler.group = true;
 handler.admin = true;
 
-// FUNCTION UTAMA PEMBUAT GAMBAR
+// MAIN FUNCTION TO CREATE THE IMAGE
 async function makeWelcome(conn, who) {
   const jidNumber = who.split('@')[0];
   let ppUrl;
@@ -52,19 +52,19 @@ async function makeWelcome(conn, who) {
 
   let avatar = await Jimp.read(ppUrl);
   avatar.resize(380, 380);
-  avatar.circle(); // bikin bulat
+  avatar.circle(); // make it round
 
-  // Posisi avatar di tengah lingkaran desainmu
+  // Avatar position in the center of your design circle
   const x = (1080 - 380) / 2;
   const y = 265;
   bg.composite(avatar, x, y);
 
-  // Text nomor
+  // Number text
   const fontBig = await Jimp.loadFont(Jimp.FONT_SANS_64_WHITE);
   const fontSmall = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
   const fontMini = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
 
-  // Shadow untuk text biar jelas
+  // Shadow for the text so it's clear
   const numText = `+${jidNumber}`;
   const w1 = Jimp.measureText(fontBig, numText);
   bg.print(fontBig, (1080 - w1)/2, 680, numText);
@@ -78,7 +78,7 @@ async function makeWelcome(conn, who) {
   return await bg.getBufferAsync(Jimp.MIME_JPEG);
 }
 
-// AUTO WELCOME KETIKA ADA YANG JOIN
+// AUTO WELCOME WHEN SOMEONE JOINS
 handler.before = async function(m, { conn, participants }) {
   if (!m.messageStubType) return;
   if (!global.db) return;
@@ -93,7 +93,7 @@ handler.before = async function(m, { conn, participants }) {
         const img = await makeWelcome(conn, who);
         await conn.sendMessage(m.chat, {
           image: img,
-          caption: `🚀 *WELCOME - ${BOT}*\n\n👋 Halo @${who.split('@')[0]}!\nSelamat datang di grup!\nSemoga betah ya kak!\n\n© ${BOT} - DEV ${DEV}`,
+          caption: `🚀 *WELCOME - ${BOT}*\n\n👋 Hello @${who.split('@')[0]}!\nWelcome to the group!\nHope you enjoy it here!\n\n© ${BOT} - DEV ${DEV}`,
           mentions: [who]
         });
       } catch (e) {

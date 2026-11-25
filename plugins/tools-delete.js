@@ -1,5 +1,5 @@
 let handler = async (m, { conn, isAdmin, isBotAdmin, usedPrefix, command }) => {
-	if (!m.quoted) return m.reply(`Reply pesan yang ingin dihapus dengan caption ${usedPrefix + command}`);
+	if (!m.quoted) return m.reply(`Reply to the message you want to delete with the caption ${usedPrefix + command}`);
 	if (m.quoted.fromMe) {
 		await m.quoted.delete();
 	} else {

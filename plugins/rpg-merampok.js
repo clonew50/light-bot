@@ -1,19 +1,19 @@
 let handler = async (m, { conn }) => {
 	let dapat = Math.floor(Math.random() * 100000);
 	let who = m.mentionedJid[0];
-	if (!who) throw 'Tag Orang Yang Ingin Kamu Rampok';
-	if (typeof db.data.users[who] == 'undefined') throw 'Pengguna Tidak Ada Didalam Database';
+	if (!who) throw 'Tag the person you want to rob';
+	if (typeof db.data.users[who] == 'undefined') throw 'User is not in the database';
 	let now = Date.now();
 	let _timers = now - global.db.data.users[m.sender].lastrampok;
 	let timers = clockString(3600000 - _timers);
 	let users = global.db.data.users;
 	if (now - global.db.data.users[m.sender].lastrampok > 3600000) {
-		if (10000 > users[who].money) throw 'Orang Yang Kamu Tag, Tidak Memiliki Uang\nApakah Kamu Tidak Kasihan?';
+		if (10000 > users[who].money) throw 'The person you tagged has no money\nDo you not feel sorry?';
 		users[who].money -= dapat;
 		users[m.sender].money += dapat;
 		global.db.data.users[m.sender].lastrampok = now;
-		conn.reply(m.chat, `Berhasil Merampok Uangnya Dan Kamu Mendapatkan Rp.${dapat}`, m);
-	} else conn.reply(m.chat, `Kamu Sudah Merampok Dan Berhasil Sembunyi , Tunggu ${timers} Untuk Merampok Lagi`, m);
+		conn.reply(m.chat, `Successfully robbed their money and you got Rp.${dapat}`, m);
+	} else conn.reply(m.chat, `You have already robbed and successfully hid, wait ${timers} to rob again`, m);
 };
 handler.help = ['merampok'];
 handler.tags = ['rpg'];
@@ -28,5 +28,5 @@ function clockString(ms) {
 	let h = isNaN(ms) ? '--' : Math.floor(ms / 3600000) % 24;
 	let m = isNaN(ms) ? '--' : Math.floor(ms / 60000) % 60;
 	let s = isNaN(ms) ? '--' : Math.floor(ms / 1000) % 60;
-	return ['\n' + d, ' *Hari*\n ', h, ' *Jam*\n ', m, ' *Menit*\n ', s, ' *Detik* '].map((v) => v.toString().padStart(2, 0)).join('');
+	return ['\n' + d, ' *Days*\n ', h, ' *Hours*\n ', m, ' *Minutes*\n ', s, ' *Seconds* '].map((v) => v.toString().padStart(2, 0)).join('');
 }

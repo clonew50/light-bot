@@ -184,7 +184,7 @@ handler.before = function (m) {
 	user.role = role;
 
 	if (user.autolevelup && before !== user.level) {
-		m.reply(`Selamat, Kamu Telah Naik Level!\n\n• Level Up : *${before}* -> *${user.level}*`);
+		m.reply(`Congrats, You Have Leveled Up!\n\n• Level Up : *${before}* -> *${user.level}*`);
 	}
 
 	return true;

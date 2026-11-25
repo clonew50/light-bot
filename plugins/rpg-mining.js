@@ -3,18 +3,18 @@ let handler = async (m) => {
 	let user = global.db.data.users[m.sender];
 	let now = Date.now();
 	let timers = cooldown - (now - user.lastmining);
-	if (user.stamina < 20) return m.reply('Kamu Kelelahan\nHeal Terlebih dahulu supaya bisa menambang.');
-	if (user.pickaxe < 1) return m.reply('Mau mining ga punya pickaxe 🗿');
-	if (now - user.lastmining <= cooldown) return m.reply(`Kamu Sudah Menambang!!, Tunggu selama *🕐${timers.toTimeString()}*`);
+	if (user.stamina < 20) return m.reply('You Are Tired\nHeal first so you can mine.');
+	if (user.pickaxe < 1) return m.reply('Want to mine without a pickaxe 🗿');
+	if (now - user.lastmining <= cooldown) return m.reply(`You Have Already Mined!!, Wait for *🕐${timers.toTimeString()}*`);
 	const rewards = reward();
-	let text = 'Kamu Telah Menambang dan tersesat';
+	let text = 'You Mined and got lost';
 	for (const lost in rewards.lost)
 		if (user[lost]) {
 			const total = rewards.lost[lost].getRandom();
 			user[lost] -= total * 1;
 			if (total) text += `\n*${global.rpg.emoticon(lost)}${lost}:* ${toRupiah(total)}`;
 		}
-	text += '\n\nTapi Kamu Mendapatkan';
+	text += '\n\nBut You Got';
 	for (const rewardItem in rewards.reward)
 		if (rewardItem in user) {
 			const total = rewards.reward[rewardItem].getRandom();

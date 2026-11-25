@@ -70,12 +70,12 @@ let handler = async (m, { conn, text, usedPrefix, command, isOwner }) => {
     const input = String(text || '').trim()
     if (!input) {
         return m.reply(
-`*Format multi:*
-${usedPrefix}faketag join ada @Mark Zuckerberg|@Meta Ai| teks
+`*Multi format:*
+${usedPrefix}faketag join ada @Mark Zuckerberg|@Meta Ai| text
 ${usedPrefix}faketag https://link.com
 join @A|@B| jir
 
-*Format lama:*
+*Legacy format:*
 ${usedPrefix}faketag Mark Zuckerberg
 ${usedPrefix}faketag Mark Zuckerberg | halo semua`)
     }
@@ -90,7 +90,7 @@ ${usedPrefix}faketag Mark Zuckerberg | halo semua`)
         textBody = buildText(multi.prefix, mentionText, multi.suffix)
     } else {
         const leg = parseLegacy(input)
-        if (!leg) return m.reply('❌ Nama tag kosong.')
+        if (!leg) return m.reply('❌ Tag name is empty.')
         groupMentions = buildMentions(leg.tags)
         const mentionText = groupMentions.map(v => `@${v.groupJid}`).join(' ')
         textBody = leg.pesan? buildText('', mentionText, leg.pesan) : mentionText

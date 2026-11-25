@@ -313,7 +313,7 @@ ${img? `<div class="loc"><img src="${img}"><span class="pin">📍</span><div cla
 let handler = async (m, { conn, args, usedPrefix, command }) => {
   let q = args.join(" ").trim();
   let type = /mp3|audio|play/i.test(command)? 'mp3' : 'mp4';
-  if (!q) return m.reply(`*Contoh:*\n${usedPrefix + command} https://youtu.be/xxx\n${usedPrefix + command} dj terbaru`);
+  if (!q) return m.reply(`*Example:*\n${usedPrefix + command} https://youtu.be/xxx\n${usedPrefix + command} latest dj`);
 
   await conn.sendMessage(m.chat, { react: { text: '🕕', key: m.key } });
 
@@ -324,7 +324,7 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
 
     if (!isUrl) {
       let search = await ytSearch(q, 1);
-      if (!search.length) return m.reply(`❌ Tidak ditemukan: ${q}`);
+      if (!search.length) return m.reply(`❌ Not found: ${q}`);
       info = search[0];
       url = info.url;
     } else {
@@ -365,7 +365,7 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
 
     if (!result ||!result.status) {
       await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } });
-      return m.reply(`❌ Gagal download, coba lagi.`);
+      return m.reply(`❌ Download failed, try again.`);
     }
 
     if (type === 'mp3') {
@@ -386,7 +386,7 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
   }
 }
 
-handler.help = ['ytmp32 <url/judul>', 'ytmp42 <url/judul>', 'play3 <judul>'];
+handler.help = ['ytmp32 <url/title>', 'ytmp42 <url/title>', 'play3 <title>'];
 handler.tags = ['downloader'];
 handler.command = /^(ytmp6|ytmp32|yta2|play3|ytmp5|ytmp42|ytv2)$/i;
 

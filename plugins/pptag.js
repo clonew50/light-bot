@@ -1,4 +1,4 @@
-// plugins/pptag.js - REM BOT - PRIVATE TAG 1 ORANG = 1 GAMBAR - FIXED 300x300
+// plugins/pptag.js - REM BOT - PRIVATE TAG 1 PERSON = 1 IMAGE - FIXED 300x300
 import baileys from 'baileys'
 import fetch from 'node-fetch'
 import crypto from 'crypto'
@@ -98,10 +98,10 @@ let handler = async (m, { conn }) => {
     p => p.id.split('@')[0].split(':')[0] !== botNum
   )
 
-  if (!participants.length) return m.reply('❌ Tidak ada member')
+  if (!participants.length) return m.reply('❌ No members')
 
   const messageId = crypto.randomBytes(12).toString('hex').toUpperCase()
-  await conn.sendMessage(jid, { text: `⏳ Siap kirim ${participants.length} private images...\n> 300x300 fixed` }, { quoted: m })
+  await conn.sendMessage(jid, { text: `⏳ Ready to send ${participants.length} private images...\n> 300x300 fixed` }, { quoted: m })
 
   let sukses = 0
   for (let p of participants) {
@@ -113,14 +113,14 @@ let handler = async (m, { conn }) => {
       jid,
       buf,
       p.id,
-      `gambar disini sesuai dengan foto profilmu\n> _hanya kamu yang dapat melihat pesan ini._\n@${p.id.split('@')[0]}`,
+      `image here matches your profile picture\n> _only you can see this message._\n@${p.id.split('@')[0]}`,
       messageId
     )
     if (ok) sukses++
     await new Promise(resolve => setTimeout(resolve, 800))
   }
 
-  await m.reply(`✅ Selesai! ${sukses}/${participants.length} - Masing-masing lihat fotonya sendiri`)
+  await m.reply(`✅ Done! ${sukses}/${participants.length} - Each one sees their own photo`)
 }
 
 handler.help = ['pptag']

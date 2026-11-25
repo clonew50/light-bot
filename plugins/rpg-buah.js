@@ -1,12 +1,12 @@
 let handler = async (m, { usedPrefix }) => {
 	let user = global.db.data.users[m.sender];
-	let ini_txt = `[ *GUDANG BUAH KAMU* ]\n\n`;
-	ini_txt += `${user.pisang} Pisang\n`;
-	ini_txt += `${user.anggur} Anggur\n`;
-	ini_txt += `${user.mangga} Mangga\n`;
-	ini_txt += `${user.jeruk} Jeruk\n`;
-	ini_txt += `${user.apel} Apel\n\n`;
-	ini_txt += `Ketik *${usedPrefix}jual* Untuk Menjual.`;
+	let ini_txt = `[ *YOUR FRUIT WAREHOUSE* ]\n\n`;
+	ini_txt += `${user.pisang} Banana\n`;
+	ini_txt += `${user.anggur} Grape\n`;
+	ini_txt += `${user.mangga} Mango\n`;
+	ini_txt += `${user.jeruk} Orange\n`;
+	ini_txt += `${user.apel} Apple\n\n`;
+	ini_txt += `Type *${usedPrefix}jual* to sell.`;
 	m.reply(ini_txt);
 };
 

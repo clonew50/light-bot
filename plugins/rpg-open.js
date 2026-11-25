@@ -65,8 +65,8 @@ let handler = async (m, { command, args, usedPrefix }) => {
 	let user = global.db.data.users[m.sender];
 	let listCrate = Object.fromEntries(Object.entries(rewards).filter(([v]) => v && v in user));
 	let info = `
-Pake Format *${usedPrefix}${command} [crate] [count]*
-Contoh: *${usedPrefix}${command} common 10*
+Use format *${usedPrefix}${command} [crate] [count]*
+Example: *${usedPrefix}${command} common 10*
 
 Crate List: 
 ${Object.keys(listCrate)
@@ -83,8 +83,8 @@ ${rpg.emoticon(v)}${v}
 	if (user[type] < count)
 		return m.reply(
 			`
-Crates* Nggak Ada, Kamu Hanya Punya ${user[type]} *${type} Crate*
-Ketik *${usedPrefix}buy ${type} ${count - user[type]}* Untuk Membeli
+Crates* none, you only have ${user[type]} *${type} Crate*
+Type *${usedPrefix}buy ${type} ${count - user[type]}* to buy
 `.trim()
 		);
 	// TODO: add pet crate
@@ -102,7 +102,7 @@ Ketik *${usedPrefix}buy ${type} ${count - user[type]}* Untuk Membeli
 	user[type] -= count * 1;
 	m.reply(
 		`
-Kamu Membuka Sebanyak *${count}* ${type} Crate Dan Mendapatkan
+You opened *${count}* ${type} Crate and got
 ${Object.keys(crateReward)
 	.filter((v) => v && crateReward[v] && !/legendary|pet|mythic|diamond|emerald/i.test(v))
 	.map((reward) =>
@@ -121,13 +121,13 @@ ${Object.keys(crateReward)
 	if (mythic || diamond)
 		m.reply(
 			`
-Selamat Kamu Mendapatkan ${diamond ? `*${diamond} Diamond*` : ''}${diamond && mythic ? 'Dan ' : ''}${mythic ? `*${mythic}* Mythic` : ''}
+Congrats you got ${diamond ? `*${diamond} Diamond*` : ''}${diamond && mythic ? 'And ' : ''}${mythic ? `*${mythic}* Mythic` : ''}
 `.trim()
 		);
 	if (pet || legendary || emerald)
 		m.reply(
 			`
-Selamat Kamu Mendapatkan ${pet ? `*${pet}* Pet` : ''}${pet && legendary && emerald ? ', ' : (pet && legendary) || (legendary && emerald) || (emerald && pet) ? 'Dan ' : ''}${legendary ? `*${legendary}* Legendary` : ''}${pet && legendary && emerald ? 'Dan ' : ''}${emerald ? `*${emerald}* Emerald` : ''}
+Congrats you got ${pet ? `*${pet}* Pet` : ''}${pet && legendary && emerald ? ', ' : (pet && legendary) || (legendary && emerald) || (emerald && pet) ? 'And ' : ''}${legendary ? `*${legendary}* Legendary` : ''}${pet && legendary && emerald ? 'And ' : ''}${emerald ? `*${emerald}* Emerald` : ''}
 `.trim()
 		);
 };

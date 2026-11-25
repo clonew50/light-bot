@@ -81,9 +81,9 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
 
   if (!IG_REGEX.test(url)) {
     return conn.sendMessage(m.chat, {
-      text: `╮───━ 〘 CARA PENGGUNAAN 〙 ━──►
-*┃╻💡╹↵ Ketik:* \`${usedPrefix + command} link instagram\`
-*┃╻📌╹↵ Contoh:* \`${usedPrefix + command} https://www.instagram.com/reel/xxx\`
+      text: `╮───━ 〘 HOW TO USE 〙 ━──►
+*┃╻💡╹↵ Type:* \`${usedPrefix + command} instagram link\`
+*┃╻📌╹↵ Example:* \`${usedPrefix + command} https://www.instagram.com/reel/xxx\`
 ╰─────━─━───━───►`
     }, { quoted: m });
   }
@@ -94,7 +94,7 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
     const jar = createJar();
 
     const page = await call(jar, 'GET', '/nl');
-    if (page.status >= 400) throw new Error(`Situs mengembalikan ${page.status} (mungkin Cloudflare)`);
+    if (page.status >= 400) throw new Error(`Site returned ${page.status} (maybe Cloudflare)`);
     const csrf =
       /name="csrf-token"\s+content="([^"]+)"/.exec(page.data)?.[1] ||
       /name="_token"\s+value="([^"]+)"/.exec(page.data)?.[1];
@@ -107,15 +107,15 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
     try {
       json = JSON.parse(r.data);
     } catch {
-      throw new Error(`Respon /fetch bukan JSON (status ${r.status})`);
+      throw new Error(`Response /fetch is not JSON (status ${r.status})`);
     }
-    if (!json.status) throw new Error(json.message || 'Link tidak didukung atau akun private');
+    if (!json.status) throw new Error(json.message || 'Link not supported or private account');
 
     const items = parseItems(json.data || '');
-    if (!items.length) throw new Error('Tidak ada media di link ini');
+    if (!items.length) throw new Error('No media in this link');
 
     let sent = 0;
-    let lastErr = 'Download gagal';
+    let lastErr = 'Download failed';
 
     for (const it of items.slice(0, MAX_ITEMS)) {
       const opt = pickBest(it.opts);
@@ -126,15 +126,15 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
 
       const type = String(d.headers['content-type'] || '');
       if (d.status !== 200 || !/^(video|image)\//.test(type)) {
-        lastErr = `media-download mengembalikan ${d.status} (${type || 'tanpa tipe'})`;
+        lastErr = `media-download returned ${d.status} (${type || 'no type'})`;
         continue;
       }
 
       const buf = Buffer.from(d.data);
       if (type.startsWith('video/')) {
-        await conn.sendMessage(m.chat, { video: buf, mimetype: 'video/mp4', caption: '✅ Berhasil di download' }, { quoted: m });
+        await conn.sendMessage(m.chat, { video: buf, mimetype: 'video/mp4', caption: '✅ Downloaded successfully' }, { quoted: m });
       } else {
-        await conn.sendMessage(m.chat, { image: buf, caption: '✅ Berhasil di download' }, { quoted: m });
+        await conn.sendMessage(m.chat, { image: buf, caption: '✅ Downloaded successfully' }, { quoted: m });
       }
       sent++;
     }

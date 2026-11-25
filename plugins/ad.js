@@ -8,7 +8,7 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
   const args = text?.trim() || ""
 
   if (!args) {
-    const helpMessage = `📢 *Perintah Pengumuman*\n\n*Penggunaan:* \n${usedPrefix + command} [teks pengumuman]\n\n*Contoh:*\n• ${usedPrefix + command} halo semua`
+    const helpMessage = `📢 *Announcement Command*\n\n*Usage:* \n${usedPrefix + command} [announcement text]\n\n*Example:*\n• ${usedPrefix + command} hello everyone`
     return conn.sendMessage(m.chat, { text: helpMessage }, { quoted: m })
   }
 
@@ -26,8 +26,8 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
         text: "Yono Dev",
         contextInfo: {
           externalAdReply: {
-            title: "Rem Bot - Pengumuman",
-            body: "Klik tombol di bawah untuk hubungi Developer",
+            title: "Rem Bot - Announcement",
+            body: "Click the button below to contact Developer",
             thumbnailUrl: "https://files.catbox.moe/mcxgtv.jpeg",
             thumbnail: "/9j/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAAdACADASIAAhEBAxEB/8QAFwAAAwEAAAAAAAAAAAAAAAAAAwQFAf/EACUQAAEEAQQBBAMAAAAAAAAAAAEAAgMRBAUhMUEiE1FhgRQycf/EABcBAAMBAAAAAAAAAAAAAAAAAAABAgP/xAAZEQEAAwEBAAAAAAAAAAAAAAAAAQIREiH/2gAMAwEAAhEDEQA/AAfhn2WHF+Eg3WM01cjT/WBP6Zlz5ebDFI8Br3gHxrtKLomob8aukvJDXSoa+9+JqU0MEng07Cga+FDlz8i/2H0An2MKQzB3J+huqWLqD8V7XsFObuCfdSIiGNoBb6h3NcLPPVKmXqoypXyS057zZIHamSSta5xBsk8DhCLiSQNqQSN+VWFEP//Z",
             mediaType: 1,
@@ -46,9 +46,9 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
 
     await m.react('✅')
   } catch (error) {
-    console.error("🚫 Error di perintah pengumuman:", error)
+    console.error("🚫 Error in announcement command:", error)
     await m.react('❌')
-    return conn.sendMessage(m.chat, { text: `❌ Gagal mengirim pengumuman\n\n${error.message}` }, { quoted: m })
+    return conn.sendMessage(m.chat, { text: `❌ Failed to send announcement\n\n${error.message}` }, { quoted: m })
   }
 }
 

@@ -2,9 +2,9 @@ import fs from 'fs';
 import syntaxError from 'syntax-error';
 
 let handler = async (m, { text, usedPrefix, command }) => {
-	if (!text) throw `uhm.. teksnya mana?\n\npenggunaan:\n${usedPrefix + command} <teks>\n\ncontoh:\n${usedPrefix + command} plugins/file.js`;
+	if (!text) throw `uhm.. where is the text?\n\nusage:\n${usedPrefix + command} <text>\n\nexample:\n${usedPrefix + command} plugins/file.js`;
 
-	if (!m.quoted?.text) throw `balas pesan nya!`;
+	if (!m.quoted?.text) throw `reply to the message!`;
 
 	let code = m.quoted.text;
 	let path = `./plugins/${text}.js`;
@@ -22,7 +22,7 @@ Line : ${err.line}
 Column : ${err.column}
 Annotated : ${err.annotated}`;
 	fs.writeFileSync(path, code);
-	m.reply(`✅ tersimpan di ${path}`);
+	m.reply(`✅ saved in ${path}`);
 };
 
 handler.help = ['sfp <text>'];

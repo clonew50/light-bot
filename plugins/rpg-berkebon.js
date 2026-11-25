@@ -1,4 +1,4 @@
-const timeout = 1800000; // 30 menit
+const timeout = 1800000; // 30 minutes
 
 let handler = async (m, { usedPrefix, conn }) => {
 	const user = global.db.data.users[m.sender];
@@ -7,14 +7,14 @@ let handler = async (m, { usedPrefix, conn }) => {
 
 	if (!bibitapel || !bibitanggur || !bibitmangga || !bibitpisang || !bibitjeruk)
 		return m.reply(
-			`*Pastikan Kamu Memiliki Semua Bibit*
-• Bibit Apel
-• Bibit Mangga
-• Bibit Jeruk
-• Bibit Pisang
-• Bibit Anggur
+			`*Make Sure You Have All The Seeds*
+• Apple Seed
+• Mango Seed
+• Orange Seed
+• Banana Seed
+• Grape Seed
 
-Contoh:
+Example:
 ${usedPrefix}shop buy bibitmangga 500`
 		);
 
@@ -23,14 +23,14 @@ ${usedPrefix}shop buy bibitmangga 500`
 
 	if (now < diff)
 		return m.reply(`
-Anda sudah menanam sebelumnya.
-Tunggu ${msToTime(diff - now)} lagi.`);
+You have planted before.
+Wait ${msToTime(diff - now)} more.`);
 
-	if (bibitmangga < 500) return m.reply(`Bibit Mangga kamu kurang dari *500*`);
-	if (bibitapel < 500) return m.reply(`Bibit Apel kamu kurang dari *500*`);
-	if (bibitpisang < 500) return m.reply(`Bibit Pisang kamu kurang dari *500*`);
-	if (bibitjeruk < 500) return m.reply(`Bibit Jeruk kamu kurang dari *500*`);
-	if (bibitanggur < 500) return m.reply(`Bibit Anggur kamu kurang dari *500*`);
+	if (bibitmangga < 500) return m.reply(`Your Mango Seed is less than *500*`);
+	if (bibitapel < 500) return m.reply(`Your Apple Seed is less than *500*`);
+	if (bibitpisang < 500) return m.reply(`Your Banana Seed is less than *500*`);
+	if (bibitjeruk < 500) return m.reply(`Your Orange Seed is less than *500*`);
+	if (bibitanggur < 500) return m.reply(`Your Grape Seed is less than *500*`);
 
 	const [pisangpoin, anggurpoin, manggapoin, jerukpoin, apelpoin] = Array.from({ length: 5 }, () => Math.floor(Math.random() * 500));
 
@@ -50,18 +50,18 @@ Tunggu ${msToTime(diff - now)} lagi.`);
 	user.lastberkebon = now;
 
 	m.reply(`
-Selamat ${conn.getName(m.sender)}!
-Kamu mendapatkan:
-+${pisangpoin} Pisang
-+${manggapoin} Mangga
-+${anggurpoin} Anggur
-+${jerukpoin} Jeruk
-+${apelpoin} Apel
+Congratulations ${conn.getName(m.sender)}!
+You got:
++${pisangpoin} Banana
++${manggapoin} Mango
++${anggurpoin} Grape
++${jerukpoin} Orange
++${apelpoin} Apple
 
-${usedPrefix}listbuah Untuk melihat listnya.`);
+${usedPrefix}listbuah To see the list.`);
 
 	setTimeout(() => {
-		m.reply(`Waktunya berkebun lagi kak 🌱`);
+		m.reply(`It's time to farm again 🌱`);
 	}, timeout);
 };
 
@@ -76,5 +76,5 @@ function msToTime(ms) {
 	let s = Math.floor((ms / 1000) % 60);
 	let m = Math.floor((ms / (1000 * 60)) % 60);
 	let h = Math.floor((ms / (1000 * 60 * 60)) % 24);
-	return `${h} Jam ${m} Menit ${s} Detik`;
+	return `${h} Hours ${m} Minutes ${s} Seconds`;
 }

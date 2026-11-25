@@ -28,16 +28,16 @@ async function loadCookiesFromFile() {
 
 async function getSessionTokens() {
     const cookieHeader = await loadCookiesFromFile();
-    if (!cookieHeader) throw new Error('Cookie tidak ditemukan. Buat file Geminicook.txt di folder utama bot!');
+    if (!cookieHeader) throw new Error('Cookie not found. Create the Geminicook.txt file in the bot main folder!');
 
     const resHtml = await fetch('https://gemini.google.com/app', {
         headers: { 'User-Agent': USER_AGENT, 'Cookie': cookieHeader }
     });
     const html = await resHtml.text();
     const matchWiz = html.match(/window\.WIZ_global_data\s*=\s*(\{[\s\S]*?\});/);
-    if (!matchWiz) throw new Error('Cookie expired! Ganti cookie baru.');
+    if (!matchWiz) throw new Error('Cookie expired! Replace it with a new cookie.');
     const wiz = JSON.parse(matchWiz[1]);
-    if (!wiz.SNlM0e) throw new Error('Gagal ambil token SNlM0e');
+    if (!wiz.SNlM0e) throw new Error('Failed to get SNlM0e token');
     return { at: wiz.SNlM0e, bl: wiz.cfb2h, fsid: wiz.FdrFJe, cookies: cookieHeader };
 }
 
@@ -50,7 +50,7 @@ async function uploadMedia(buffer) {
         headers: { 'X-Tenant-Id': 'bard-storage', 'Push-ID': 'feeds/mcudyrk2a4khkz' },
         body: form
     });
-    if (!res.ok) throw new Error(`Upload gagal ${res.status}`);
+    if (!res.ok) throw new Error(`Upload failed ${res.status}`);
     return (await res.text()).trim();
 }
 
@@ -124,15 +124,15 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
 
     if (query.toLowerCase() === 'reset') {
         delete global.geminiChatSessions[chatId];
-        return m.reply('✅ Ingatan dihapus!\n\n◠⿻ Rem Bot 🤖✨');
+        return m.reply('✅ Memory cleared!\n\n◠⿻ Rem Bot 🤖✨');
     }
 
     const q = m.quoted? m.quoted : m;
     const mime = (q.msg || q).mimetype || '';
     const isImage = /image/.test(mime);
 
-    if (!query &&!isImage) return m.reply(`Ketik pertanyaan!\nContoh: ${usedPrefix + command} halo\n\n◠⿻ Rem Bot`);
-    if (!query && isImage) query = 'Jelaskan gambar ini';
+    if (!query &&!isImage) return m.reply(`Type a question!\nExample: ${usedPrefix + command} hello\n\n◠⿻ Rem Bot`);
+    if (!query && isImage) query = 'Describe this image';
 
     let fileData = null;
     if (isImage) {
@@ -141,7 +141,7 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
             const uploadId = await uploadMedia(buffer);
             fileData = [[[uploadId], 'image.jpg']];
         } catch (e) {
-            return m.reply('Gagal baca gambar: ' + e.message);
+            return m.reply('Failed to read image: ' + e.message);
         }
     }
 
@@ -149,7 +149,7 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
         await conn.sendMessage(m.chat, { react: { text: '🤖', key: m.key } });
         const sessionData = global.geminiChatSessions[chatId] || { turnIndex: 0 };
         const result = await askGemini(query, sessionData, fileData);
-        if (!result.text) throw new Error('Respon kosong');
+        if (!result.text) throw new Error('Empty response');
 
         global.geminiChatSessions[chatId] = {
             conversationId: result.conversationId,

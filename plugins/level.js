@@ -1,13 +1,13 @@
 // ============================================
 // © 2026 YONO BOT - All Rights Reserved
 // Original Code By YONO BOT
-// Dilarang Copy / Re-upload Tanpa Izin
+// No Copy / Re-upload Without Permission
 // ============================================
 
 import fetch from 'node-fetch'
 import { generateWAMessageContent } from 'baileys'
 
-// FUNGSI YANG RETURN CODE - SAMA MACAM TADI
+// FUNCTION THAT RETURNS CODE - SAME AS BEFORE
 function buildLevelCode({ name, role, level, exp, nextExp, need, persen, imageUrl }) {
   return {
     version: "v0.9",
@@ -16,16 +16,16 @@ function buildLevelCode({ name, role, level, exp, nextExp, need, persen, imageUr
       catalogId: "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json",
       components: [
         { id: "root", component: "Column", justify: "center", align: "center", children: ["topImage", "titleLevel", "userName", "line1", "detailBox", "line2", "channelBtn", "footerText"] },
-        // GAMBAR DI ATAS
+        // IMAGE ON TOP
         { id: "topImage", component: "Image", url: imageUrl, variant: "header", fit: "cover" },
         { id: "titleLevel", component: "Text", text: `LEVEL ${level}`, variant: "h1" },
         { id: "userName", component: "Text", text: `${name} - ${role}`, variant: "caption" },
         { id: "line1", component: "Divider", axis: "horizontal" },
-        { id: "detailBox", component: "Text", text: `Level : ${level}\nExp : ${exp} / ${nextExp}\nProgress : ${persen}%\nKurang : ${need} exp lagi untuk naik level`, variant: "body" },
+        { id: "detailBox", component: "Text", text: `Level : ${level}\nExp : ${exp} / ${nextExp}\nProgress : ${persen}%\nNeed : ${need} more exp to level up`, variant: "body" },
         { id: "line2", component: "Divider", axis: "horizontal" },
         { id: "channelBtn", component: "Button", child: "channelBtnText", variant: "primary", action: { call: "openUrl", args: { url: "https://whatsapp.com/channel/0029VbDd8Iw5Ejxwlvjl3l1r" } } },
         { id: "channelBtnText", component: "Text", text: "Official Channel", variant: "body" },
-        { id: "footerText", component: "Text", text: "© YONO BOT - Terus aktif untuk naik level!", variant: "caption" }
+        { id: "footerText", component: "Text", text: "© YONO BOT - Keep active to level up!", variant: "caption" }
       ]
     }
   }
@@ -47,10 +47,10 @@ let handler = async (m, { conn }) => {
 
   const imageUrl = 'https://cdn.zass.in/B8oGADAjNI.jpg'
 
-  // 1. PANGGIL FUNGSI YANG RETURN CODE
+  // 1. CALL THE FUNCTION THAT RETURNS CODE
   const uiData = buildLevelCode({ name, role, level, exp, nextExp, need, persen, imageUrl })
 
-  // 2. INI KUNCINYA BIAR GAMBAR PASTI MUNCUL - UPLOAD GAMBAR KE WHATSAPP DULU
+  // 2. THIS IS THE KEY SO THE IMAGE SURELY APPEARS - UPLOAD IMAGE TO WHATSAPP FIRST
   let headerImage = null
   try {
     const res = await fetch(imageUrl)
@@ -58,10 +58,10 @@ let handler = async (m, { conn }) => {
     const { imageMessage } = await generateWAMessageContent({ image: buffer }, { upload: conn.waUploadToServer })
     headerImage = imageMessage
   } catch (e) {
-    console.log('Gagal load gambar:', e.message)
+    console.log('Failed to load image:', e.message)
   }
 
-  // 3. KIRIM DENGAN HEADER IMAGE - INI YANG BIKIN GAMBAR MUNCUL DI ATAS
+  // 3. SEND WITH HEADER IMAGE - THIS MAKES THE IMAGE APPEAR ON TOP
   await conn.relayMessage(m.chat, {
     interactiveMessage: {
       header: {
@@ -70,8 +70,8 @@ let handler = async (m, { conn }) => {
         hasMediaAttachment: true,
         imageMessage: headerImage
       },
-      // DESKRIPSI TANPA EMOJI
-      body: { text: `${name} - ${role}\nLevel ${level} - ${exp} / ${nextExp} Exp\nProgress ${persen}% - Kurang ${need} exp lagi\nMoney ${money} - Limit ${limit}\n\nKlik untuk lihat detail lengkap` },
+      // DESCRIPTION WITHOUT EMOJI
+      body: { text: `${name} - ${role}\nLevel ${level} - ${exp} / ${nextExp} Exp\nProgress ${persen}% - Need ${need} more exp\nMoney ${money} - Limit ${limit}\n\nClick to see full detail` },
       footer: { text: "© YONO BOT" },
       nativeFlowMessage: {},
       bloksWidget: {

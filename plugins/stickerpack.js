@@ -49,7 +49,7 @@ async function getDetail(slug) {
 let handler = async (m, { conn, args, usedPrefix }) => {
   let query = args.join(" ").trim();
   if (!query) {
-    return conn.reply(m.chat, `*STICKER PACK*\n\nContoh: ${usedPrefix}sp anime`, m);
+    return conn.reply(m.chat, `*STICKER PACK*\n\nExample: ${usedPrefix}sp anime`, m);
   }
 
   await conn.sendMessage(m.chat, { react: { text: "⏳", key: m.key } });
@@ -57,17 +57,17 @@ let handler = async (m, { conn, args, usedPrefix }) => {
   let packs = await searchPack(query);
   if (!packs.length) {
     await conn.sendMessage(m.chat, { react: { text: "❌", key: m.key } });
-    return conn.reply(m.chat, `Gagal search API. Coba query lain atau coba lagi nanti.\nQuery: ${query}`, m);
+    return conn.reply(m.chat, `Search API failed. Try another query or try again later.\nQuery: ${query}`, m);
   }
 
   let random = packs[Math.floor(Math.random() * packs.length)];
   let detail = await getDetail(random.slug || random.title);
 
   if (!detail || !detail.stickers.length) {
-    return conn.reply(m.chat, `Gagal ambil detail pack ${random.title}`, m);
+    return conn.reply(m.chat, `Failed to get pack detail ${random.title}`, m);
   }
 
-  await conn.reply(m.chat, `> Pack: *${detail.title}*\n> Mengirim ${Math.min(detail.stickers.length, 10)} sticker...`, m);
+  await conn.reply(m.chat, `> Pack: *${detail.title}*\n> Sending ${Math.min(detail.stickers.length, 10)} stickers...`, m);
 
   let sent = 0;
   for (let url of detail.stickers.slice(0, 10)) {
@@ -79,7 +79,7 @@ let handler = async (m, { conn, args, usedPrefix }) => {
   }
 
   await conn.sendMessage(m.chat, { react: { text: "✅", key: m.key } });
-  if (sent == 0) conn.reply(m.chat, `Gagal kirim, mungkin s3 diblokir host`, m);
+  if (sent == 0) conn.reply(m.chat, `Failed to send, maybe s3 is blocked by the host`, m);
 };
 
 handler.help = ['stickerpack'];

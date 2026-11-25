@@ -10,10 +10,10 @@ let handler = async (m, { conn }) => {
 
 		if (user.health < 80)
 			return m.reply(
-				'Minimal 80 Health Untuk Bisa Berpetualang\nKamu Bisa Menggunakan Potion Dengan Cara *.heal*\nJika Tidak Mempunyai Potion Kamu Bisa Beli Dengan Cara *.buy potion (jumlah)*'
+				'Minimum 80 Health to be able to adventure\nYou can use a Potion by typing *.heal*\nIf you do not have a Potion you can buy one with *.buy potion (amount)*'
 			);
 
-		if (diff < cooldown) return m.reply(`Kamu Sudah Berpetualang Hari Ini, Istirahat Selama *${timers}*`);
+		if (diff < cooldown) return m.reply(`You have already adventured today, rest for *${timers}*`);
 
 		const health = Math.floor(Math.random() * 101);
 		const exp = Math.floor(Math.random() * 10000);
@@ -37,21 +37,21 @@ let handler = async (m, { conn }) => {
 		const mythic = pickRandom(_mythic);
 		const legendary = pickRandom(_legendary);
 
-		const itemrand = [`*${mythic} Peti Mistis Langka*`, `*${legendary} Peti Legendary Langka*`];
+		const itemrand = [`*${mythic} Rare Mystic Crate*`, `*${legendary} Rare Legendary Crate*`];
 
 		const str = `
-Nyawa Mu Berkurang Sebesar -${health}, Karena Kamu Berpetualang Dan Melawan ${pickRandom(['Raksasa', 'Beruang', 'Harimau', 'Macan', 'Iblis'])} Tapi Kamu Mendapatkan:
+Your health decreased by -${health}, because you went adventuring and fought ${pickRandom(['Giant', 'Bear', 'Tiger', 'Leopard', 'Demon'])} but you got:
 
 *Exp:* ${exp} 
-*Uang:* ${uang}
-*Berlian:* ${diamond}
+*Money:* ${uang}
+*Diamonds:* ${diamond}
 *Emerald:* ${emerald}
-*Sampah:* ${sampah}
+*Trash:* ${sampah}
 ${potion == 0 ? '' : '*Potion:* ' + potion}
 ${common == 0 ? '' : '*Common crate:* ' + common}
 ${uncommon == 0 ? '' : '*Uncommon crate:* ' + uncommon}
 
-Dan Mendapatkan ${itemrand}
+And got ${itemrand}
 `.trim();
 
 		conn.adReply(m.chat, str, 'https://c4.wallpaperflare.com/wallpaper/755/258/362/action-adventure-anime-chronicles-wallpaper-preview.jpg', m);
@@ -100,5 +100,5 @@ function clockString(ms) {
 	let h = isNaN(ms) ? '--' : Math.floor(ms / 3600000) % 24;
 	let m = isNaN(ms) ? '--' : Math.floor(ms / 60000) % 60;
 	let s = isNaN(ms) ? '--' : Math.floor(ms / 1000) % 60;
-	return ['\n' + d, ' *Hari*\n ', h, ' *Jam*\n ', m, ' *Menit*\n ', s, ' *Detik* '].map((v) => v.toString().padStart(2, 0)).join('');
+	return ['\n' + d, ' *Days*\n ', h, ' *Hours*\n ', m, ' *Minutes*\n ', s, ' *Seconds* '].map((v) => v.toString().padStart(2, 0)).join('');
 }

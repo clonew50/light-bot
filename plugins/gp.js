@@ -1,4 +1,4 @@
-// plugins/gp.js - Yono BOT - 2 PESAN - COPY DI ATAS
+// plugins/gp.js - Yono BOT - 2 MESSAGES - COPY FROM ABOVE
 import cp, { exec as _exec } from 'child_process';
 import { promisify } from 'util';
 import { generateWAMessageFromContent, generateMessageIDV2 } from 'baileys';
@@ -15,11 +15,11 @@ class AIRich {
    addTip(t){ this._submessages.push({messageType:2,messageText:t}); this._sections.push(AIRich.L('Single',{text:t,__typename:'GenAIMetadataTextPrimitive'})); return this }
    addSuggest(a){ const arr=Array.isArray(a)?a:[a]; this._sections.push(AIRich.L('ActionRow', arr.map(x=>({prompt_text:x,prompt_type:'SUGGESTED_PROMPT',__typename:'GenAIFollowUpSuggestionPillPrimitive'})))); return this }
 
-   // ===== الكود كامل + زر نسخ فالفوق فالقنت =====
+   // ===== full code + copy button on top =====
    addCodeFull(c){
      const tk=[{codeContent:c,highlightType:0}];
      this._submessages.push({messageType:5,codeMetadata:{codeLanguage:'javascript',codeBlocks:tk}});
-     // 1 - زر النسخ هو اللول باش يبان فالفوق فالقنت
+     // 1 - the copy button is the trick to appear at the top
      this._sections.push({
        view_model: {
          __typename: 'GenAIAddonActionLayoutViewModel',
@@ -28,7 +28,7 @@ class AIRich {
          primitives: [{ __typename: 'GenAIMarkdownTextUXPrimitive', text: `\`${c}\``, inline_entities: [] }]
        }
      });
-     // 2 - من بعدو الكود كامل
+     // 2 - then the full code
      this._sections.push(AIRich.L('Single',{language:'javascript',code_blocks:tk.map(x=>({content:x.codeContent,type:'DEFAULT'})),__typename:'GenAICodeUXPrimitive'}));
      return this;
    }
@@ -87,15 +87,15 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
      const r = new AIRich(conn)
     .setTitle(`PLUGIN LIST - ${ar1.length} FILE`)
     .setFooter(`Yono BOT - Developer ${dev} - ${ar1.length} plugin`)
-    .addEntity({title:`${ar1.length} Plugin Tersedia`, subtitle:`Owner of Yono BOT`, secondary:`${dev} - Verified`, id:dev, imageUrl:devPp})
-    .addText(`DAFTAR PLUGIN LENGKAP\nTotal: ${ar1.length} file\nDeveloper: ${dev}\nBot: Yono BOT`)
+    .addEntity({title:`${ar1.length} Plugins Available`, subtitle:`Owner of Yono BOT`, secondary:`${dev} - Verified`, id:dev, imageUrl:devPp})
+    .addText(`COMPLETE PLUGIN LIST\nTotal: ${ar1.length} file\nDeveloper: ${dev}\nBot: Yono BOT`)
     .addTable([
-         ['No','Nama Plugin','Tag','Akses'],
+         ['No','Plugin Name','Tag','Access'],
       ...rows.slice(0,50)
        ])
     .addSource([{icon:devPp, url:`https://wa.me/${dev}`, title:`Developer ${dev}`, subtitle:`${ar1.length} plugin`}])
     .addSuggest(ar1.slice(0,5).map(v=>`${usedPrefix+command} ${v}`))
-    .addTip(`Ketik ${usedPrefix+command} nama_plugin untuk melihat kode - Yono BOT`);
+    .addTip(`Type ${usedPrefix+command} plugin_name to view code - Yono BOT`);
 
      return await r.send(m.chat,{quoted:m});
    }
@@ -104,9 +104,9 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
      const rnf = new AIRich(conn)
     .setTitle('NOT FOUND')
     .setFooter(`Yono BOT - ${dev}`)
-    .addEntity({title:`${text} - Not Found`, subtitle:`Plugin tidak ada`, secondary:dev, id:dev, imageUrl:devPp})
-    .addText(`Plugin ${text} tidak ditemukan\nCek daftar dengan ${usedPrefix+command}`)
-    .addTable([['No','Nama Plugin','Status'],...ar1.slice(0,30).map((v,i)=>[(i+1).toString(), v, 'OK'])]);
+    .addEntity({title:`${text} - Not Found`, subtitle:`Plugin not found`, secondary:dev, id:dev, imageUrl:devPp})
+    .addText(`Plugin ${text} not found\nCheck list with ${usedPrefix+command}`)
+    .addTable([['No','Plugin Name','Status'],...ar1.slice(0,30).map((v,i)=>[(i+1).toString(), v, 'OK'])]);
      return await rnf.send(m.chat,{quoted:m});
    }
 
@@ -116,31 +116,31 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
      let lines = content.split('\n').length;
      let size = content.length;
 
-     // ===== الرسالة 1 - غا المعلومات + الجدول =====
+     // ===== message 1 - info + table =====
      const rfile = new AIRich(conn)
     .setTitle(`PLUGIN: ${text}.js`)
     .setFooter(`Yono BOT - ${dev} - ${size} chars`)
-    .addEntity({title:`${text}.js`, subtitle:`${size} chars - ${lines} baris`, secondary:`Developer ${dev}`, id:dev, imageUrl:devPp})
+    .addEntity({title:`${text}.js`, subtitle:`${size} chars - ${lines} lines`, secondary:`Developer ${dev}`, id:dev, imageUrl:devPp})
     .addTable([
          ['Info','Detail'],
-         ['Nama File', `${text}.js`],
-         ['Ukuran', `${size} char`],
-         ['Baris', `${lines} baris`],
+         ['File Name', `${text}.js`],
+         ['Size', `${size} char`],
+         ['Lines', `${lines} lines`],
          ['Developer', dev],
          ['Bot', 'Yono BOT'],
-         ['Status', 'Aktif']
+         ['Status', 'Active']
        ])
-    .addText(`Kode lengkap dikirim di pesan berikutnya dengan tombol salin di atas.`)
+    .addText(`Full code sent in the next message with the copy button above.`)
     .addSource([{icon:devPp, url:`https://wa.me/${dev}`, title:`Developer ${dev}`}])
     .addSuggest([`${usedPrefix+command} ${text}`]);
 
      await rfile.send(m.chat,{quoted:m});
 
-     // ===== الرسالة 2 - غا الكود كامل بوحدو + زر نسخ فالفوق فالقنت =====
+     // ===== message 2 - full code as one + copy button on top =====
      const rcode = new AIRich(conn)
       .setTitle(`CODE: ${text}.js`)
       .setFooter(`Yono BOT - ${text}.js - ${size} chars`)
-      .addCodeFull(content); // كامل - ما مقطعش
+      .addCodeFull(content); // complete - not truncated
 
      await rcode.send(m.chat,{quoted:m});
 

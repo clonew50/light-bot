@@ -7,20 +7,20 @@ let handler = async (m, { text, usedPrefix, command }) => {
 		if (parseUrl) {
 			m.react('🔁');
 			let res = await (await fetch(`https://www.tikwm.com/api/?url=${parseUrl}&hd=1`)).json();
-			if (!res || !res.data) 'Gagal mengambil data dari TikTok.';
+			if (!res || !res.data) 'Failed to fetch data from TikTok.';
 
 			let data = res.data;
 			await m.reply(`# *TIKTOK DOWNLOADER*
 
-> *Judul*: ${data.title}
+> *Title*: ${data.title}
 > *Region*: ${data.region}
 > *Durasi*: ${formatDuration(data.duration)}
 > *Views*: ${formatNumber(data.play_count)}
-> *Komentar*: ${formatNumber(data.comment_count)}
+> *Comments*: ${formatNumber(data.comment_count)}
 > *Share*: ${formatNumber(data.share_count)}
 > *Uploader*: ${data.author.nickname || data.author.unique_id}
 
-Mengirim.....`);
+Sending.....`);
 
 			if (data.images && data.images.length > 0) {
 				if (data.images.length < 2) {
@@ -48,20 +48,20 @@ Mengirim.....`);
 					{ quoted: m }
 				);
 			} else {
-				m.reply('Musik tidak ditemukan, hanya akan mengirimkan media itu saja.');
+				m.reply('Music not found, will only send the media.');
 			}
 		} else if (input) {
 			let search = await (await fetch(`https://www.tikwm.com/api/feed/search?keywords=${input}&count=1&cursor=0&web=1&hd=1`)).json();
 			let video = search?.data?.videos[0];
-			if (!video) throw `Video tidak ditemukan untuk pencarian "${input}".`;
+			if (!video) throw `Video not found for the search "${input}".`;
 
 			let caption = `# *TIKTOK PLAYER*
 
-> *Judul:* ${video.title}
+> *Title:* ${video.title}
 > *Region:* ${video.region}
 > *Durasi:* ${formatDuration(video.duration)}
 > *Views:* ${formatNumber(video.play_count)}
-> *Komentar:* ${formatNumber(video.comment_count)}
+> *Comments:* ${formatNumber(video.comment_count)}
 > *Share:* ${formatNumber(video.share_count)}
 > *Uploader:* ${video.author.nickname || video.author.unique_id}
 `.trim();
@@ -72,13 +72,13 @@ Mengirim.....`);
 > _*• Search:*_ \`${cmd} [query]\`
 > _*• Download:*_ \`${cmd} [link]\`
 
-*C O N T O H:*
+*E X A M P L E:*
 > *• ${cmd}* cosplayer
 > *• ${cmd}* \`https://vt.tiktok.com/xxxxx\``);
 		}
 	} catch (err) {
 		console.error(err);
-		return m.reply('Terjadi kesalahan saat memproses permintaan');
+		return m.reply('An error occurred while processing the request');
 	}
 };
 

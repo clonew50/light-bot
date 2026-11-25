@@ -98,10 +98,10 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
     conn.pornhubSearch = conn.pornhubSearch || {};
 
     if(!text){
-        return conn.reply(m.chat, `*Cara pakai:*\n${usedPrefix+command} <query>\n${usedPrefix+command} <url>\n\nContoh:\n${usedPrefix}phsearch arab\n${usedPrefix}ph https://www.pornhub.com/view_video.php?viewkey=xxx`, m);
+        return conn.reply(m.chat, `*How to use:*\n${usedPrefix+command} <query>\n${usedPrefix+command} <url>\n\nExample:\n${usedPrefix}phsearch arab\n${usedPrefix}ph https://www.pornhub.com/view_video.php?viewkey=xxx`, m);
     }
 
-    // jika link -> langsung download
+    // if link -> download directly
     if(isLink(text)){
         try{
             await m.react('⏳');
@@ -118,15 +118,15 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
         return;
     }
 
-    // jika query -> search
+    // if query -> search
     try{
         await m.react('🔍');
         let results = await searchPornhub(text);
-        if(!results.length) return conn.reply(m.chat, `❌ Tidak ada hasil untuk: *${text}*`, m);
+        if(!results.length) return conn.reply(m.chat, `❌ No results for: *${text}*`, m);
 
         let teks = `「 *P O R N H U B - S E A R C H* 」\n*Query:* ${text}\n\n`;
         teks += results.map((v,i)=>`*_${i+1}. ${v.title}_*\n🎞️ ${v.duration} | 👀 ${v.views}\n🔗 ${v.url}\n`).join('\n──────────────\n');
-        teks += `\n\n*Balas angka 1-${results.length} untuk download*`;
+        teks += `\n\n*Reply with a number 1-${results.length} to download*`;
 
         await conn.reply(m.chat, teks, m);
 
@@ -144,7 +144,7 @@ handler.before = async (m, { conn }) => {
     conn.pornhub = conn.pornhub || {};
     conn.pornhubSearch = conn.pornhubSearch || {};
 
-    // STEP 1: pilih hasil search
+    // STEP 1: choose a search result
     if(m.sender in conn.pornhubSearch){
         let input = m.text?.trim();
         if(!/^\d+$/.test(input)) return;
@@ -168,12 +168,12 @@ handler.before = async (m, { conn }) => {
                 timeout: setTimeout(()=>{ delete conn.pornhub[m.sender]; }, 160000),
             };
         }catch(e){
-            await conn.reply(m.chat, `⚠️ Gagal ambil video: ${e.message}`, m);
+            await conn.reply(m.chat, `⚠️ Failed to get video: ${e.message}`, m);
         }
         return true;
     }
 
-    // STEP 2: pilih kualitas untuk download
+    // STEP 2: choose quality to download
     if(m.sender in conn.pornhub){
         let input = m.text?.match(/^\d+$/);
         if(!input) return;
@@ -214,7 +214,7 @@ handler.help = ['phsearch <query>', 'ph <url>'];
 handler.tags = ['adult'];
 handler.command = ['phsearch','pornhubsearch','ph','pornhub'];
 
-// KHUSUS OWNER / DEVELOPER
+// OWNER / DEVELOPER ONLY
 handler.owner = true
 handler.rowner = true
 handler.mods = false

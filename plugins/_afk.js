@@ -3,8 +3,8 @@ export function before(m) {
 	if (user?.afk > -1) {
 		m.reply(
 			`
-${conn.getName(m.sender)} berhenti AFK${user.afkReason ? ' setelah ' + user.afkReason : ''}
-Selama ${(new Date() - user.afk).toTimeString()}
+${conn.getName(m.sender)} stopped being AFK${user.afkReason ? ' after ' + user.afkReason : ''}
+For ${(new Date() - user.afk).toTimeString()}
   `.trim()
 		);
 		user.afk = -1;
@@ -19,9 +19,9 @@ Selama ${(new Date() - user.afk).toTimeString()}
 		let reason = user.afkReason;
 		m.reply(
 			`
-${conn.getName(m.sender)} Jangan tag dia!
-Dia sedang AFK ${reason ? 'dengan alasan ' + reason : 'tanpa alasan'}
-Selama ${(new Date() - afkTime).toTimeString()}
+${conn.getName(m.sender)} Don't tag them!
+They are AFK ${reason ? 'with reason ' + reason : 'without reason'}
+For ${(new Date() - afkTime).toTimeString()}
   `.trim()
 		);
 	}

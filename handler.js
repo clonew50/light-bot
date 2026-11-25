@@ -186,14 +186,14 @@ export async function handler(chatUpdate) {
 				m.isCommand = true;
 				let xp = 'exp' in plugin ? parseInt(plugin.exp) : 17; // XP Earning per command
 				if (xp > 200)
-					m.reply('Ngecit -_-'); // Hehehe
+					m.reply('Cheating -_-'); // Hehehe
 				else m.exp += xp;
 				if (!isPrems && plugin.limit && global.db.data.users[m.sender].limit < plugin.limit * 1) {
-					this.reply(m.chat, `[❗] Limit anda habis, silahkan beli melalui *${usedPrefix}buy limit*`, m);
-					continue; // Limit habis
+					this.reply(m.chat, `[❗] Your limit is exhausted, please buy via *${usedPrefix}buy limit*`, m);
+					continue; // Limit exhausted
 				}
 				if (plugin.level > _user.level) {
-					this.reply(m.chat, `[💬] Diperlukan level ${plugin.level} untuk menggunakan perintah ini\n*Level mu:* ${_user.level} 📊`, m);
+					this.reply(m.chat, `[💬] Level ${plugin.level} is required to use this command\n*Your level:* ${_user.level} 📊`, m);
 					continue; // If the level has not been reached
 				}
 				let extra = {
@@ -247,7 +247,7 @@ export async function handler(chatUpdate) {
 							console.error(e);
 						}
 					}
-					if (m.limit) m.reply(+m.limit + ' Limit terpakai ✔️');
+					if (m.limit) m.reply(+m.limit + ' Limit used ✔️');
 				}
 				break;
 			}
@@ -316,7 +316,7 @@ export async function participantsUpdate({ id, participants, action, simulate = 
 						.replace('@user', `@${user.split('@')[0]}`)
 						.replace('@subject', this.getName(id))
 						.replace('@desc', groupMetadata.desc || '');
-					this.adReply(id, text, tamnel, null, { title: action == 'add' ? '💌 WELCOME' : '🐾 BYE', description: action == 'add' ? 'YAELAH BEBAN GROUP NAMBAH 1 :(' : 'BYE BEBAN! :)' });
+					this.adReply(id, text, tamnel, null, { title: action == 'add' ? '💌 WELCOME' : '🐾 BYE', description: action == 'add' ? 'OH NO GROUP BURDEN INCREASED BY 1 :(' : 'BYE BURDEN! :)' });
 				}
 			}
 			break;
@@ -368,8 +368,8 @@ export async function deleteUpdate(message) {
 		await this.reply(
 			msg.chat,
 			`
-Terdeteksi @${participant.split`@`[0]} telah menghapus pesan
-Untuk mematikan fitur ini, ketik
+Detected @${participant.split`@`[0]} has deleted a message
+To disable this feature, type
 *.enable delete*
 `.trim(),
 			msg,
@@ -385,15 +385,15 @@ Untuk mematikan fitur ini, ketik
 
 global.dfail = (type, m, conn) => {
 	let msg = {
-		rowner: 'Only Developer - Command ini hanya untuk developer bot',
-		owner: 'Only Owner - Command ini hanya untuk owner bot',
-		premium: 'Only Premium - Command ini hanya untuk pengguna premium',
-		group: 'Group Chat - Command ini hanya bisa dipakai di dalam grup',
-		private: 'Private Chat - Command ini hanya bisa dipakai di private chat',
-		admin: 'Only Admin - Command ini hanya untuk admin grup',
-		botAdmin: 'Only Bot Admin - Command ini hanya bisa digunakan ketika bot menjadi admin',
-		unreg: 'Halo kak! 👋 Anda harus mendaftar ke database bot dulu sebelum menggunakan fitur ini\nCara daftarnya tulis .daftar Nama.umur',
-		restrict: 'Restrict - Fitur restrict belum diaktifkan di chat ini',
+		rowner: 'Only Developer - This command is only for bot developer',
+		owner: 'Only Owner - This command is only for bot owner',
+		premium: 'Only Premium - This command is only for premium users',
+		group: 'Group Chat - This command can only be used in groups',
+		private: 'Private Chat - This command can only be used in private chat',
+		admin: 'Only Admin - This command is only for group admins',
+		botAdmin: 'Only Bot Admin - This command can only be used when bot is admin',
+		unreg: 'Hello! 👋 You must register to the bot database first before using this feature\nHow to register: type .daftar Name.age',
+		restrict: 'Restrict - Restrict feature not activated in this chat',
 	}[type];
 	if (msg) return conn.reply(m.chat, msg, m);
 };

@@ -8,18 +8,18 @@ let handler = async (m, { sock, config }) => {
 
     if (!/video/.test(mime)) {
         return m.reply(
-            `⚠️ *Cara Pakai PTV Channel*\n\n` +
-            `Balas video dengan perintah:\n` +
+            `⚠️ *How to Use PTV Channel*\n\n` +
+            `Reply to a video with the command:\n` +
             `*.ptvchan*\n\n` +
-            `Contoh: reply video >.ptvchan`
+            `Example: reply to a video >.ptvchan`
         )
     }
 
-    await m.reply(`⏳ _Mengirim PTV bulat ke Channel..._`)
+    await m.reply(`⏳ _Sending round PTV to the Channel..._`)
 
     try {
         let videoBuffer = await q.download()
-        if (!videoBuffer) throw new Error('Gagal download')
+        if (!videoBuffer) throw new Error('Failed to download')
 
         // ID Channel - بدلو هنا إلا بغيتي
         let channelId = '120363404849776664@newsletter'
@@ -37,12 +37,12 @@ let handler = async (m, { sock, config }) => {
         })
 
         await sock.sendMessage(m.chat, { react: { text: '✅', key: m.key } })
-        return m.reply(`✅ *Berhasil!*\nPTV bulat berhasil dikirim ke Channel\nID: ${channelId}\n\n© 2026 ALYA BOT | YONO`)
+        return m.reply(`✅ *Success!*\nRound PTV successfully sent to the Channel\nID: ${channelId}\n\n© 2026 ALYA BOT | YONO`)
 
     } catch (e) {
         console.error('[ptvchan elaina]', e)
         await sock.sendMessage(m.chat, { react: { text: '❌', key: m.key } })
-        return m.reply(`❌ *Gagal!*\n\nPastikan bot sudah jadi ADMIN di Channel.\nError: ${e.message}`)
+        return m.reply(`❌ *Failed!*\n\nMake sure the bot is already an ADMIN in the Channel.\nError: ${e.message}`)
     }
 }
 

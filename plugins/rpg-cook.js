@@ -85,14 +85,14 @@ let handler = async (m, { conn, args }) => {
 				return conn.reply(m.chat, menu, m);
 		}
 
-		if (user[bahan] < count * 2 || user.coal < count) return m.reply(`❗ Bahan tidak cukup\nButuh: *${2 * count} ${bahan}* dan *${count} coal*`);
+		if (user[bahan] < count * 2 || user.coal < count) return m.reply(`❗ Not enough ingredients\nNeed: *${2 * count} ${bahan}* and *${count} coal*`);
 
 		user[bahan] -= count * 2;
 		user.coal -= count;
 
 		user[result] += count;
 
-		m.reply(m.chat, `✅ Berhasil memasak *${count} ${type}* 🍽️`, m);
+		m.reply(m.chat, `✅ Successfully cooked *${count} ${type}* 🍽️`, m);
 	} catch (e) {
 		console.log(e);
 		m.reply('Error');

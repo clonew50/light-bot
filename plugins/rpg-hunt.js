@@ -57,16 +57,16 @@ let handler = async (m, { conn }) => {
 		let _healing = `${Math.floor(Math.random() * 100)}`.trim();
 		let healing = _healing * 1;
 		player.health -= healing;
-		player.lasthunt = new Date() * 1; // waktu hunt 2menit
+		player.lasthunt = new Date() * 1; // hunt time 2 minutes
 
 		if (player.health < 0) {
-			let msg = `*@${pengirim}* Anda Mati Di Bunuh Oleh ${monsterName}`;
+			let msg = `*@${pengirim}* You Died Killed By ${monsterName}`;
 			if (player.level > 0) {
 				if (player.sword > 0) {
 					player.level -= 1;
 					player.sword -= 5;
 					player.exp -= exp * 1;
-					msg += `\nLevel Anda Turun 1 Karena Mati Saat Berburu!\nSword Anda Berkurang 5 Karena Mati Saat Berburu!`;
+					msg += `\nYour Level Dropped 1 Because You Died While Hunting!\nYour Sword Decreased By 5 Because You Died While Hunting!`;
 				}
 			}
 			player.health = 100;
@@ -78,16 +78,16 @@ let handler = async (m, { conn }) => {
 		player.exp += exp * 1;
 		global.db.data.users[m.sender].tiketcoin += 1;
 
-		let pesan = `Berhasil Menemukan *${monsterName}*
-*@${pengirim}* Kamu Sudah Membunuhnya
-Mendapatkan:
+		let pesan = `Successfully Found *${monsterName}*
+*@${pengirim}* You Have Killed It
+Gained:
 ${new Intl.NumberFormat('en-US').format(coins)} Money
 ${new Intl.NumberFormat('en-US').format(exp)} XP
-Berkurang -${healing} Health, Tersisa ${player.health} Health
+Decreased -${healing} Health, Remaining ${player.health} Health
 
 +1 Tiketcoin`;
 		await conn.reply(m.chat, pesan, m, { mentions: conn.parseMention(pesan) });
-	} else throw `Tunggu ${timers} Untuk Berburu Lagi`;
+	} else throw `Wait ${timers} To Hunt Again`;
 };
 
 handler.help = ['hunter'];
@@ -104,5 +104,5 @@ function clockString(ms) {
 	let h = isNaN(ms) ? '--' : Math.floor(ms / 3600000) % 24;
 	let m = isNaN(ms) ? '--' : Math.floor(ms / 60000) % 60;
 	let s = isNaN(ms) ? '--' : Math.floor(ms / 1000) % 60;
-	return ['\n' + d, ' *Hari*\n ', h, ' *Jam*\n ', m, ' *Menit*\n ', s, ' *Detik* '].map((v) => v.toString().padStart(2, 0)).join('');
+	return ['\n' + d, ' *Days*\n ', h, ' *Hours*\n ', m, ' *Minutes*\n ', s, ' *Seconds* '].map((v) => v.toString().padStart(2, 0)).join('');
 }

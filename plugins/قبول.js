@@ -1,18 +1,18 @@
 let handler = async (m, { conn, isBotAdmin, isAdmin }) => {
-    if (!m.isGroup) return m.reply('❌ Perintah ini hanya untuk di dalam grup')
-    if (!isBotAdmin) return m.reply('❌ Bot harus jadi admin untuk menerima permintaan')
-    if (!isAdmin) return m.reply('❌ Kamu harus jadi admin grup')
+    if (!m.isGroup) return m.reply('❌ This command is only for use inside a group')
+    if (!isBotAdmin) return m.reply('❌ The bot must be an admin to accept requests')
+    if (!isAdmin) return m.reply('❌ You must be a group admin')
 
     try {
-        // Ambil daftar permintaan tertunda
+        // Get the list of pending requests
         const pending = await conn.groupRequestParticipantsList(m.chat)
         
         if (!pending || pending.length === 0) {
-            return await conn.sendMessage(m.chat, { text: '✅ Tidak ada permintaan tertunda saat ini' }, { quoted: m })
+            return await conn.sendMessage(m.chat, { text: '✅ There are no pending requests right now' }, { quoted: m })
         }
 
         let count = 0
-        // Terima semua permintaan
+        // Accept all requests
         for (let req of pending) {
             try {
                 await conn.groupRequestParticipantsUpdate(m.chat, [req.jid || req], "approve")
@@ -21,7 +21,7 @@ let handler = async (m, { conn, isBotAdmin, isAdmin }) => {
             } catch {}
         }
 
-        // Kirim info jumlah yang diterima
+        // Send info about the number accepted
         await conn.relayMessage(
             m.chat,
             {
@@ -31,7 +31,7 @@ let handler = async (m, { conn, isBotAdmin, isAdmin }) => {
                     requestFrom: "0@lid",
                     noteMessage: {
                         extendedTextMessage: {
-                            text: `✅ Berhasil menerima *${count}* permintaan bergabung ke grup ✅`,
+                            text: `✅ Successfully accepted *${count}* join requests to the group ✅`,
                             contextInfo: {
                                 remoteJid: m.chat,
                                 mentionedJid: []
@@ -47,11 +47,11 @@ let handler = async (m, { conn, isBotAdmin, isAdmin }) => {
             {}
         )
 
-        await conn.sendMessage(m.chat, { text: `✅ Diterima *${count}* dari total ${pending.length} permintaan` }, { quoted: m })
+        await conn.sendMessage(m.chat, { text: `✅ Accepted *${count}* out of ${pending.length} requests` }, { quoted: m })
 
     } catch (e) {
         console.log(e)
-        m.reply(`❌ Error: ${e.message}\nPastikan fitur permintaan bergabung diaktifkan di pengaturan grup`)
+        m.reply(`❌ Error: ${e.message}\nMake sure the join request feature is enabled in the group settings`)
     }
 }
 

@@ -20,7 +20,7 @@ let handler = async (m, { conn }) => {
 		clearTimeout(timeout);
 	} catch (e) {
 		clearTimeout(timeout);
-		return m.reply('Gagal fetch URL: ' + e.message);
+		return m.reply('Failed to fetch URL: ' + e.message);
 	}
 
 	if (!res.ok) throw `HTTP Error ${res.status}`;
@@ -28,7 +28,7 @@ let handler = async (m, { conn }) => {
 	const type = (res.headers.get('content-type') || '').split(';')[0];
 	const size = Number(res.headers.get('content-length') || 0);
 
-	if (size > 200 * 1024 * 1024) throw 'File terlalu besar (200MB)';
+	if (size > 200 * 1024 * 1024) throw 'File too large (200MB)';
 
 	const finalUrl = res.url || text;
 	const urlObj = new URL(finalUrl);
@@ -57,7 +57,7 @@ let handler = async (m, { conn }) => {
 				{ quoted: m }
 			);
 		} catch {
-			return m.reply('JSON rusak');
+			return m.reply('Corrupted JSON');
 		}
 	}
 

@@ -3,8 +3,8 @@ import * as cheerio from 'cheerio';
 const mediaRegex = /https?:\/\/(www\.)?mediafire\.com\/(file|folder)\/(\w+)/;
 
 let handler = async (m, { conn, text, usedPrefix, command }) => {
-	if (!text) throw `Contoh:\n${usedPrefix}${command} https://www.mediafire.com/file/941xczxhn27qbby/GBWA_V12.25FF-By.SamMods-.apk/file`;
-	if (!mediaRegex.test(text)) throw 'Link tidak valid! Pastikan link Mediafire benar.';
+	if (!text) throw `Example:\n${usedPrefix}${command} https://www.mediafire.com/file/941xczxhn27qbby/GBWA_V12.25FF-By.SamMods-.apk/file`;
+	if (!mediaRegex.test(text)) throw 'Invalid link! Make sure the Mediafire link is correct.';
 
 	try {
 		let res = await mediafire(text);
@@ -29,7 +29,7 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
 		);
 	} catch (e) {
 		console.error(e);
-		m.reply('Gagal mengambil file dari Mediafire.');
+		m.reply('Failed to fetch the file from Mediafire.');
 	}
 };
 
@@ -42,7 +42,7 @@ export default handler;
 
 async function mediafire(url) {
 	const match = mediaRegex.exec(url);
-	if (!match) throw 'URL tidak valid!';
+	if (!match) throw 'Invalid URL!';
 
 	const id = match[3];
 	const response = await fetch(url);
@@ -50,12 +50,12 @@ async function mediafire(url) {
 	const $ = cheerio.load(html);
 
 	const download = $('a#downloadButton').attr('href');
-	if (!download) throw 'Gagal mengambil link unduhan dari halaman Mediafire.';
+	if (!download) throw 'Failed to get the download link from the Mediafire page.';
 
 	const infoResponse = await fetch(`https://www.mediafire.com/api/1.5/file/get_info.php?response_format=json&quick_key=${id}`);
 	const json = await infoResponse.json();
 
-	if (json.response.result !== 'Success') throw 'Gagal mengambil info file.';
+	if (json.response.result !== 'Success') throw 'Failed to fetch file info.';
 	const info = json.response.file_info;
 
 	const size = parseInt(info.size);

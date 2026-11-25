@@ -1,6 +1,6 @@
 /*
- * crm plugins - MERGED + AIRICH WORKING FROM متقدم.js
- * بوتك كيدعم Rich يعني هادي غادي تخدم 100%
+ * crm plugins - MERGED + AIRICH WORKING FROM advanced.js
+ * Your bot supports Rich so this will work 100%
  */
 
 import fs from 'fs'
@@ -77,7 +77,7 @@ const handler = async (m, { conn, text, command }) => {
 		const parsed = Number(args[0] || 10);
 		const limit = Math.min(Math.max(Number.isFinite(parsed)? parsed : 10, 1), 100);
 		const rows = getLastChatRows(crmstore, m, limit);
-		if (!rows.length) return m.reply('Tidak ada pesan yang ditemukan.');
+		if (!rows.length) return m.reply('No messages found.');
 		return m.reply(formatLastChat(rows));
 	}
 	const rowMatch = args[0]?.match(/^#(\d+)$/);
@@ -85,18 +85,18 @@ const handler = async (m, { conn, text, command }) => {
 	let chatId, targetId, msgSource, rmsg;
 	if (rowid!== null) {
 		const row = crmstore.db.prepare(`SELECT rowid, id, chat, sender, timestamp, data FROM messages WHERE rowid =? LIMIT 1`).get(rowid);
-		if (!row) return m.reply(`Message dengan rowid #${rowid} tidak ditemukan.`);
-		try { rmsg = proto.WebMessageInfo.toObject(proto.WebMessageInfo.decode(row.data), { enums: Number, longs: Number, bytes: String, defaults: false }); } catch (e) { return m.reply(`Gagal decode rowid #${rowid}:\n${e.message}`); }
+		if (!row) return m.reply(`Message with rowid #${rowid} not found.`);
+		try { rmsg = proto.WebMessageInfo.toObject(proto.WebMessageInfo.decode(row.data), { enums: Number, longs: Number, bytes: String, defaults: false }); } catch (e) { return m.reply(`Failed to decode rowid #${rowid}:\n${e.message}`); }
 		chatId = row.chat; targetId = row.id; msgSource = `rowid:${rowid}`;
 	} else {
-		if (!m.quoted) return m.reply(`📌 *.${command}* butuh pesan yang di-reply.\n\n•.crm → file relay\n•.crm -snip → AIRich snippet\n•.crm2 → tombol\n•.adn → AdditionalNodes\n•.insp → raw payload\n•.relay → relay ulang`);
+		if (!m.quoted) return m.reply(`📌 *.${command}* needs a replied message.\n\n•.crm → file relay\n•.crm -snip → AIRich snippet\n•.crm2 → button\n•.adn → AdditionalNodes\n•.insp → raw payload\n•.relay → relay again`);
 		chatId = m.quoted.chat || m.chat; targetId = m.quoted.id;
 		const sources = [{ type: 'crmstore', data: crmstore.loadMessage(targetId, chatId) }, { type: 'quotedObj', data: await m.getQuotedObj?.() }, { type: 'fakeObj', data: m.quoted?.fakeObj }];
 		const source = sources.find((v) => v.data?.message || v.data?.key);
 		msgSource = source?.type; rmsg = source?.data;
 	}
 	let msg; if (rmsg) msg = await normalizeMessage(rmsg, crmstore, chatId);
-	if (!msg?.message) return m.reply(`⛓️‍💥 Message tidak valid`);
+	if (!msg?.message) return m.reply(`⛓️‍💥 Invalid message`);
 	const messageId = msg.key?.id || targetId;
 	const rawNode = loadBestNode(crmstore, messageId, chatId, msg);
 	const nodeAttrs = getNodeAttributes(rawNode);
@@ -142,7 +142,7 @@ const handler = async (m, { conn, text, command }) => {
 		const inspPayload = attachChildren(rawPayload, childTree);
 		const imsg = stringify(inspPayload);
 		if (isSnip) {
-			if (imsg.length > 20000) { await m.react('❌'); return m.reply('Payload terlalu besar untuk snip.'); }
+			if (imsg.length > 20000) { await m.react('❌'); return m.reply('Payload too large for snip.'); }
 			return new AIRich(conn).setTitle('📥️ Raw Snippet').setFooter(metadata).addText(`# 📥️ Raw Snippet\n${metadata}`).addSuggest([type, chatId, messageId]).addCode('javascript', imsg).send(m.chat, { quoted: m });
 		}
 		return conn.sendMessage(m.chat, { document: Buffer.from(imsg), fileName: `${type}.json`, mimetype: 'application/json', caption: metadata }, { quoted: m });
@@ -151,7 +151,7 @@ const handler = async (m, { conn, text, command }) => {
 	if (command === 'adn' &&!adn.length) return m.reply('No AdditionalNodes captured 📷');
 	if (command === 'crm') {
 		if (isSnip) {
-			if (relayCode.length > 20000) { await m.react('❌'); return m.reply('Payload terlalu besar untuk snip.'); }
+			if (relayCode.length > 20000) { await m.react('❌'); return m.reply('Payload too large for snip.'); }
 			return new AIRich(conn).setTitle('⚡ Relay Snippet').setFooter(metadata).addText(`# ⚡ Relay Snippet\n${metadata}`).addSuggest([type, chatId, messageId]).addCode('javascript', relayCode).send(m.chat, { quoted: m });
 		}
 		return conn.sendMessage(m.chat, { document: Buffer.from(relayCode), fileName: `${type}.js`, mimetype: 'application/javascript', caption: metadata }, { quoted: m });
@@ -213,8 +213,8 @@ function getLastChatRows(crmstore,m,limit){ const reference=getReferenceMessage(
 function getMessageType(message){ if(!message) return '-'; return Object.keys(message).find((v)=>!['messageContextInfo','senderKeyDistributionMessage'].includes(v))||'-'; }
 function getPreviewText(message){ if(!message) return '-'; if(typeof message.conversation==='string') return message.conversation; if(message.extendedTextMessage?.text) return message.extendedTextMessage.text; if(message.imageMessage) return message.imageMessage.caption?`📷 ${message.imageMessage.caption}`:'📷 Image'; if(message.videoMessage) return message.videoMessage.caption?`🎥 ${message.videoMessage.caption}`:'🎥 Video'; if(message.audioMessage) return '🎵 Audio'; if(message.stickerMessage) return '🎨 Sticker'; if(message.documentMessage) return message.documentMessage.fileName||'📄 Document'; if(message.reactionMessage) return `💬 Reaction ${message.reactionMessage.text||''}`.trim(); if(message.protocolMessage){ const type=message.protocolMessage.type; if(type===proto.Message.ProtocolMessage.Type.REVOKE) return '🗑️ Revoke'; if(type===proto.Message.ProtocolMessage.Type.MESSAGE_EDIT) return '✏️ Edit'; return `⚙️ Protocol ${type}`; } if(message.secretEncryptedMessage) return '🔐 SecretEncryptedMessage'; return getMessageType(message); }
 function getDisplaySender(message,row){ const key=message?.key||{}; if(key.fromMe) return 'Me'; return key.participantAlt||key.participant||row?.sender||key.remoteJid||'Unknown'; }
-function formatTimestamp(timestamp){ if(!timestamp) return '--:--:--'; const date=new Date(Number(timestamp)*1000); if(Number.isNaN(date.getTime())) return '--:--:--'; return new Intl.DateTimeFormat('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'Asia/Jakarta'}).format(date); }
-function formatLastChat(rows){ const lines=[`╭─〔 LAST CHAT • ${rows.length} PESAN 〕`,'│']; for(let i=0;i<rows.length;i++){ const row=rows[i]; let message; try{ message=proto.WebMessageInfo.toObject(proto.WebMessageInfo.decode(row.data),{enums:Number,longs:Number,bytes:String,defaults:false}); }catch{ message=null; } const type=getMessageType(message?.message); const sender=getDisplaySender(message,row); const preview=getPreviewText(message?.message); lines.push(`│ ${String(i+1).padStart(2,'0')} ${formatTimestamp(row.timestamp)} ${sender}`); lines.push(`│ ${type} • #${row.rowid}`); lines.push(`│ ${String(preview).replace(/\n/g,' ').slice(0,180)}`); if(i!==rows.length-1) lines.push('│'); } lines.push('│'); lines.push(`╰─ ${rows[0]?.chat||'-'}`); return lines.join('\n'); }
+function formatTimestamp(timestamp){ if(!timestamp) return '--:--:--'; const date=new Date(Number(timestamp)*1000); if(Number.isNaN(date.getTime())) return '--:--:--'; return new Intl.DateTimeFormat('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'Asia/Jakarta'}).format(date); }
+function formatLastChat(rows){ const lines=[`╭─〔 LAST CHAT • ${rows.length} MESSAGES 〕`,'│']; for(let i=0;i<rows.length;i++){ const row=rows[i]; let message; try{ message=proto.WebMessageInfo.toObject(proto.WebMessageInfo.decode(row.data),{enums:Number,longs:Number,bytes:String,defaults:false}); }catch{ message=null; } const type=getMessageType(message?.message); const sender=getDisplaySender(message,row); const preview=getPreviewText(message?.message); lines.push(`│ ${String(i+1).padStart(2,'0')} ${formatTimestamp(row.timestamp)} ${sender}`); lines.push(`│ ${type} • #${row.rowid}`); lines.push(`│ ${String(preview).replace(/\n/g,' ').slice(0,180)}`); if(i!==rows.length-1) lines.push('│'); } lines.push('│'); lines.push(`╰─ ${rows[0]?.chat||'-'}`); return lines.join('\n'); }
 function stringify(obj){ return JSON.stringify(obj,(key,value)=>{ if(Buffer.isBuffer(value)) return value.toString('base64'); if(value?.type==='Buffer'&&Array.isArray(value.data)) return Buffer.from(value.data).toString('base64'); return value; },2); }
 function indentBlock(str,level=1){ const pad=' '.repeat(level); return str.split('\n').map((line,i)=>(i===0?line:pad+line)).join('\n'); }
 function stringifySnippet(obj){ const raws=[]; const json=JSON.stringify(obj,(key,value)=>{ if(key==='unifiedResponse'&&value&&typeof value==='object'&&typeof value.data==='string'){ try{ const decoded=Buffer.from(value.data,'base64').toString('utf8'); const parsed=JSON.parse(decoded); const id=raws.length; raws.push(`Buffer.from(JSON.stringify(${JSON.stringify(parsed,null,2)})).toString('base64')`); return {data:`__RAW_${id}__`}; }catch{} } if(key==='buttonParamsJson'&&typeof value==='string'){ try{ const parsed=JSON.parse(value); const id=raws.length; raws.push(`JSON.stringify(${JSON.stringify(parsed,null,2)})`); return `__RAW_${id}__`; }catch{} } if(Buffer.isBuffer(value)) return value.toString('base64'); if(value?.type==='Buffer'&&Array.isArray(value.data)) return Buffer.from(value.data).toString('base64'); return value; },2); let code=json.replace(/^(\s*)"([^"]+)":/gm,(_,indent,key)=>`${indent}${key}:`); code=code.split('\n').map((line)=>{ const match=line.match(/^(\s*).*"__RAW_(\d+)__"/); if(!match) return line; const [,indent,id]=match; const block=raws[Number(id)].split('\n').map((l,i)=>(i===0?l:indent+l)).join('\n'); return line.replace(`"__RAW_${id}__"`,block); }).join('\n'); return code; }

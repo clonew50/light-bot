@@ -24,7 +24,7 @@ export async function before(m, { isAdmin, isOwner, isBotAdmin }) {
 				conn.sendMessage(m.chat, { react: { text: '✅', key: m.key } });
 			}, 10000);
 
-			return m.reply('⚠️ Kamu telah terbanned tunggu setelah 10 detik..');
+			return m.reply('⚠️ You have been banned, wait for 10 seconds..');
 		}
 	} else {
 		this.spam[m.sender].count = 0;

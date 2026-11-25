@@ -36,7 +36,7 @@ html,body{margin:0;padding:0;width:100%;background:#0a0a0e;font-family:Inter,Ari
 @keyframes fall{0%{transform:translateY(-20px) rotate(0deg);opacity:1}100%{transform:translateY(110vh) rotate(360deg);opacity:0}}
 .shake{animation:shake .3s} @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}}
 </style></head><body>
-<div class="top"><div class="title">PIANO <span>COMPOSER</span> ∞</div><div class="sub">5 = <b>💎 JEWEL</b> • 8 = <b>💠 100 DIAMOND</b> • 12+ = <b>🎵 LAGU WAER</b> • BY YONO</div></div>
+<div class="top"><div class="title">PIANO <span>COMPOSER</span> ∞</div><div class="sub">5 = <b>💎 JEWEL</b> • 8 = <b>💠 100 DIAMOND</b> • 12+ = <b>🎵 WAER SONG</b> • BY YONO</div></div>
 <div class="bar"><button id="gameBtn" class="b on">🎮 NEW SONG</button><button id="freeBtn" class="b b2">🎹 FREE</button><button id="replayBtn" class="b b2">▶️ REPLAY</button><button id="soundBtn" class="b b2">🔊</button></div>
 <div class="stage"><div class="frame"><div class="piano" id="piano">
 <button class="white" data-f="261.63" data-n="Do">Do</button>
@@ -54,12 +54,12 @@ html,body{margin:0;padding:0;width:100%;background:#0a0a0e;font-family:Inter,Ari
 <button class="black b5" data-f="466.16" data-n="La#">A#</button>
 </div></div></div>
 <div class="info"><div class="ib"><div class="il">LEVEL</div><div id="lvl" class="iv">—</div></div><div class="ib"><div class="il">NOTES</div><div id="notes" class="iv">0</div></div><div class="ib"><div class="il">STATUS</div><div id="stat" class="iv">READY</div></div></div>
-<div id="level" class="level">Tekan NEW SONG - Bikin lagu waer, semakin panjang semakin waer!</div>
-<div id="note" class="note">Siap bikin lagu?</div>
+<div id="level" class="level">Press NEW SONG - Make a waer song, the longer the more waer!</div>
+<div id="note" class="note">Ready to make a song?</div>
 <div id="reward" class="reward"></div>
-<div id="melody" class="melody">🎵 Melodi kamu akan muncul disini...<br><span style="font-size:8px;color:#6a6a7a">Setiap nada benar = +1 nada ke lagu</span></div>
-<div class="btns"><button id="saveBtn">💾 SAVE LAGU</button><button id="clearBtn">🗑️ CLEAR</button></div>
-<div class="footer">COMPOSER MODE - LAGU TERUS BERLANJUT • NO LAG 60FPS</div>
+<div id="melody" class="melody">🎵 Your melody will appear here...<br><span style="font-size:8px;color:#6a6a7a">Each correct note = +1 note to the song</span></div>
+<div class="btns"><button id="saveBtn">💾 SAVE SONG</button><button id="clearBtn">🗑️ CLEAR</button></div>
+<div class="footer">COMPOSER MODE - SONG CONTINUES • NO LAG 60FPS</div>
 <script>
 let ctx=null,soundOn=true;
 function getCtx(){ if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)(); if(ctx.state==='suspended') ctx.resume(); return ctx; }
@@ -88,10 +88,10 @@ function updUI(){
  notesEl.textContent=fullSong.length;
  statEl.textContent=playing?"LISTEN":inGame?"PLAY":"FREE";
  let txt=fullSong.map(k=>k.dataset.n).join(" - ");
- if(fullSong.length==0) melodyEl.innerHTML="🎵 Melodi kamu akan muncul disini...<br><span style='font-size:8px;color:#6a6a7a'>Setiap nada benar = +1 nada ke lagu</span>";
+ if(fullSong.length==0) melodyEl.innerHTML="🎵 Your melody will appear here...<br><span style='font-size:8px;color:#6a6a7a'>Each correct note = +1 note to the song</span>";
  else {
    let pretty=fullSong.map(k=>"<b>"+k.dataset.n+"</b>").join(" <span style='color:#444'>•</span> ");
-   melodyEl.innerHTML="🎶 <b style='color:#ffcc00'>LAGU KAMU ("+fullSong.length+" nada):</b><br>"+pretty;
+   melodyEl.innerHTML="🎶 <b style='color:#ffcc00'>YOUR SONG ("+fullSong.length+" notes):</b><br>"+pretty;
  }
 }
 
@@ -99,8 +99,8 @@ function newSong(){
  getCtx(); seq=[]; user=[]; fullSong=[]; level=2; inGame=true; playing=false; jewel=false; diamond=false;
  rewardEl.textContent=""; 
  for(let i=0;i<level;i++) seq.push(rnd());
- levelEl.textContent="🎧 LEVEL "+level+" - Hafalkan "+level+" nada awal";
- noteEl.textContent="Dengarkan awal lagu..."; updUI();
+ levelEl.textContent="🎧 LEVEL "+level+" - Memorize the first "+level+" notes";
+ noteEl.textContent="Listen to the start of the song..."; updUI();
  setTimeout(playSeq,500);
  document.getElementById('gameBtn').classList.add('on'); document.getElementById('freeBtn').classList.remove('on');
 }
@@ -109,7 +109,7 @@ function playSeq(){
  playing=true; user=[]; updUI();
  let i=0;
  let iv=setInterval(()=>{
-  if(i>=seq.length){clearInterval(iv);playing=false;noteEl.textContent="👉 Ulangi "+seq.length+" nada untuk lanjutkan lagu!";return}
+  if(i>=seq.length){clearInterval(iv);playing=false;noteEl.textContent="👉 Repeat "+seq.length+" notes to continue the song!";return}
   let k=seq[i]; k.classList.add('on'); noteEl.textContent="🎧 "+k.dataset.n+" ("+(i+1)+"/"+seq.length+")";
   playGrand(parseFloat(k.dataset.f),0.9);
   setTimeout(()=>k.classList.remove('on'),260);
@@ -118,11 +118,11 @@ function playSeq(){
 }
 
 function replayFull(){
- if(fullSong.length==0){noteEl.textContent="Belum ada lagu! Main dulu";return}
- noteEl.textContent="▶️ Memutar lagu kamu ("+fullSong.length+" nada)...";
+ if(fullSong.length==0){noteEl.textContent="No song yet! Play first";return}
+ noteEl.textContent="▶️ Playing your song ("+fullSong.length+" notes)...";
  let i=0;
  let iv=setInterval(()=>{
-  if(i>=fullSong.length){clearInterval(iv);noteEl.textContent="✅ Lagu selesai - Lanjut bikin lagi!";return}
+  if(i>=fullSong.length){clearInterval(iv);noteEl.textContent="✅ Song finished - Keep making more!";return}
   let k=fullSong[i]; k.classList.add('on'); playGrand(parseFloat(k.dataset.f),0.85);
   setTimeout(()=>k.classList.remove('on'),240);
   i++;
@@ -131,26 +131,26 @@ function replayFull(){
 
 function checkReward(){
  if(level==5 && !jewel){
-  jewel=true; rewardEl.innerHTML="💎 <b>DAPAT 1 JEWEL!</b> 💎 - Lagu makin waer!";
-  levelEl.textContent="🎉 LEVEL 5 - JEWEL DIDAPAT! Lanjut...";
+  jewel=true; rewardEl.innerHTML="💎 <b>GOT 1 JEWEL!</b> 💎 - The song gets more waer!";
+  levelEl.textContent="🎉 LEVEL 5 - JEWEL OBTAINED! Continue...";
   for(let j=0;j<12;j++){let d=document.createElement('div');d.textContent='💎';d.style.position='fixed';d.style.left=Math.random()*100+'vw';d.style.top='-10px';d.style.fontSize='20px';d.style.animation='fall 1.4s linear forwards';d.style.zIndex=99;document.body.appendChild(d);setTimeout(()=>d.remove(),1500)}
  }
  if(level==8 && !diamond){
-  diamond=true; rewardEl.innerHTML="💠 <b>JACKPOT! 100 DIAMOND!</b> 💠 + Lagu waer!";
-  levelEl.textContent="🏆 LEVEL 8 - 100 DIAMOND! Lagu makin panjang = makin waer!";
+  diamond=true; rewardEl.innerHTML="💠 <b>JACKPOT! 100 DIAMOND!</b> 💠 + Waer song!";
+  levelEl.textContent="🏆 LEVEL 8 - 100 DIAMOND! Longer song = more waer!";
   for(let j=0;j<24;j++){let d=document.createElement('div');d.textContent=j%2?'💠':'💎';d.style.position='fixed';d.style.left=Math.random()*100+'vw';d.style.top='-10px';d.style.fontSize='22px';d.style.animation='fall '+(1+Math.random())+'s linear forwards';d.style.zIndex=99;document.body.appendChild(d);setTimeout(()=>d.remove(),2000)}
  }
  if(level>=12){
-  rewardEl.innerHTML="🔥 <b>LAGU WAER BANGET! "+fullSong.length+" NADA!</b> 🔥";
-  levelEl.textContent="🎵 COMPOSER MODE - "+fullSong.length+" NADA - LAGU LEGEND!";
+  rewardEl.innerHTML="🔥 <b>SUPER WAER SONG! "+fullSong.length+" NOTES!</b> 🔥";
+  levelEl.textContent="🎵 COMPOSER MODE - "+fullSong.length+" NOTES - LEGENDARY SONG!";
  }
 }
 
 function fail(){
  inGame=false;
- levelEl.textContent="💔 GAGAL di level "+level+" - Lagu terpotong di "+fullSong.length+" nada";
- noteEl.textContent="Salah! Tapi lagu kamu "+fullSong.length+" nada sudah ke-save! Tekan REPLAY";
- rewardEl.textContent=fullSong.length>=5?"💾 Lagu "+fullSong.length+" nada tersimpan - Tekan REPLAY untuk dengar":"";
+ levelEl.textContent="💔 FAILED at level "+level+" - Song cut off at "+fullSong.length+" notes";
+ noteEl.textContent="Wrong! But your song of "+fullSong.length+" notes has been saved! Press REPLAY";
+ rewardEl.textContent=fullSong.length>=5?"💾 Song of "+fullSong.length+" notes saved - Press REPLAY to listen":"";
  document.body.classList.add('shake');setTimeout(()=>document.body.classList.remove('shake'),300);
 }
 
@@ -163,19 +163,19 @@ keys.forEach(k=>{
   let idx=user.length-1;
   if(user[idx]!==seq[idx]){fail();return}
   noteEl.textContent="✅ "+k.dataset.n+" ("+user.length+"/"+seq.length+")";
-  // kalau baru benar dan belum ada di fullSong untuk level ini, tambah ke lagu
+  // if just correct and not yet in fullSong for this level, add to the song
   if(user.length==seq.length){
-   // tambah nada terakhir ke fullSong (yang baru)
-   let newNote=seq[seq.length-1];
-   if(fullSong.length<seq.length) fullSong.push(newNote);
-   checkReward();
-   updUI();
-   level++;
-   let nextNote=rnd();
-   seq.push(nextNote);
-   levelEl.textContent="🎼 LEVEL "+level+" - Lagu "+fullSong.length+" nada, hafalkan "+seq.length+" nada";
-   noteEl.textContent="Mantap! Lagu kamu nambah 1 nada jadi "+fullSong.length+"! Lanjut...";
-   setTimeout(playSeq,1100);
+    // add the last note to fullSong (the new one)
+    let newNote=seq[seq.length-1];
+    if(fullSong.length<seq.length) fullSong.push(newNote);
+    checkReward();
+    updUI();
+    level++;
+    let nextNote=rnd();
+    seq.push(nextNote);
+    levelEl.textContent="🎼 LEVEL "+level+" - Song "+fullSong.length+" notes, memorize "+seq.length+" notes";
+    noteEl.textContent="Nice! Your song grows by 1 note to "+fullSong.length+"! Continue...";
+    setTimeout(playSeq,1100);
   }
  };
  k.addEventListener('pointerdown',down); k.addEventListener('touchstart',down,{passive:false});
@@ -183,16 +183,16 @@ keys.forEach(k=>{
 
 document.getElementById('gameBtn').onclick=newSong;
 document.getElementById('freeBtn').onclick=()=>{
- inGame=false;playing=false;rewardEl.textContent="";document.getElementById('freeBtn').classList.add('on');document.getElementById('gameBtn').classList.remove('on');levelEl.textContent='Free Play - Bikin lagu bebas';noteEl.textContent='Main bebas - Setiap nada masuk ke lagu';lvlEl.textContent='FREE';
- // di free, setiap tekan masuk ke lagu
+ inGame=false;playing=false;rewardEl.textContent="";document.getElementById('freeBtn').classList.add('on');document.getElementById('gameBtn').classList.remove('on');levelEl.textContent='Free Play - Make a song freely';noteEl.textContent='Play freely - Every note goes into the song';lvlEl.textContent='FREE';
+ // in free mode, every press goes into the song
  let freeHandler=(k)=>{ if(!fullSong.includes(k) || true){ if(fullSong.length==0 || fullSong[fullSong.length-1]!==k){ fullSong.push(k); updUI(); checkReward(); } } };
- // override untuk free
+ // override for free
  keys.forEach(k=>{
   k.onclick=null;
   k.addEventListener('pointerdown', (e)=>{
    if(document.getElementById('freeBtn').classList.contains('on')){
     getCtx(); playGrand(parseFloat(k.dataset.f),1.1);
-    if(fullSong.length==0 || fullSong[fullSong.length-1]!==k){ fullSong.push(k); updUI(); noteEl.textContent="➕ "+k.dataset.n+" ditambah ke lagu ("+fullSong.length+" nada)"; }
+    if(fullSong.length==0 || fullSong[fullSong.length-1]!==k){ fullSong.push(k); updUI(); noteEl.textContent="➕ "+k.dataset.n+" added to the song ("+fullSong.length+" notes)"; }
    }
   });
  });
@@ -200,13 +200,13 @@ document.getElementById('freeBtn').onclick=()=>{
 document.getElementById('replayBtn').onclick=replayFull;
 document.getElementById('soundBtn').onclick=function(){soundOn=!soundOn;this.textContent=soundOn?"🔊":"🔇"; if(soundOn)getCtx();};
 document.getElementById('saveBtn').onclick=()=>{
- if(fullSong.length==0){noteEl.textContent="Belum ada lagu!";return}
+ if(fullSong.length==0){noteEl.textContent="No song yet!";return}
  let txt=fullSong.map(k=>k.dataset.n+"("+k.dataset.f+"Hz)").join(" -> ");
- noteEl.textContent="💾 Lagu disimpan: "+fullSong.length+" nada";
- rewardEl.textContent="Lagu: "+fullSong.map(k=>k.dataset.n).join("-");
- try{ navigator.clipboard.writeText("Lagu Piano Waer "+fullSong.length+" nada: "+fullSong.map(k=>k.dataset.n).join(" ")); }catch(e){}
+ noteEl.textContent="💾 Song saved: "+fullSong.length+" notes";
+ rewardEl.textContent="Song: "+fullSong.map(k=>k.dataset.n).join("-");
+ try{ navigator.clipboard.writeText("Waer Piano Song "+fullSong.length+" notes: "+fullSong.map(k=>k.dataset.n).join(" ")); }catch(e){}
 };
-document.getElementById('clearBtn').onclick=()=>{fullSong=[];seq=[];user=[];level=2;inGame=false;updUI();levelEl.textContent="Cleared - NEW SONG untuk lagu baru";noteEl.textContent="Siap bikin lagu waer baru?";rewardEl.textContent="";};
+document.getElementById('clearBtn').onclick=()=>{fullSong=[];seq=[];user=[];level=2;inGame=false;updUI();levelEl.textContent="Cleared - NEW SONG for a new song";noteEl.textContent="Ready to make a new waer song?";rewardEl.textContent="";};
 updUI();
 </script></body></html>
 `.trim()
@@ -217,7 +217,7 @@ let handler = async (m, { conn }) => {
     const payload = { response_id: rid, sections: [{ view_model: { primitive: { __typename: "GenAIaeacdsnwHtmlPrimitive", payload: PIANO_HTML }, "__typename": "GenAISingleLayoutViewModel" } }] }
     await conn.relayMessage(m.chat, {
         messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2, messageSecret: secret, botMetadata: { messageDisclaimerText: "Piano Composer Infinite by yono", botResponseId: rid } },
-        botForwardedMessage: { message: { richResponseMessage: { messageType: 1, submessages: [{ messageType: 2, messageText: "PIANO COMPOSER ∞ - LAGU WAER" }], unifiedResponse: { data: Buffer.from(JSON.stringify(payload)).toString('base64') }, contextInfo: { forwardingScore: 1, isForwarded: true, forwardedAiBotMessageInfo: { botJid: "867051314767696@bot" }, forwardOrigin: 4 } } } }
+        botForwardedMessage: { message: { richResponseMessage: { messageType: 1, submessages: [{ messageType: 2, messageText: "PIANO COMPOSER ∞ - WAER SONG" }], unifiedResponse: { data: Buffer.from(JSON.stringify(payload)).toString('base64') }, contextInfo: { forwardingScore: 1, isForwarded: true, forwardedAiBotMessageInfo: { botJid: "867051314767696@bot" }, forwardOrigin: 4 } } } }
     }, {})
 }
 handler.command = /^(piano|pianogame|composer)$/i

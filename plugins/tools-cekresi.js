@@ -28,10 +28,10 @@ const couriers = [
 
 let handler = async (m, { conn, args, usedPrefix, command }) => {
 const el_api = 'f76b9f991fe424356b9c6da407792b1d1fbf33ad7a197bd0755b557a05461262' 
-//500 req/minggu, bikin aja sendiri gratis di https://api.binderbyte.com
-//follow ig @elyas_tzy ya sayangkuhhh
+//500 req/week, just create one for free at https://api.binderbyte.com
+//follow ig @elyas_tzy
   if (!args[0]) {
-    return m.reply(`Masukkan nomor resi\nContoh:\n${usedPrefix + command} 81902xxxx`)
+    return m.reply(`Enter the tracking number\nExample:\n${usedPrefix + command} 81902xxxx`)
   }
 
   if (args.length == 1) {
@@ -42,13 +42,13 @@ const el_api = 'f76b9f991fe424356b9c6da407792b1d1fbf33ad7a197bd0755b557a05461262
       {
         name: "single_select",
         buttonParamsJson: JSON.stringify({
-          title: "Pilih Kurir",
+          title: "Select Courier",
           sections: [
             {
-              title: "Daftar Kurir",
+              title: "Courier List",
               rows: couriers.map(v => ({
                 title: v.name,
-                description: `Cek resi via ${v.name}`,
+                description: `Track via ${v.name}`,
                 id: `${usedPrefix + command} ${v.code} ${resi}`
               }))
             }
@@ -60,7 +60,7 @@ const el_api = 'f76b9f991fe424356b9c6da407792b1d1fbf33ad7a197bd0755b557a05461262
     return conn.sendButton(
       m.chat,
       {
-        text: `📦 *CEK RESI PAKET*\n\nNomor Resi: *${resi}*\n\nSilakan pilih kurir pengiriman.`,
+        text: `📦 *PACKAGE TRACKING*\n\nTracking Number: *${resi}*\n\nPlease select the shipping courier.`,
         footer: "Tracking Paket",
         buttons
       },
@@ -72,11 +72,11 @@ const el_api = 'f76b9f991fe424356b9c6da407792b1d1fbf33ad7a197bd0755b557a05461262
   let resi = args[1]
 
   if (!couriers.find(v => v.code == courier)) {
-    return m.reply(`Kurir *${courier}* tidak tersedia`)
+    return m.reply(`Courier *${courier}* is not available`)
   }
 
   if (!resi) {
-    return m.reply(`Masukkan nomor resi\nContoh:\n${usedPrefix + command} ${courier} 81902xxxx`)
+    return m.reply(`Enter the tracking number\nExample:\n${usedPrefix + command} ${courier} 81902xxxx`)
   }
 
   try {
@@ -84,27 +84,27 @@ const el_api = 'f76b9f991fe424356b9c6da407792b1d1fbf33ad7a197bd0755b557a05461262
     let res = await fetch(`https://api.binderbyte.com/v1/track?api_key=${el_api}&courier=${courier}&awb=${resi}`)
     let elres = await res.json()
 
-    let teks = `📦 *TRACKING RESI*\n\n`
+    let teks = `📦 *TRACKING RESULT*\n\n`
     teks += `Status: ${elres.status}\n`
-    teks += `Pesan: ${elres.message}\n\n`
+    teks += `Message: ${elres.message}\n\n`
 
-    teks += `*Ringkasan*\n`
+    teks += `*Summary*\n`
     teks += `AWB: ${elres.data.summary.awb}\n`
-    teks += `Kurir: ${elres.data.summary.courier}\n`
-    teks += `Layanan: ${elres.data.summary.service}\n`
+    teks += `Courier: ${elres.data.summary.courier}\n`
+    teks += `Service: ${elres.data.summary.service}\n`
     teks += `Status: ${elres.data.summary.status}\n`
-    teks += `Tanggal: ${elres.data.summary.date}\n`
-    teks += `Deskripsi: ${elres.data.summary.desc}\n`
-    teks += `Biaya: ${elres.data.summary.amount}\n`
-    teks += `Berat: ${elres.data.summary.weight}\n\n`
+    teks += `Date: ${elres.data.summary.date}\n`
+    teks += `Description: ${elres.data.summary.desc}\n`
+    teks += `Cost: ${elres.data.summary.amount}\n`
+    teks += `Weight: ${elres.data.summary.weight}\n\n`
 
     teks += `*Detail*\n`
-    teks += `Asal: ${elres.data.detail.origin}\n`
-    teks += `Tujuan: ${elres.data.detail.destination}\n`
-    teks += `Pengirim: ${elres.data.detail.shipper}\n`
-    teks += `Penerima: ${elres.data.detail.receiver}\n\n`
+    teks += `Origin: ${elres.data.detail.origin}\n`
+    teks += `Destination: ${elres.data.detail.destination}\n`
+    teks += `Shipper: ${elres.data.detail.shipper}\n`
+    teks += `Receiver: ${elres.data.detail.receiver}\n\n`
 
-    teks += `*Riwayat*\n`
+    teks += `*History*\n`
     elres.data.history.forEach((v, i) => {
       teks += `${i + 1}. ${v.date}\n`
       teks += `   ${v.desc}\n`
@@ -114,7 +114,7 @@ const el_api = 'f76b9f991fe424356b9c6da407792b1d1fbf33ad7a197bd0755b557a05461262
     conn.sendMessage(m.chat, { text: teks }, { quoted: m })
 
   } catch {
-    m.reply('Resi tidak ditemukan atau API error')
+    m.reply('Tracking number not found or API error')
   }
 
 }

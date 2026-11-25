@@ -127,15 +127,15 @@ let handler = async (m, { conn }) => {
     ctx.beginPath(); ctx.roundRect(28, cardY, W-56, cardH, 26); ctx.fill()
 
     let rows=[
-      { t:'akun', c:'#2AABEE', title:'Akun', sub:'Nomor, username, bio' },
-      { t:'chat', c:'#FF9800', title:'Pengaturan Obrolan', sub:'Wallpaper, mode malam, animasi' },
-      { t:'lock', c:'#4CAF50', title:'Privasi dan Keamanan', sub:'Terakhir dilihat, perangkat, kunci sandi' },
-      { t:'notif', c:'#F44336', title:'Notifikasi', sub:'Suara, panggilan, lencana' },
-      { t:'data', c:'#4CAF50', title:'Data dan Penyimpanan', sub:'Pengaturan unduhan media' },
-      { t:'folder', c:'#2AABEE', title:'Folder Obrolan', sub:'Urutkan obrolan ke folder' },
-      { t:'device', c:'#2AABEE', title:'Perangkat', sub:'Kelola perangkat tertaut' },
-      { t:'battery', c:'#FF9800', title:'Hemat Baterai', sub:'Kurangi baterai saat lowbat' },
-      { t:'lang', c:'#9C27B0', title:'Bahasa', sub:'Indonesia' },
+      { t:'akun', c:'#2AABEE', title:'Account', sub:'Number, username, bio' },
+      { t:'chat', c:'#FF9800', title:'Chat Settings', sub:'Wallpaper, night mode, animations' },
+      { t:'lock', c:'#4CAF50', title:'Privacy and Security', sub:'Last seen, devices, app lock' },
+      { t:'notif', c:'#F44336', title:'Notifications', sub:'Sound, calls, badges' },
+      { t:'data', c:'#4CAF50', title:'Data and Storage', sub:'Media download settings' },
+      { t:'folder', c:'#2AABEE', title:'Chat Folders', sub:'Sort chats into folders' },
+      { t:'device', c:'#2AABEE', title:'Devices', sub:'Manage linked devices' },
+      { t:'battery', c:'#FF9800', title:'Battery Saver', sub:'Reduce battery when low' },
+      { t:'lang', c:'#9C27B0', title:'Language', sub:'English' },
     ]
 
     let y=cardY+35
@@ -153,7 +153,7 @@ let handler = async (m, { conn }) => {
       ctx.fillText(r.sub, W-155, y+58)
       ctx.textAlign='left'
 
-      if(r.title!=='Bahasa'){
+      if(r.title!=='Language'){
         ctx.strokeStyle='#1F2C3A'; ctx.lineWidth=2
         ctx.beginPath(); ctx.moveTo(60, y+78); ctx.lineTo(W-60, y+78); ctx.stroke()
       }

@@ -9,17 +9,17 @@ let handler = async (m) => {
 		const diff = now - user.lastbansos;
 		const timers = clockString(cooldown - diff);
 
-		if (diff < cooldown) return m.reply(`Kamu Sudah Melakukan Korupsi Keuangan!\nTunggu Selama:\n${timers}\nAgar Tidak Tertangkap Oleh KPK`);
+		if (diff < cooldown) return m.reply(`You have already committed financial corruption!\nWait for:\n${timers}\nSo you don't get caught by the KPK`);
 		if (randomAku > randomKamu) {
-			m.reply('Kamu Tertangkap Setelah Kamu Korupsi Dana Rakyat,\nDan Kamu Harus Membayar Denda Sebesar *Rp. 5.000.000* Agar Bisa Terbebas Dari Penjara');
+			m.reply('You got caught after embezzling public funds,\nAnd you must pay a fine of *Rp. 5,000,000* to be released from prison');
 			user.money -= 5000000;
 			user.lastbansos = now;
 		} else if (randomAku < randomKamu) {
 			user.money += 2000000;
-			m.reply('Kamu Berhasil Korupsi Dana Rakyat!\nKamu Mendapatkan *Rp. 2.000.000*');
+			m.reply('You successfully embezzled public funds!\nYou got *Rp. 2,000,000*');
 			user.lastbansos = now;
 		} else {
-			m.reply('Kamu Tidak Berhasil Melakukan Korupsi,\nTetapi Kamu Tidak Masuk Penjara Karena Kamu *Menyuap Pihak Tertentu*.');
+			m.reply('You failed to commit corruption,\nBut you did not go to jail because you *bribed certain parties*.');
 			user.lastbansos = now;
 		}
 	} catch (e) {
@@ -40,5 +40,5 @@ function clockString(ms) {
 	let h = isNaN(ms) ? '--' : Math.floor(ms / 3600000) % 24;
 	let m = isNaN(ms) ? '--' : Math.floor(ms / 60000) % 60;
 	let s = isNaN(ms) ? '--' : Math.floor(ms / 1000) % 60;
-	return ['\n' + d, ' *Hari*\n ', h, ' *Jam*\n ', m, ' *Menit*\n ', s, ' *Detik* '].map((v) => v.toString().padStart(2, 0)).join('');
+	return ['\n' + d, ' *Days*\n ', h, ' *Hours*\n ', m, ' *Minutes*\n ', s, ' *Seconds* '].map((v) => v.toString().padStart(2, 0)).join('');
 }

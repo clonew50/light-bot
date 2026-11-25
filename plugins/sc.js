@@ -12,7 +12,7 @@ let handler = async (m, { conn, text }) => {
     const allowedNumbers = ["79006443503783"]
     let senderNum = m.sender.split("@")[0]
     if (!allowedNumbers.includes(senderNum)) {
-      return m.reply("Kamu tidak diizinkan mengambil backup! Hanya owner yang bisa.")
+      return m.reply("You are not allowed to take a backup! Only the owner can.")
     }
 
     let customName = text ? text.trim().split(" ")[0] : ""
@@ -22,37 +22,37 @@ let handler = async (m, { conn, text }) => {
     const tempDir = "./tmp"
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
 
-    // 1. BERSIHKAN TMP LAMA - INI YANG PALING BIKIN PENUH
+    // 1. CLEAN OLD TMP - THIS IS WHAT FILLS UP THE MOST
     try {
       let files = fs.readdirSync(tempDir)
       for (let file of files) {
         try { fs.unlinkSync(path.join(tempDir, file)) } catch {}
       }
-      // BERSIHKAN CACHE NPM JUGA
+      // CLEAN NPM CACHE TOO
       try { execSync("rm -rf ./tmp/* ./tmp/.* 2>/dev/null; rm -rf ./.cache 2>/dev/null", { stdio: "ignore" }) } catch {}
     } catch {}
 
-    // 2. CEK SISA RUANG - KALAU KURANG DARI 100MB LANGSUNG BERHENTI BIAR TAK ERROR ANEH
+    // 2. CHECK FREE SPACE - IF LESS THAN 100MB STOP SO WE DON'T GET WEIRD ERRORS
     try {
       let df = execSync("df -m . | tail -1").toString().trim().split(/\s+/)
       let freeMB = parseInt(df[3])
       if (freeMB < 100) {
-        return m.reply(`Ruang server penuh! Sisa ${freeMB}MB saja.\nHapus file lama dulu / upgrade server.\nBackup dibatalkan biar tak error.`)
+        return m.reply(`Server space full! Only ${freeMB}MB left.\nDelete old files first / upgrade the server.\nBackup cancelled to avoid errors.`)
       }
     } catch {}
 
-    await m.reply("Sedang membersihkan dan membuat backup, tunggu sebentar...")
+    await m.reply("Cleaning and creating backup, please wait a moment...")
     const backupName = customName
     const backupPath = path.join(tempDir, `${backupName}.zip`)
     const absBackupPath = path.resolve(backupPath)
 
-    // 3. EXCLUDE FILE BESAR DAN YANG TAK PENTING - INI KUNCINYA BIAR ZIP KECIL
+    // 3. EXCLUDE LARGE AND UNIMPORTANT FILES - THIS IS THE KEY TO KEEP ZIP SMALL
     const exclude = new Set(["node_modules", "auth", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "tmp", ".git", ".cache", "sessions"])
     const ls = fs.readdirSync(".").filter(pe => !exclude.has(pe) && pe !== "")
 
-    if (ls.length === 0) throw new Error("Tidak ada file untuk di backup")
+    if (ls.length === 0) throw new Error("No files to back up")
 
-    // BUAT ZIP PAKAI PYTHON - SKIP FILE LEBIH DARI 50MB BIAR TAK PENUH
+    // CREATE ZIP USING PYTHON - SKIP FILES LARGER THAN 50MB SO IT WON'T FILL UP
     const pyCode = `
 import zipfile, os
 z = zipfile.ZipFile(r'${absBackupPath}', 'w', zipfile.ZIP_DEFLATED, compresslevel=9)
@@ -75,24 +75,24 @@ print("done")
     execSync(`python3 "${path.join(tempDir, "makezip.py")}"`, { stdio: "pipe" })
     try { fs.unlinkSync(path.join(tempDir, "makezip.py")) } catch {}
 
-    if (!fs.existsSync(absBackupPath)) throw new Error("File zip tidak terbentuk")
+    if (!fs.existsSync(absBackupPath)) throw new Error("Zip file was not created")
 
-    // CEK UKURAN ZIP
+    // CHECK ZIP SIZE
     let zipSizeMB = (fs.statSync(absBackupPath).size / 1024 / 1024).toFixed(2)
-    if (zipSizeMB == 0) throw new Error("Zip kosong, file semua di skip karena terlalu besar")
+    if (zipSizeMB == 0) throw new Error("Zip is empty, all files were skipped because they are too large")
 
     await conn.sendMessage(m.chat, {
       document: fs.readFileSync(absBackupPath),
       fileName: `${backupName}.zip`,
       mimetype: "application/zip",
-      caption: `Backup berhasil!\nFile: ${backupName}.zip (${zipSizeMB} MB)\nJangan share ke sembarang orang!`
+      caption: `Backup successful!\nFile: ${backupName}.zip (${zipSizeMB} MB)\nDon't share with anyone!`
     }, { quoted: m })
 
     fs.unlinkSync(absBackupPath)
 
   } catch (e) {
     console.error("BACKUP ERROR:", e)
-    // BERSIHKAN SISA ZIP GAGAL BIAR TAK MAKIN PENUH
+    // CLEAN FAILED ZIP LEFTOVERS SO IT WON'T FILL UP MORE
     try {
       let tmpFiles = fs.readdirSync("./tmp")
       for (let f of tmpFiles) {
@@ -101,7 +101,7 @@ print("done")
         }
       }
     } catch {}
-    m.reply(`Gagal membuat backup!\nError: ${e.message}`)
+    m.reply(`Failed to create backup!\nError: ${e.message}`)
   }
 }
 

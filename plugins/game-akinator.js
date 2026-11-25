@@ -1,6 +1,6 @@
 //ig@elyas_tzy
 //furqan x elyas
-//kira kira seperti itu wm nya jangan di hapus jangan di timpa jir
+//roughly that's the watermark, don't delete it, don't overwrite it damn
 import { createRequire } from 'module'
 const require = createRequire(import.meta.url)
 const { Akinator } = require('@aqul/akinator-api')
@@ -8,7 +8,7 @@ let handler = async (m, { conn }) => {
 let id = m.chat
 if (!conn.akinator) conn.akinator = new Map()
 if (conn.akinator.has(id)) {
-return m.reply('🎯 Game Akinator sudah berjalan di chat ini.\nTekan tombol *Nyerah* untuk berhenti.')
+return m.reply('🎯 The Akinator game is already running in this chat.\nPress the *Give Up* button to stop.')
 }
 try {
 const api = new Akinator({
@@ -20,20 +20,20 @@ conn.akinator.set(id, api)
 const progress = Math.round(api.progress)
 await conn.sendButton(m.chat, {
 image: { url: 'https://raw.githubusercontent.com/Furqan-si/file-random/main/CD1D1464333.jpeg' },
-body: `🎩 *Akinator*\nPikirkan seseorang/karakter anime atau apapun dan aku akan menebaknya\n\n${api.question}\n\n📊 Progress : ${progress}%`,
-footer: "Pilih jawaban:",
+body: `🎩 *Akinator*\nThink of someone/an anime character or anything and I will guess it\n\n${api.question}\n\n📊 Progress : ${progress}%`,
+footer: "Choose an answer:",
 buttons: [
-{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Ya", id: "1" }) },
-{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Tidak", id: "2" }) },
-{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Tidak tahu", id: "3" }) },
-{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Mungkin", id: "4" }) },
-{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Mungkin tidak", id: "5" }) },
-{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🚪 Nyerah", id: "nyerah" }) }
+{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Yes", id: "1" }) },
+{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "No", id: "2" }) },
+{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Don't know", id: "3" }) },
+{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Maybe", id: "4" }) },
+{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Maybe not", id: "5" }) },
+{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🚪 Give Up", id: "nyerah" }) }
 ]
 }, { quoted: m }) 
 } catch (e) { 
   console.error(e)
-m.reply('❌ Gagal memulai Akinator.')
+m.reply('❌ Failed to start Akinator.')
 }
 
 }
@@ -54,7 +54,7 @@ const api = session
 if (/nyerah/i.test(m.text)) {
 this.akinator.delete(id)
 session.processing = false
-return m.reply('🚪 Game Akinator dihentikan.')
+return m.reply('🚪 Akinator game stopped.')
 }
 
 const answerMap = {
@@ -83,7 +83,7 @@ await api.answer(answer)
 
 if (api.isWin) {
 
-let caption = `🎉 *Akinator berhasil menebak!*\n\n`
+let caption = `🎉 *Akinator guessed correctly!*\n\n`
 caption += `👤 *${api.sugestion_name}*\n`
 
 if (api.sugestion_desc) caption += `${api.sugestion_desc}\n`
@@ -91,12 +91,12 @@ if (api.sugestion_desc) caption += `${api.sugestion_desc}\n`
 await this.sendButton(m.chat, {
 image: { url: api.sugestion_photo },
 body: caption,
-footer: "Game selesai",
+footer: "Game over",
 buttons: [
 {
 name: "quick_reply",
 buttonParamsJson: JSON.stringify({
-display_text: "Main Lagi",
+display_text: "Play Again",
 id: ".akinator"
 })
 }
@@ -111,14 +111,14 @@ const progress = Math.round(api.progress)
 
 await this.sendButton(m.chat, {
 body: `🎩 *Akinator*\n\n${api.question}\n\n📊 Progress : ${progress}%`,
-footer: "Pilih jawaban:",
+footer: "Choose an answer:",
 buttons: [
-{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Ya", id: "1" }) },
-{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Tidak", id: "2" }) },
-{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Tidak tahu", id: "3" }) },
-{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Mungkin", id: "4" }) },
-{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Mungkin tidak", id: "5" }) },
-{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🚪 Nyerah", id: "nyerah" }) }
+{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Yes", id: "1" }) },
+{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "No", id: "2" }) },
+{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Don't know", id: "3" }) },
+{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Maybe", id: "4" }) },
+{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Maybe not", id: "5" }) },
+{ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🚪 Give Up", id: "nyerah" }) }
 ]
 }, { quoted: m })
 
@@ -127,7 +127,7 @@ buttons: [
 } catch (e) {
 
 console.error(e)
-m.reply('❌ Terjadi error. Game dihentikan.')
+m.reply('❌ An error occurred. Game stopped.')
 this.akinator.delete(id)
 
 }

@@ -6,15 +6,15 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
     const input = args.join(' ');
 
     if (!input.includes('|')) {
-        return await conn.sendMessage(m.chat, { text: `⚠️ Format salah!\nContoh: *${usedPrefix + command} Jakarta | Bandung*` }, { quoted: m });
+        return await conn.sendMessage(m.chat, { text: `⚠️ Wrong format!\nExample: *${usedPrefix + command} Jakarta | Bandung*` }, { quoted: m });
     }
 
     const [asalInput, tujuanInput] = input.split('|').map(s => s.trim());
     if (!asalInput ||!tujuanInput) {
-        return await conn.sendMessage(m.chat, { text: '⚠️ Masukkan lokasi asal dan tujuan dengan benar!' }, { quoted: m });
+        return await conn.sendMessage(m.chat, { text: '⚠️ Enter origin and destination locations correctly!' }, { quoted: m });
     }
 
-    await conn.sendMessage(m.chat, { text: '⏳ _Menggambar peta dan menghitung rute, tunggu sebentar (proses render manual memakan sedikit waktu)..._' }, { quoted: m });
+    await conn.sendMessage(m.chat, { text: '⏳ _Drawing map and calculating route, please wait (manual render process takes a little time)..._' }, { quoted: m });
 
     const baseRes = {
         status: true,
@@ -249,7 +249,7 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
     try {
         const geo = async (q) => {
             const r = await axios.get('https://nominatim.openstreetmap.org/search', { params: { q, format: 'json', limit: 1 }, headers });
-            if (!r.data.length) throw new Error('Kota tidak ditemukan: ' + q);
+            if (!r.data.length) throw new Error('City not found: ' + q);
             return { lat: parseFloat(r.data[0].lat), lon: parseFloat(r.data[0].lon), nama: r.data[0].display_name };
         };
         const a = await geo(asal);
@@ -276,19 +276,19 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
             const gambar = await buatPeta(a, b, koordinat, darat? [30, 136, 229] : [251, 140, 0]);
             resultUrl = await uploadGambar(gambar);
         } catch (e) { petaError = e.message; }
-        const modeStr = darat? '🚗 *Darat (Routing OSRM)*' : '✈️ *Udara (Garis Lurus)*';
-        const waktuStr = jam? `${jam} jam ${menit} menit` : `${menit} menit`;
-        let caption = `📍 *INFO RUTE & JARAK MAPS* 📍\n\n🏢 *Asal:* ${a.nama}\n🏁 *Tujuan:* ${b.nama}\n🛣️ *Jalur:* ${modeStr}\n📏 *Jarak:* ${jarakKm.toFixed(1)} KM\n⏳ *Estimasi Waktu:* ${waktuStr}\n\n`;
-        if (!darat) caption += `_Catatan: Estimasi kecepatan jelajah udara 800 km/jam, bukan rute penerbangan asli._\n\n`;
-        caption += `💻 *Skrep by:* ${baseRes.author_skrep} (${baseRes.kesayangan})`;
+        const modeStr = darat? '🚗 *Land (OSRM Routing)*' : '✈️ *Air (Straight Line)*';
+        const waktuStr = jam? `${jam} hours ${menit} minutes` : `${menit} minutes`;
+        let caption = `📍 *ROUTE & DISTANCE MAPS INFO* 📍\n\n🏢 *Origin:* ${a.nama}\n🏁 *Destination:* ${b.nama}\n🛣️ *Route:* ${modeStr}\n📏 *Distance:* ${jarakKm.toFixed(1)} KM\n⏳ *Estimated Time:* ${waktuStr}\n\n`;
+        if (!darat) caption += `_Note: Estimated air exploration speed 800 km/h, not actual flight route._\n\n`;
+        caption += `💻 *Script by:* ${baseRes.author_skrep} (${baseRes.kesayangan})`;
         if (resultUrl) {
             await conn.sendMessage(m.chat, { image: { url: resultUrl }, caption: caption }, { quoted: m });
         } else {
-            caption = `⚠️ *Gagal merender gambar peta:* ${petaError}\n\n` + caption;
+            caption = `⚠️ *Failed to render map image:* ${petaError}\n\n` + caption;
             await conn.sendMessage(m.chat, { text: caption }, { quoted: m });
         }
     } catch (e) {
-        await conn.sendMessage(m.chat, { text: `❌ *Gagal:* ${e.message}` }, { quoted: m });
+        await conn.sendMessage(m.chat, { text: `❌ *Failed:* ${e.message}` }, { quoted: m });
     }
 };
 

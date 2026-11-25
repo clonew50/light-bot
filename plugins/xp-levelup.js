@@ -6,7 +6,7 @@ let handler = async (m) => {
 	const { min, xp, max } = xpRange(user.level, global.multiplier);
 
 	if (!canLevelUp(user.level, user.exp, global.multiplier)) {
-		await conn.reply(m.chat, `Level ${name} ${user.level} (${user.exp - min}/${xp})\nKurang ${max - user.exp} EXP lagi!`.trim(), m);
+		await conn.reply(m.chat, `Level ${name} ${user.level} (${user.exp - min}/${xp})\n${max - user.exp} more EXP needed!`.trim(), m);
 	}
 
 	let before = user.level * 1;

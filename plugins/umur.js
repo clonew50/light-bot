@@ -1,7 +1,7 @@
 // plugins/umur.js - Alya Bot | Dev yono - NEXT BIRTHDAY INFO
 
 let handler = async (m, { conn, args }) => {
-    if (!args[0]) return m.reply(`📌 *Cara:*.umur 2/2/2010`)
+    if (!args[0]) return m.reply(`📌 *Usage:* .umur 2/2/2010`)
 
     let input = args[0]
     let d, mo, y
@@ -19,7 +19,7 @@ let handler = async (m, { conn, args }) => {
 
     const totalHari = Math.floor((now - birth) / (1000*60*60*24))
 
-    // حساب شحال باقي لعيد الميلاد الجاي
+    // Calculate how much is left until the next birthday
     let nextBD = new Date(now.getFullYear(), mo - 1, d)
     if (nextBD < now) nextBD.setFullYear(now.getFullYear() + 1)
     const sisaHari = Math.ceil((nextBD - now) / (1000*60*60*24))
@@ -27,8 +27,8 @@ let handler = async (m, { conn, args }) => {
 
     const IMAGE_URL = 'https://files.catbox.moe/qnof82.jpg'
 
-    // هادي هي المعلومات اللي كتبان فاش كتبرك على الزرقة
-    const detailFullName = `🎂 Umur: ${tahun}th ${bulan}bln ${hari}hr | 📅 Lahir: ${d}/${mo}/${y} | ⏳ Hidup: ${totalHari} hari | 🎉 Ultah berikutnya: ${sisaHari} hari lagi (${sisaBulan} bulan) | Tahun depan: ${tahun+1} Tahun | © Alya - Dev yono`
+    // This is the info that appears when you click the button
+    const detailFullName = `🎂 Age: ${tahun}th ${bulan}mo ${hari}hr | 📅 Born: ${d}/${mo}/${y} | ⏳ Lived: ${totalHari} days | 🎉 Next birthday: ${sisaHari} days left (${sisaBulan} months) | Next year: ${tahun+1} Years | © Alya - Dev yono`
 
     const richMsg = {
         messageType: 1,
@@ -39,9 +39,9 @@ let handler = async (m, { conn, args }) => {
                     {
                         view_model: {
                             primitives: [{
-                                title: `${tahun} Tahun, ${bulan} Bulan`,
-                                subtitle: `Ultah berikutnya ${sisaHari} hari lagi`,
-                                secondary_subtitle: `Hidup ${totalHari} hari • © Alya - Dev yono`,
+                                title: `${tahun} Years, ${bulan} Months`,
+                                subtitle: `Next birthday ${sisaHari} days left`,
+                                secondary_subtitle: `Lived ${totalHari} days • © Alya - Dev yono`,
                                 image: { url: IMAGE_URL, mime_type: 'image/jpeg' },
                                 entity_id: '123456',
                                 entity_url: 'https://wa.me/',
@@ -64,13 +64,13 @@ let handler = async (m, { conn, args }) => {
                             primitives: [
                                 { __typename: 'GenAISpacerPrimitive' },
                                 {
-                                    text: '# {{social_entity_1}}Lihat Sisa Umur & Ultah\0{{/social_entity_1}} ',
+                                    text: '# {{social_entity_1}}View Remaining Age & Birthday\0{{/social_entity_1}} ',
                                     inline_entities: [{
                                         key: 'social_entity_1',
                                         metadata: {
                                             __typename: 'GenAISocialEntityItem',
                                             entity_id: `${tahun}`,
-                                            entity_name: `${sisaHari} hari lagi ultah`,
+                                            entity_name: `${sisaHari} days until birthday`,
                                             entity_full_name: detailFullName,
                                             entity_picture_url: IMAGE_URL,
                                             entity_url: 'https://wa.me/',
@@ -96,7 +96,7 @@ let handler = async (m, { conn, args }) => {
     }, {})
 }
 
-handler.help = ['umur <tanggal>']
+handler.help = ['umur <date>']
 handler.tags = ['tools']
 handler.command = /^(umur|age)$/i
 export default handler

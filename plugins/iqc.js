@@ -97,7 +97,7 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
         } catch {}
 
         if (!targetText &&!targetImgBuffer) {
-            return m.reply(`💬 *FITUR FAKE QUOTE iOS*\n\nKetik ${usedPrefix}${command} <teks>\nAtau reply pesan dengan ${usedPrefix}${command}\nContoh: ${usedPrefix}${command} halo dunia`)
+            return m.reply(`💬 *iOS FAKE QUOTE FEATURE*\n\nType ${usedPrefix}${command} <text>\nOr reply a message with ${usedPrefix}${command}\nExample: ${usedPrefix}${command} hello world`)
         }
 
         let ts = m.messageTimestamp; if (ts && typeof ts === 'object' && ts.low!== undefined) ts = ts.low;
@@ -192,7 +192,7 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
     } catch (error) {
         bgImgBuffer = null; fontsLoaded = false; appleEmojiMap = null;
         console.error(error); await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } })
-        m.reply(`❌ GAGAL\n${error.message}`)
+        m.reply(`❌ FAILED\n${error.message}`)
     }
 }
 

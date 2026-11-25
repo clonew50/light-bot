@@ -1,12 +1,12 @@
 let buatall = 1;
 let handler = async (m, { conn, args, command, usedPrefix }) => {
 	conn.casino = conn.casino ? conn.casino : {};
-	if (m.chat in conn.casino) return m.reply('Masih Ada Yang Melakukan Casino Disini, Tunggu Sampai Selesai!!');
+	if (m.chat in conn.casino) return m.reply('Someone is still doing Casino here, wait until it is done!!');
 	else conn.casino[m.chat] = true;
-	if (args.length < 1) return conn.reply(m.chat, usedPrefix + command + ' <jumlah>\n' + usedPrefix + command + ' 1000', m);
+	if (args.length < 1) return conn.reply(m.chat, usedPrefix + command + ' <amount>\n' + usedPrefix + command + ' 1000', m);
 	try {
 		let randomaku = `${Math.floor(Math.random() * 101)}`.trim();
-		let randomkamu = `${Math.floor(Math.random() * 81)}`.trim(); //hehe Biar Susah Menang :v
+		let randomkamu = `${Math.floor(Math.random() * 81)}`.trim(); //hehe to make it hard to win :v
 		let Aku = randomaku * 1;
 		let Kamu = randomkamu * 1;
 		let count = args[0];
@@ -22,8 +22,8 @@ let handler = async (m, { conn, args, command, usedPrefix }) => {
 *@${conn.user.jid.split('@')[0]}*
 ┗┅⭑ ${Aku} Point
 
-*Kalah*
-Kamu Kehilangan ${count} Uang`.trim();
+*Lose*
+You lost ${count} money`.trim();
 				conn.reply(m.chat, caption, m, { mentions: conn.parseMention(caption) });
 			} else if (Aku < Kamu) {
 				let caption = `*C A S I N O*
@@ -33,8 +33,8 @@ Kamu Kehilangan ${count} Uang`.trim();
 *@${conn.user.jid.split('@')[0]}*
 ┗┅⭑ ${Aku} Point
 
-*Menang*
-Kamu Mendapatkan ${count * 2} Uang`.trim();
+*Win*
+You got ${count * 2} money`.trim();
 				conn.reply(m.chat, caption, m, { mentions: conn.parseMention(caption) });
 			} else {
 				let caption = `*C A S I N O*
@@ -44,11 +44,11 @@ Kamu Mendapatkan ${count * 2} Uang`.trim();
 *@${conn.user.jid.split('@')[0]}*
 ┗┅⭑ ${Aku} Point
 
-*Seri*
-Kamu Mendapatkan ${count * 1}`.trim();
+*Draw*
+You got ${count * 1}`.trim();
 				conn.reply(m.chat, caption, m, { mentions: conn.parseMention(caption) });
 			}
-		} else conn.reply(m.chat, `Uang Kamu Tidak Mencukupi Untuk Casino Silahkan *.claim* Terlebih Dahulu!`.trim(), m);
+		} else conn.reply(m.chat, `Your money is not enough for Casino, please *.claim* first!`.trim(), m);
 	} catch (e) {
 		console.log(e);
 		m.reply('Error!!');

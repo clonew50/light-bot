@@ -25,11 +25,11 @@ let handler = async (m, { conn, usedPrefix: _p }) => {
    ⌊🌺 | ${botName} | 🌺⌋
 ❀.─━━━━🌷━━━━─.❀
 
-*👤 المستخدم:* ${userName}
-*🤖 البوت:* ${botName}
+*👤 User:* ${userName}
+*🤖 Bot:* ${botName}
 
-*✨ مرحبا بك*
-لرؤية الأوامر اضغط على زر القائمة
+*✨ Welcome*
+To see the commands, press the menu button
 
 ❀.─━━━━🌷━━━━─.❀
 > ${botName}`
@@ -40,7 +40,7 @@ let handler = async (m, { conn, usedPrefix: _p }) => {
       message: {
         contactMessage: {
           displayName: senderName,
-          vcard: `BEGIN:VCARD\nVERSION:3.0\nN:;a,;;;\nFN:${senderName}\nitem1.TEL;waid=${m.sender.split('@')[0]}:${m.sender.split('@')[0]}\nitem1.X-ABLabel:Ponsel\nEND:VCARD`,
+          vcard: `BEGIN:VCARD\nVERSION:3.0\nN:;a,;;;\nFN:${senderName}\nitem1.TEL;waid=${m.sender.split('@')[0]}:${m.sender.split('@')[0]}\nitem1.X-ABLabel:Phone\nEND:VCARD`,
         },
       },
     }
@@ -63,7 +63,7 @@ let handler = async (m, { conn, usedPrefix: _p }) => {
 
   } catch (e) {
     console.log(e)
-    m.reply(`❌ خطأ: ${e.message}`)
+    m.reply(`❌ Error: ${e.message}`)
   }
 }
 

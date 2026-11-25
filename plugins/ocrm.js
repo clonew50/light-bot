@@ -12,27 +12,27 @@ const handler = async (m, { conn, text, command }) => {
     const cleanCmd = command.toLowerCase().replace(/^o/, ''); // ocrm -> crm
 
     if (cleanCmd === 'lastchat') {
-        return m.reply('❌ Fitur olastchat butuh crmstore SQLite.\nGunakan.ocrm dengan reply pesan saja\nby alya');
+        return m.reply('❌ The olastchat feature requires crmstore SQLite.\nUse.ocrm with a reply to a message only\nby alya');
     }
 
     if (!m.quoted) {
-        const usage = `📌 *.${command}* butuh reply pesan
+        const usage = `📌 *.${command}* requires a reply to a message
 
-*Command Owner (by alya):*
-•.ocrm → Generate file relay siap pakai
-•.ocrm2 → Kirim relay code + tombol copy
-•.oadn → Ambil AdditionalNodes
-•.oinsp → Ambil raw payload JSON
-•.orelay → Langsung relay ulang pesan
+*Owner Commands (by alya):*
+•.ocrm → Generate a ready-to-use relay file
+•.ocrm2 → Send relay code + copy button
+•.oadn → Get AdditionalNodes
+•.oinsp → Get raw payload JSON
+•.orelay → Relay the message again directly
 
-*Flag:*
+*Flags:*
 • -raw → Export raw JSON
-• -message → Export message saja
-• -relay → Export kode relay
-• -file → Kirim sebagai dokumen
-• -snip → Tampilkan sebagai snippet
+• -message → Export message only
+• -relay → Export relay code
+• -file → Send as a document
+• -snip → Show as a snippet
 
-Contoh:
+Example:
 .ocrm
 .ocrm -snip
 .oinsp -raw -file
@@ -46,11 +46,11 @@ Contoh:
     if (!rmsg?.message) rmsg = m.quoted?.fakeObj || { key: m.quoted.key, message: m.quoted.message || { conversation: m.quoted.text } };
 
     let msg = rmsg;
-    if (!msg?.message) return m.reply(`⛓️‍💥 Message tidak valid`);
+    if (!msg?.message) return m.reply(`⛓️‍💥 Invalid message`);
 
     const type = Object.keys(msg.message).find(v =>!['messageContextInfo', 'senderKeyDistributionMessage'].includes(v)) || 'unknown';
 
-    // Ambil relay options dari context
+    // Get relay options from context
     const additionalAttributes = {};
     const additionalNodes = [];
 
@@ -95,7 +95,7 @@ Contoh:
     }
 
     if (cleanCmd === 'adn' || command === 'oadn') {
-        return m.reply(`AdditionalNodes untuk ${type}:\n${stringify(additionalNodes)}\n\nby alya\nCatatan: di Elaina original tidak ada additionalNodes, ini versi simple`);
+        return m.reply(`AdditionalNodes for ${type}:\n${stringify(additionalNodes)}\n\nby alya\nNote: in the original Elaina there are no additionalNodes, this is the simple version`);
     }
 
     if (cleanCmd === 'crm2' || command === 'ocrm2') {

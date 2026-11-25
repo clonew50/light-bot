@@ -210,16 +210,16 @@ function secondsFromTimestamp(timestamp = '') {
 
 async function downloadAudioBuffer(url) {
     const res = await fetch(url, { headers: { 'User-Agent': HEADERS['User-Agent'] } });
-    if (!res.ok) throw new Error(`Gagal download audio (${res.status})`);
+    if (!res.ok) throw new Error(`Failed to download audio (${res.status})`);
     const buffer = Buffer.from(await res.arrayBuffer());
-    if (buffer.length > MAX_ORIGINAL_AUDIO_SIZE) throw new Error('Ukuran audio terlalu besar (Max 25MB)');
+    if (buffer.length > MAX_ORIGINAL_AUDIO_SIZE) throw new Error('Audio size is too large (Max 25MB)');
     return buffer;
 }
 async function compressAudio(inputBuffer) {
     return new Promise((resolve, reject) => {
         const ffmpeg = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-vn', '-c:a', FFMPEG_CODEC, '-b:a', FFMPEG_BITRATE, '-ar', FFMPEG_SAMPLE_RATE, '-ac', FFMPEG_CHANNELS, '-application', 'audio', '-f', FFMPEG_FORMAT, 'pipe:1']);
         const chunks = []; ffmpeg.stdout.on('data', chunk => chunks.push(chunk));
-        ffmpeg.on('close', code => { if (code!== 0) return reject(new Error(`Gagal memproses audio via FFmpeg (kode: ${code})`)); resolve(Buffer.concat(chunks)); });
+        ffmpeg.on('close', code => { if (code!== 0) return reject(new Error(`Failed to process audio via FFmpeg (code: ${code})`)); resolve(Buffer.concat(chunks)); });
         ffmpeg.stdin.on('error', () => {}); ffmpeg.stdin.end(inputBuffer);
     });
 }
@@ -297,7 +297,7 @@ function createMusicPlayer({ title, artist, duration, audioSrc, imageSrc, lyrics
 (function(){
   const audio=document.getElementById('audio');const play=document.getElementById('play');const bar=document.getElementById('bar');const fill=document.getElementById('fill');const dot=document.getElementById('dot');const cur=document.getElementById('cur');const dur=document.getElementById('dur');const heart=document.getElementById('heart');const iconPlay=document.getElementById('icon-play');const iconPause=document.getElementById('icon-pause');const btnLyrics=document.getElementById('btn-lyrics');const btnCloseLyrics=document.getElementById('btn-close-lyrics');const lyricsPanel=document.getElementById('lyrics-panel');const lyricsText=document.getElementById('lyrics-text');const lyricsStatus=document.getElementById('lyrics-status');
   let lyrics=[];try{const encoded='${lyricsJson}';const json=decodeURIComponent(Array.prototype.map.call(atob(encoded),c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join(''));lyrics=JSON.parse(json);}catch(e){lyrics=[];}
-  const lyricElements=[];function renderLyrics(){lyricsText.innerHTML='';if(!Array.isArray(lyrics)||!lyrics.length){lyricsStatus.textContent='Lirik tidak tersedia';lyricsText.innerHTML='<div class="lyrics-empty">Lirik tidak tersedia untuk lagu ini.</div>';return;}lyricsStatus.textContent='Synced lyrics • LRCLIB';const fragment=document.createDocumentFragment();lyrics.forEach((line,index)=>{const el=document.createElement('div');el.className='lyric-line';el.dataset.index=String(index);el.dataset.time=String(line.time||0);el.textContent=line.text||'♪';fragment.appendChild(el);lyricElements.push(el);});lyricsText.appendChild(fragment);}renderLyrics();
+  const lyricElements=[];function renderLyrics(){lyricsText.innerHTML='';if(!Array.isArray(lyrics)||!lyrics.length){lyricsStatus.textContent='Lyrics not available';lyricsText.innerHTML='<div class="lyrics-empty">Lyrics are not available for this song.</div>';return;}lyricsStatus.textContent='Synced lyrics • LRCLIB';const fragment=document.createDocumentFragment();lyrics.forEach((line,index)=>{const el=document.createElement('div');el.className='lyric-line';el.dataset.index=String(index);el.dataset.time=String(line.time||0);el.textContent=line.text||'♪';fragment.appendChild(el);lyricElements.push(el);});lyricsText.appendChild(fragment);}renderLyrics();
   let activeLyricIndex=-1;function updateLyrics(currentTime){if(!lyrics.length||!lyricElements.length)return;let index=-1;for(let i=0;i<lyrics.length;i++){if(currentTime>=Number(lyrics[i].time||0)){index=i;}else{break;}}if(index===-1||index===activeLyricIndex)return;activeLyricIndex=index;lyricElements.forEach((el,i)=>{el.classList.toggle('is-active',i===index);el.classList.toggle('is-past',i<index);});const active=lyricElements[index];if(active){active.scrollIntoView({behavior:'smooth',block:'center'});}}
   btnLyrics.addEventListener('click',()=>{lyricsPanel.classList.add('is-open');setTimeout(()=>{if(activeLyricIndex>=0&&lyricElements[activeLyricIndex]){lyricElements[activeLyricIndex].scrollIntoView({behavior:'instant',block:'center'});}},100);});
   btnCloseLyrics.addEventListener('click',()=>{lyricsPanel.classList.remove('is-open');});
@@ -332,9 +332,9 @@ async function sendMusicPlayer(conn, chatId, html) {
 }
 
 let handler = async (m, { conn, text, usedPrefix, command }) => {
-    if (!text) throw `*⚠️ Masukkan judul lagu atau link YouTube!*\n\n*Contoh:* ${usedPrefix + command} chase atlantic - swim`;
+    if (!text) throw `*⚠️ Enter a song title or YouTube link!*\n\n*Example:* ${usedPrefix + command} chase atlantic - swim`;
     await conn.sendMessage(m.chat, { react: { text: '🎧', key: m.key } });
-    await conn.sendMessage(m.chat, { text: '⏳ *Sedang mencari dan menyiapkan audio...*' }, { quoted: m });
+    await conn.sendMessage(m.chat, { text: '⏳ *Searching and preparing audio...*' }, { quoted: m });
     try {
         let ytUrl = text.trim();
         let title = 'Unknown', artist = 'Unknown Artist', duration = '0:00';
@@ -343,7 +343,7 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
             const ytm = await getYTMusic();
             const songs = await ytm.search(text);
             const track = songs.find(s => s.type === 'SONG') || songs[0];
-            if (!track ||!track.videoId) throw new Error('Lagu tidak ditemukan di YouTube Music');
+            if (!track ||!track.videoId) throw new Error('Song not found on YouTube Music');
             trackIdForLyrics = track.videoId;
             ytUrl = `https://www.youtube.com/watch?v=${track.videoId}`;
             title = track.name || track.title || 'Unknown';
@@ -355,7 +355,7 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
         } else {
             const detail = await yts(ytUrl);
             const vid = detail?.videos?.[0];
-            if (!vid) throw new Error('Video tidak ditemukan');
+            if (!vid) throw new Error('Video not found');
             title = vid.title || 'Unknown';
             artist = vid.author?.name || 'YouTube';
             duration = vid.timestamp || '0:00';
@@ -385,13 +385,13 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
 
         // ===== هنا التغيير المهم: استخدام ytdlAuto الجديد =====
         const audioData = await ytdlAuto(ytUrl, 'audio');
-        if (!audioData?.download_url) throw new Error('Link download audio tidak tersedia dari semua server');
+        if (!audioData?.download_url) throw new Error('Audio download link is not available from any server');
 
         const originalBuffer = await downloadAudioBuffer(audioData.download_url);
         const compressedBuffer = await compressAudio(originalBuffer);
         const audioSrc = `data:audio/ogg;base64,${compressedBuffer.toString('base64')}`;
 
-        if (Buffer.byteLength(audioSrc, 'utf8') > 8 * 1024 * 1024) throw new Error('Ukuran audio setelah kompresi terlalu besar');
+        if (Buffer.byteLength(audioSrc, 'utf8') > 8 * 1024 * 1024) throw new Error('Audio size after compression is too large');
 
         const html = createMusicPlayer({ title: audioData.title || title, artist, duration, audioSrc, imageSrc, lyrics: syncedLyrics });
         await sendMusicPlayer(conn, m.chat, html);
@@ -400,7 +400,7 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
     } catch (error) {
         console.error('[PLAY2 ERROR]', error);
         await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } });
-        await conn.sendMessage(m.chat, { text: `❌ Gagal memproses lagu.\n\n> ${error?.message || 'Terjadi kesalahan tidak terduga'}` }, { quoted: m });
+        await conn.sendMessage(m.chat, { text: `❌ Failed to process the song.\n\n> ${error?.message || 'An unexpected error occurred'}` }, { quoted: m });
     }
 };
 

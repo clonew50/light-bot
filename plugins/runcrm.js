@@ -8,14 +8,14 @@ let handler = async (m, { satanic, text, command, prefix, isCreator }) => {
 const from = m.chat
 
 if (!isCreator) {
-return m.reply('❌ Fitur khusus owner/pemilik saja ya kak~ 🌸')
+return m.reply('❌ This feature is for the owner only~ 🌸')
 }
 
 if (!m.quoted) {
 return m.reply(
-`⚠️ *Cara penggunaan:*\n\n` +
-`Reply ke file *relay.js* yang sudah dibuat, lalu kirim *${prefix}${command}*\n\n` +
-`📌 Contoh: Reply file relay.js lalu ketik ${prefix}runcrm`
+`⚠️ *How to use:*\n\n` +
+`Reply to the *relay.js* file that was created, then send *${prefix}${command}*\n\n` +
+`📌 Example: Reply to the relay.js file then type ${prefix}runcrm`
 )
 }
 
@@ -28,15 +28,15 @@ quotedMsg.msg?.documentMessage
 
 if (!isDocument) {
 return m.reply(
-`❌ Bukan file yang valid!\n\n` +
-`📌 Reply ke file *relay.js* yang dikirim bot`
+`❌ Not a valid file!\n\n` +
+`📌 Reply to the *relay.js* file sent by the bot`
 )
 }
 
 try {
 const media = await satanic.downloadMediaMessage(m.quoted)
 if (!media) {
-return m.reply('❌ Gagal mendownload file')
+return m.reply('❌ Failed to download file')
 }
 
 const fileContent = media.toString('utf8')
@@ -57,11 +57,11 @@ crmData = loadedData
 fs.unlinkSync(tempFile)
 
 } catch (e) {
-return m.reply(`❌ Gagal parsing CRM:\n${e.message}`)
+return m.reply(`❌ Failed to parse CRM:\n${e.message}`)
 }
 
 if (!crmData || !crmData.payload) {
-return m.reply('❌ CRM tidak valid atau payload kosong')
+return m.reply('❌ Invalid CRM or empty payload')
 }
 
 const payload = crmData.payload
@@ -86,7 +86,7 @@ quoted: m
 } else if (payload.text) {
 await satanic.sendMessage(from, { text: payload.text }, { quoted: m })
 } else {
-return m.reply('❌ Tidak ada konten yang bisa dikirim dari CRM')
+return m.reply('❌ No content to send from the CRM')
 }
 
 await satanic.sendMessage(from, {
@@ -96,13 +96,13 @@ key: m.key
 }
 })
 
-let infoText = `✅ *CRM berhasil dijalankan*\n\n`
-infoText += `📅 Dibuat: ${crmData.createdAt || 'Tidak diketahui'}\n`
-infoText += `👤 Creator: ${crmData.creator || 'Tidak diketahui'}\n`
-infoText += `📝 Tipe: ${payload.type || 'Tidak diketahui'}\n`
-infoText += `🔘 Button: ${payload.hasButtons ? '✅ Ada' : '❌ Tidak'}\n`
+let infoText = `✅ *CRM successfully executed*\n\n`
+infoText += `📅 Created: ${crmData.createdAt || 'Unknown'}\n`
+infoText += `👤 Creator: ${crmData.creator || 'Unknown'}\n`
+infoText += `📝 Type: ${payload.type || 'Unknown'}\n`
+infoText += `🔘 Button: ${payload.hasButtons ? '✅ Yes' : '❌ No'}\n`
 if (payload.hasLocation) {
-infoText += `📍 Location: ✅ Ada\n`
+infoText += `📍 Location: ✅ Yes\n`
 }
 
 await satanic.sendMessage(from, {
@@ -112,7 +112,7 @@ text: infoText
 } catch (e) {
 console.error('RUNCRM ERROR:', e)
 return m.reply(
-'❌ Gagal menjalankan CRM.\n\n' +
+'❌ Failed to run CRM.\n\n' +
 (e?.message || String(e))
 )
 }

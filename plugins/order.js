@@ -5,7 +5,7 @@ let handler = async (m, { conn, args, text }) => {
   
   let amount = parseInt(harga) || 13
   let productName = nama?.trim() || 'ʀᴇᴍ ʙᴏᴛ Premium'
-  let note = 'Terima kasih telah berbelanja di ʀᴇᴍ ʙᴏᴛ Store'
+  let note = 'Thank you for shopping at ʀᴇᴍ ʙᴏᴛ Store'
 
   let total = amount * 100 // offset 100
 
@@ -14,7 +14,7 @@ let handler = async (m, { conn, args, text }) => {
       messageSecret: "KGwRSdbSX8vuheUT+dSdWZ+jKSGLHRl8ICLs+Xhany4="
     },
     interactiveMessage: {
-      body: { text: `🧾 *INVOICE - ʀᴇᴍ ʙᴏᴛ*\n\n📦 Produk: ${productName}\n💰 Harga: $${amount}\n\nKlik di bawah untuk detail pembayaran` },
+      body: { text: `🧾 *INVOICE - ʀᴇᴍ ʙᴏᴛ*\n\n📦 Product: ${productName}\n💰 Price: $${amount}\n\nClick below for payment details` },
       footer: { text: "ʀᴇᴍ ʙᴏᴛ Official Store" },
       nativeFlowMessage: {
         buttons: [

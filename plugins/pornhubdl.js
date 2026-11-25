@@ -25,12 +25,12 @@ async function searchPornhub(search) {
 
 let handler = async (m, { conn, args, usedPrefix }) => {
   if (!db.data.chats[m.chat].nsfw && m.isGroup) {
-    return conn.reply(m.chat, `*NSFW mati*\nAktifkan dengan ${usedPrefix}nsfw on`, m);
+    return conn.reply(m.chat, `*NSFW is off*\nEnable it with ${usedPrefix}nsfw on`, m);
   }
-  if (!args[0]) return conn.reply(m.chat, `Contoh: ${usedPrefix}ph mia`, m);
+  if (!args[0]) return conn.reply(m.chat, `Example: ${usedPrefix}ph mia`, m);
 
   let res = await searchPornhub(args.join(' '));
-  if (!res.result.length) return conn.reply(m.chat, `Tidak ada hasil untuk ${args.join(' ')}`, m);
+  if (!res.result.length) return conn.reply(m.chat, `No results for ${args.join(' ')}`, m);
 
   let teks = res.result.slice(0,10).map((v,i) =>
 `*[${i+1}] P O R N H U B*

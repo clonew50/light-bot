@@ -48,7 +48,7 @@ ${isDuo ? '<option value="friend" selected>VS FRIEND - ONLINE</option>' : '<opti
 <div class="box"><small>DRAW</small><strong id="sD">0</strong></div>
 <div class="box"><small id="l2">BOT O</small><strong id="s2">0</strong></div>
 </div>
-<div id="stat" class="status">Giliran X</div>
+<div id="stat" class="status">Turn X</div>
 <div id="board" class="board"></div>
 <button id="backBtn" class="btn2" style="margin-top:12px">MENU</button>
 </div>
@@ -129,7 +129,7 @@ function newGame(){
   board=Array(size*size).fill(''); over=false; current='X';
   if(vsFriend){ l1.textContent='${p1} X'; l2.textContent='${p2} O'; } else { l1.textContent='YOU X'; l2.textContent='BOT O'; }
   boardEl.style.gridTemplateColumns='repeat('+size+',1fr)';
-  statEl.textContent='Giliran '+current;
+  statEl.textContent='Turn '+current;
   statEl.className='status';
   draw();
 }
@@ -153,9 +153,9 @@ function move(idx){
   if(check()) return;
   if(vsFriend){
     current=current==='X'?'O':'X';
-    statEl.textContent='Giliran '+current+' ('+(current==='X'?'${p1}':'${p2}')+')';
+    statEl.textContent='Turn '+current+' ('+(current==='X'?'${p1}':'${p2}')+')';
   } else {
-    statEl.textContent='Robot berpikir...';
+    statEl.textContent='Robot thinking...';
     setTimeout(botMove, 400);
   }
 }
@@ -167,7 +167,7 @@ function botMove(){
   else { m=findWin('O'); if(m===undefined) m=findWin('X'); if(m===undefined) m=strat(); if(m===undefined) m=rndMove(); }
   if(m!==undefined){ board[m]='O'; playTick(); draw(); }
   if(check()) return;
-  statEl.textContent='Giliran kamu';
+  statEl.textContent='Your turn';
 }
 function rndMove(){ var e=[]; for(var i=0;i<board.length;i++) if(board[i]==='') e.push(i); return e.length?e[Math.floor(Math.random()*e.length)]:undefined; }
 function findWin(s){ for(var i=0;i<board.length;i++){ if(board[i]!=='') continue; board[i]=s; var w=getWin(); board[i]=''; if(w===s) return i; } }
@@ -176,9 +176,9 @@ function getLines(){ var L=[]; for(var r=0;r<size;r++){ var a=[]; for(var c=0;c<
 function getWin(){ var Ls=getLines(); for(var k=0;k<Ls.length;k++){ var line=Ls[k], f=board[line[0]]; if(f==='') continue; var ok=true; for(var j=0;j<line.length;j++) if(board[line[j]]!==f) ok=false; if(ok) return f; } if(board.every(function(v){return v!==''})) return 'DRAW'; return null; }
 function check(){
   var r=getWin(); if(!r) return false; over=true;
-  if(r==='X'){ scores.a++; statEl.textContent=vsFriend?'${p1} MENANG! 🎉':'KAMU MENANG! 🎉'; statEl.className='status win'; playWin(); hi('X'); }
-  else if(r==='O'){ scores.b++; statEl.textContent=vsFriend?'${p2} MENANG! 🎉':'ROBOT MENANG!'; statEl.className='status lose'; playLose(); hi('O'); }
-  else { scores.d++; statEl.textContent='SERI!'; statEl.className='status'; }
+  if(r==='X'){ scores.a++; statEl.textContent=vsFriend?'${p1} WINS! 🎉':'YOU WIN! 🎉'; statEl.className='status win'; playWin(); hi('X'); }
+  else if(r==='O'){ scores.b++; statEl.textContent=vsFriend?'${p2} WINS! 🎉':'ROBOT WINS!'; statEl.className='status lose'; playLose(); hi('O'); }
+  else { scores.d++; statEl.textContent='DRAW!'; statEl.className='status'; }
   s1.textContent=scores.a; s2.textContent=scores.b; sD.textContent=scores.d;
   setTimeout(newGame, 2000); return true;
 }

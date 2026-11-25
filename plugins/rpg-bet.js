@@ -1,30 +1,30 @@
 let confirm = {};
 
 async function handler(m, { conn, args }) {
-	if (m.sender in confirm) throw 'Kamu masih melakukan judi, tunggu sampai selesai!';
+	if (m.sender in confirm) throw 'You are still gambling, wait until it is finished!';
 
 	try {
 		let user = global.db.data.users[m.sender];
 		let jumlah = args[0] && number(parseInt(args[0])) ? Math.max(parseInt(args[0]), 1) : /all/i.test(args[0]) ? Math.floor(user.money) : 1;
 
-		if (user.money < jumlah) return m.reply('Uang kamu tidak cukup!');
+		if (user.money < jumlah) return m.reply('You do not have enough money!');
 
 		confirm[m.sender] = {
 			count: jumlah,
 			timeout: setTimeout(() => {
-				m.reply('Waktu habis! Judi dibatalkan.');
+				m.reply('Time is up! Bet cancelled.');
 				delete confirm[m.sender];
 			}, 60_000),
 		};
 
-		conn.reply(m.chat, `Apakah kamu yakin ingin judi?\n\n*Taruhan:* ${jumlah}\nWaktu: 60 detik\nBalas *Iya* untuk lanjut, *Tidak* untuk batal.`, m);
+		conn.reply(m.chat, `Are you sure you want to gamble?\n\n*Bet:* ${jumlah}\nTime: 60 seconds\nReply *Yes* to continue, *No* to cancel.`, m);
 	} catch (e) {
 		console.error(e);
 		if (m.sender in confirm) {
 			clearTimeout(confirm[m.sender].timeout);
 			delete confirm[m.sender];
 		}
-		m.reply('Terjadi kesalahan (dibatalkan).');
+		m.reply('An error occurred (cancelled).');
 	}
 }
 
@@ -36,7 +36,7 @@ handler.before = async (m) => {
 	let user = global.db.data.users[m.sender];
 	let txt = (m.msg?.selectedDisplayText || m.text || '').trim().toLowerCase();
 
-	// Jawaban YA
+	// YES answer
 	if (/^(iya|ya|y|yes)$/i.test(txt)) {
 		clearTimeout(session.timeout);
 
@@ -50,25 +50,25 @@ handler.before = async (m) => {
 
 		if (kamu > bot) {
 			user.money += taruhan;
-			status = 'Menang';
-			text = `Mendapatkan Uang Sebesar *+${taruhan}*`;
+			status = 'Win';
+			text = `Gained Money of *+${taruhan}*`;
 		} else if (kamu < bot) {
 			user.money -= taruhan;
-			status = 'Kalah';
-			text = `Kehilangan Uang Sebesar *-${taruhan}*`;
+			status = 'Lose';
+			text = `Lost Money of *-${taruhan}*`;
 		} else {
 			let bonus = Math.floor(taruhan / 1.5);
 			user.money += bonus;
-			status = 'Seri';
-			text = `Mendapatkan Uang *+${bonus}*`;
+			status = 'Draw';
+			text = `Gained Money *+${bonus}*`;
 		}
 
 		m.reply(
 			`
 *Bot:*   ${bot}
-*Kamu:* ${kamu}
+*You:* ${kamu}
 
-Kamu *${status}*, Kamu ${text}
+You *${status}*, You ${text}
             `.trim()
 		);
 
@@ -76,15 +76,15 @@ Kamu *${status}*, Kamu ${text}
 		return true;
 	}
 
-	// Jawaban TIDAK
+	// NO answer
 	if (/^(tidak|n|no|ga|gak)$/i.test(txt)) {
 		clearTimeout(session.timeout);
 		delete confirm[m.sender];
-		m.reply('Dibatalkan.');
+		m.reply('Cancelled.');
 		return true;
 	}
 
-	// Jika menjawab tapi bukan "iya/tidak", abaikan
+	// If replying but it's not "yes/no", ignore
 };
 
 handler.help = ['judi'];

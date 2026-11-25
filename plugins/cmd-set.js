@@ -1,10 +1,10 @@
 let handler = async (m, { text, usedPrefix, command }) => {
-	if (!m.quoted) throw `Balas stiker dengan perintah *${usedPrefix + command}*`;
+	if (!m.quoted) throw `Reply to sticker with command *${usedPrefix + command}*`;
 	if (!m.quoted.fileSha256) throw 'SHA256 Hash Missing';
-	if (!text) throw `Penggunaan:\n${usedPrefix + command} <teks>\n\nContoh:\n${usedPrefix + command} tes`;
+	if (!text) throw `Usage:\n${usedPrefix + command} <text>\n\nExample:\n${usedPrefix + command} test`;
 	let sticker = db.data.sticker;
 	let hash = m.quoted.fileSha256;
-	if (sticker[hash] && sticker[hash].locked) throw 'Kamu tidak memiliki izin untuk mengubah perintah stiker ini';
+	if (sticker[hash] && sticker[hash].locked) throw 'You do not have permission to change this sticker command';
 	sticker[hash] = {
 		text,
 		mentionedJid: m.mentionedJid,

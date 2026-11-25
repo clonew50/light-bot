@@ -1,4 +1,4 @@
-//حقوق وتطوير de & YONO - VERSI INDONESIA
+// Rights and development de & YONO - INDONESIA VERSION
 import { Buffer } from 'buffer'
 import crypto from 'crypto'
 
@@ -8,7 +8,7 @@ await conn.relayMessage(m.chat, {
     deviceListMetadata: {},
     deviceListMetadataVersion: 2,
     botMetadata: {
-      messageDisclaimerText: "Hak Cipta ©  & YONO",
+      messageDisclaimerText: "Copyright ©  & YONO",
       botResponseId: crypto.randomUUID(),
     }
   },
@@ -16,7 +16,7 @@ await conn.relayMessage(m.chat, {
     message: {
       richResponseMessage: {
         messageType: 1,
-        submessages: [{ messageType: 2, messageText: "🦖 & YONO - Pelari Dino" }],
+        submessages: [{ messageType: 2, messageText: "🦖 & YONO - Dino Runner" }],
         unifiedResponse: {
           data: Buffer.from(JSON.stringify({
             "response_id": "dino-" + Date.now(),

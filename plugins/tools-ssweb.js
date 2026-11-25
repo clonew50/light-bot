@@ -41,11 +41,11 @@ const ssweb = {
 				?.split(',')
 				.map((v) => v.split(';')[0])
 				.join('; ') || '';
-		if (!cookie) throw Error('gagal mendapatkan kuki');
+		if (!cookie) throw Error('failed to get cookie');
 		return { cookie };
 	},
 	async getBuffer(reqObj, cookie) {
-		if (reqObj.status !== 'success') throw Error('status nya gak sukses');
+		if (reqObj.status !== 'success') throw Error('status is not successful');
 		const { link } = reqObj;
 		const r = await fetch(this._static.baseUrl + '/' + link, { headers: { cookie } });
 		if (!r.ok) throw Error(`${r.status} ${r.statusText} ${this.pretyError(await r.text())}`);
@@ -68,7 +68,7 @@ const ssweb = {
 		return { reqObj };
 	},
 	async capture(url) {
-		if (!url) throw Error('param url gak boleh kosong');
+		if (!url) throw Error('url param cannot be empty');
 		const { cookie } = await this.getCookie();
 		const { reqObj } = await this.req(url, cookie);
 		const { buffer } = await this.getBuffer(reqObj, cookie);

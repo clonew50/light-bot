@@ -4,7 +4,7 @@ import sizeOf from 'image-size';
 const BASE = 'https://api.shngm.io/v1';
 
 let handler = async (m, { conn, text, args, usedPrefix, command }) => {
-	if (!text) throw '❌ Masukkan judul manhwa';
+	if (!text) throw '❌ Enter manhwa title';
 
 	const cmd = usedPrefix + command;
 	const type = args[0];
@@ -27,8 +27,8 @@ let handler = async (m, { conn, text, args, usedPrefix, command }) => {
 👀 Views: *${d.view_count.toLocaleString()}*
 🏆 Rank: *${d.rank}*
 
-📅 Rilis: *${d.release_year}*
-🌍 Negara: *${d.country_id}*
+📅 Released: *${d.release_year}*
+🌍 Country: *${d.country_id}*
 
 👤 Author: *${getNames('Author')}*
 🎨 Artist: *${getNames('Artist')}*
@@ -47,7 +47,7 @@ ${d.description}
 		if (page > 1) {
 			rows.push({
 				title: '⬅️ Prev Page',
-				description: `Halaman ${page - 1}`,
+				description: `Page ${page - 1}`,
 				id: `${cmd} detail ${id}|${page - 1}`,
 			});
 		}
@@ -55,7 +55,7 @@ ${d.description}
 		if (page < chapters.meta.total_page) {
 			rows.push({
 				title: '➡️ Next Page',
-				description: `Halaman ${page + 1}`,
+				description: `Page ${page + 1}`,
 				id: `${cmd} detail ${id}|${page + 1}`,
 			});
 		}
@@ -71,8 +71,8 @@ ${d.description}
 					{
 						name: 'single_select',
 						buttonParamsJson: JSON.stringify({
-							title: '📖 Pilih Chapter',
-							sections: [{ title: 'Daftar Chapter', rows }],
+							title: '📖 Select Chapter',
+							sections: [{ title: 'Chapter List', rows }],
 						}),
 					},
 				],
@@ -84,7 +84,7 @@ ${d.description}
 	if (type === 'read') {
 		try {
 			const chapterId = args[1];
-			await m.reply('🔁 Membuat PDF...');
+			await m.reply('🔁 Creating PDF...');
 
 			const res = await getJSON(`${BASE}/chapter/detail/${chapterId}`);
 			const c = res.data;
@@ -111,7 +111,7 @@ ${d.description}
 
 	const res = await getJSON(`${BASE}/manga/list?page=${page}&page_size=15&q=${encodeURIComponent(query)}`);
 
-	if (!res.data?.length) throw `"${query}" tidak ditemukan`;
+	if (!res.data?.length) throw `"${query}" not found`;
 
 	let rows = res.data.map((v) => ({
 		title: v.title,
@@ -122,7 +122,7 @@ ${d.description}
 	if (page > 1) {
 		rows.push({
 			title: '⬅️ Prev Page',
-			description: `Halaman ${page - 1}`,
+			description: `Page ${page - 1}`,
 			id: `${cmd} ${query}|${page - 1}`,
 		});
 	}
@@ -130,7 +130,7 @@ ${d.description}
 	if (page < res.meta.total_page) {
 		rows.push({
 			title: '➡️ Next Page',
-			description: `Halaman ${page + 1}`,
+			description: `Page ${page + 1}`,
 			id: `${cmd} ${query}|${page + 1}`,
 		});
 	}
@@ -138,15 +138,15 @@ ${d.description}
 	return conn.sendButton(
 		m.chat,
 		{
-			text: `🔎 *Hasil Pencarian* "${query}"\n${res.data.length} ditemukan`,
+			text: `🔎 *Search Results* "${query}"\n${res.data.length} found`,
 			title: 'MANHWA SEARCH',
 			footer: `Page ${page}/${res.meta.total_page}`,
 			buttons: [
 				{
 					name: 'single_select',
 					buttonParamsJson: JSON.stringify({
-						title: '📚 Pilih Manhwa',
-						sections: [{ title: 'Hasil', rows }],
+						title: '📚 Select Manhwa',
+						sections: [{ title: 'Results', rows }],
 					}),
 				},
 			],

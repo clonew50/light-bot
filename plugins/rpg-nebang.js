@@ -3,9 +3,9 @@ let handler = async (m, { conn, usedPrefix }) => {
 	let __timers = new Date() - user.lastnebang;
 	let penebang = conn.getName(m.sender);
 
-	if (user.axe < 1) return m.reply('Kamu belum mempunyai Axe');
-	if (user.stamina < 20) return m.reply(`Stamina Kamu Tidak Cukup\nHarap Isi Stamina Kamu Dengan *${usedPrefix}eat`);
-	if (user.lastnebang > 10800000) throw m.reply(`Kamu Masih Kelelahan\nHarap Tunggu ${clockString(10800000 - __timers)} Lagi`);
+	if (user.axe < 1) return m.reply('You do not have an Axe yet');
+	if (user.stamina < 20) return m.reply(`Your Stamina Is Not Enough\nPlease Refill Your Stamina With *${usedPrefix}eat`);
+	if (user.lastnebang > 10800000) throw m.reply(`You Are Still Tired\nPlease Wait ${clockString(10800000 - __timers)} More`);
 
 	let hmsil1 = Math.floor(Math.random() * 300);
 	let hmsil2 = Math.floor(Math.random() * 3000);
@@ -18,7 +18,7 @@ let handler = async (m, { conn, usedPrefix }) => {
 🌳🏘️🌳🌳  🌳 🏘️ 🌳🌳🌳
 
 ${penebang} 
-Mencari Area....
+Searching Area....
 `;
 
 	let jln2 = `
@@ -28,7 +28,7 @@ Mencari Area....
 🌳🏘️🌳🌳  🌳 🏘️ 🌳🌳🌳
 
 ${penebang} 
-Hampir Sampai....
+Almost There....
 `;
 
 	let jln3 = `
@@ -38,7 +38,7 @@ Hampir Sampai....
 🌳🏘️🌳🌳  🌳 🏘️ 🌳🌳🌳
 
 ${penebang} 
-Mulai Menebang....
+Start Chopping....
 `;
 
 	let jln4 = `
@@ -48,17 +48,17 @@ Mulai Menebang....
 🏘️ 🏘️ 🚶
 
 ${penebang}
-Menerima Hasil....
+Receiving Results....
 `;
 
 	let hsl = `
-*Hasil Nebang ${penebang}*
+*Chopping Results ${penebang}*
 
-Kayu: ${hmsil1}
-Uang: ${hmsil2}
+Wood: ${hmsil1}
+Money: ${hmsil2}
 Exp: ${hmsil3}
  
- Stamina Kamu Berkurang -20
+ Your Stamina Decreased -20
 `;
 
 	user.axedurability -= 5;
@@ -67,7 +67,7 @@ Exp: ${hmsil3}
 	user.kayu += hmsil1;
 	user.exp += hmsil3;
 
-	const { key } = await m.reply(`${penebang} Mencari Area Nebang.....`);
+	const { key } = await m.reply(`${penebang} Searching Chopping Area.....`);
 
 	setTimeout(() => {
 		conn.reply(hsl, key);
@@ -102,5 +102,5 @@ function clockString(ms) {
 	let h = isNaN(ms) ? '--' : Math.floor(ms / 3600000) % 24;
 	let m = isNaN(ms) ? '--' : Math.floor(ms / 60000) % 60;
 	let s = isNaN(ms) ? '--' : Math.floor(ms / 1000) % 60;
-	return ['\n' + d, ' *Hari*\n ', h, ' *Jam*\n ', m, ' *Menit*\n ', s, ' *Detik* '].map((v) => v.toString().padStart(2, 0)).join('');
+	return ['\n' + d, ' *Days*\n ', h, ' *Hours*\n ', m, ' *Minutes*\n ', s, ' *Seconds* '].map((v) => v.toString().padStart(2, 0)).join('');
 }

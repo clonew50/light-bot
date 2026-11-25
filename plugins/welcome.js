@@ -79,7 +79,7 @@ let handler = async (m, { conn, usedPrefix, command }) => {
 
     await conn.sendMessage(m.chat, {
       image: welcomeImg,
-      caption: `🚀 *WELCOME - ${BOT}*\n\n> 👋 Selamat datang @${number}!\n> 📞 Nomor: +${number}\n> 🎉 Semoga betah di grup!\n\n© ${BOT} - ${DEV}`,
+      caption: `🚀 *WELCOME - ${BOT}*\n\n> 👋 Welcome @${number}!\n> 📞 Number: +${number}\n> 🎉 Hope you enjoy the group!\n\n© ${BOT} - ${DEV}`,
       mentions: [who]
     }, { quoted: m });
 

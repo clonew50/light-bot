@@ -3,7 +3,7 @@ let handler = async (m, { command }) => {
 		m.reply('https://chat.whatsapp.com/' + (await conn.groupInviteCode(m.chat)));
 	}
 	if (command === 'revoke') {
-		m.reply('Berhasil Reset linkgc\n\nLink : https://chat.whatsapp.com/' + (await conn.groupRevokeInvite(m.chat)));
+		m.reply('Successfully reset linkgc\n\nLink : https://chat.whatsapp.com/' + (await conn.groupRevokeInvite(m.chat)));
 	}
 };
 handler.help = ['linkgc', 'revoke'];

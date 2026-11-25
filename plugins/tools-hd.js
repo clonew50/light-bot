@@ -4,7 +4,7 @@ import FormData from 'form-data';
 let handler = async (m, { usedPrefix, command }) => {
 	let quoted = m.quoted ? m.quoted : m;
 	let mime = (quoted.msg || quoted).mimetype;
-	if (!/image/.test(mime)) throw `Kirim/Reply Foto Dengan Caption ${usedPrefix + command}`;
+	if (!/image/.test(mime)) throw `Send/Reply a photo with the caption ${usedPrefix + command}`;
 	let media = await quoted.download();
 	let res;
 	if (/^hdr$/i.test(command)) {
@@ -12,7 +12,7 @@ let handler = async (m, { usedPrefix, command }) => {
 	} else {
 		res = await upscale(media, 2);
 	}
-	conn.sendFile(m.chat, res?.data?.downloadUrls[0], 'hd.png', 'Nih Hasilnya', m);
+	conn.sendFile(m.chat, res?.data?.downloadUrls[0], 'hd.png', 'Here is the result', m);
 };
 handler.help = ['hd', 'hdr'];
 handler.tags = ['tools'];
@@ -32,7 +32,7 @@ async function upscale(buffer, rasio = 2) {
 		},
 	});
 
-	if (upload.status !== 200) throw new Error('Gagal Upload Image');
+	if (upload.status !== 200) throw new Error('Failed to Upload Image');
 
 	for (let i = 0; i < 20; i++) {
 		const check = await axios.post(

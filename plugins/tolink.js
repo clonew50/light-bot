@@ -4,7 +4,7 @@ import FormData from 'form-data'
 let handler = async (m, { conn }) => {
     let q = m.quoted? m.quoted : m
     let mime = (q.msg || q).mimetype || q.mediaType || ''
-    if (!mime) return conn.sendMessage(m.chat, { text: '*❌ Balas media untuk jadi link*' }, { quoted: m })
+    if (!mime) return conn.sendMessage(m.chat, { text: '*❌ Reply to a media to make it a link*' }, { quoted: m })
 
     await conn.sendMessage(m.chat, { react: { text: '⏳', key: m.key } })
 
@@ -100,7 +100,7 @@ let handler = async (m, { conn }) => {
     } catch (e) {
         console.log(e)
         await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } })
-        return conn.sendMessage(m.chat, { text: `❌ *Gagal upload:*\n${e.message || e}` }, { quoted: m })
+        return conn.sendMessage(m.chat, { text: `❌ *Upload failed:*\n${e.message || e}` }, { quoted: m })
     }
 }
 handler.command = ['tolink','catbox']

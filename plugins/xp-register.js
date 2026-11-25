@@ -5,13 +5,13 @@ let handler = async function (m, { text, usedPrefix }) {
 	let user = global.db.data.users[m.sender];
 	const pp = await conn.profilePictureUrl(m.sender, 'image', 'buffer');
 	if (user.registered === true) throw `You Have Already Registered In The Database, Do You Want To Re-Register? *${usedPrefix}unreg*`;
-	if (!Reg.test(text)) throw `Masukan Nama.Umur kamu\nContoh: .daftar Vlyyyn.17`;
+	if (!Reg.test(text)) throw `Enter Name.Age\nExample: .daftar Vlyyyn.17`;
 	let [_, name, _splitter, age] = text.match(Reg);
-	if (!name) throw 'Nama Tidak Boleh Kosong';
-	if (!age) throw 'Umur Tidak Boleh Kosong';
+	if (!name) throw 'Name cannot be empty';
+	if (!age) throw 'Age cannot be empty';
 	age = parseInt(age);
-	if (age > 50) throw 'Tua Banget amjir';
-	if (age < 12) throw 'Esempe Dilarang masuk';
+	if (age > 50) throw 'Too old';
+	if (age < 12) throw 'Minors are not allowed to join';
 	user.name = name.trim();
 	user.age = age;
 	user.regTime = Date.now();
@@ -33,8 +33,8 @@ let handler = async function (m, { text, usedPrefix }) {
 • Pickaxe: 1 ( 40 Durability )
 `;
 	conn.adReply(m.chat, cap, pp, m, {
-		title: 'Berhasil Registrasi',
-		body: 'Kamu Adalah User Ke ' + Object.values(db.data.users).filter((v) => v.registered == true).length,
+		title: 'Registration Successful',
+		body: 'You Are User Number ' + Object.values(db.data.users).filter((v) => v.registered == true).length,
 	});
 };
 handler.help = ['daftar <nama>.<umur>'];

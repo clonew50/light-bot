@@ -50,19 +50,19 @@ let handler = async (m, { conn, usedPrefix, command, args, isOwner, isAdmin }) =
 			if (!/[01]/.test(command))
 				return m.reply(
 					`
-*Daftar opsi yang bisa diatur:*
+*List of options that can be set:*
 
-*Untuk User:*
+*For Users:*
 - autolevelup
 
-*Untuk Admin Grup:*
+*For Group Admins:*
 - welcome
 - detect
 - antidelete
 ${
 	isOwner
 		? `
-*Untuk Owner Bot:*
+*For Bot Owner:*
 - autoread
 - public
 - anticall
@@ -70,7 +70,7 @@ ${
 `
 		: ''
 }
-*Contoh penggunaan:*
+*Usage example:*
 - ${usedPrefix}enable welcome
 - ${usedPrefix}disable welcome
 `.trim()
@@ -78,7 +78,7 @@ ${
 			throw false;
 	}
 
-	m.reply(`*${type}* berhasil di *${isEnable ? 'aktifkan' : 'nonaktifkan'}* ${isAll ? 'untuk bot' : isUser ? '' : 'untuk chat ini'}`);
+	m.reply(`*${type}* successfully *${isEnable ? 'enabled' : 'disabled'}* ${isAll ? 'for the bot' : isUser ? '' : 'for this chat'}`);
 };
 
 handler.help = ['enable', 'disable'];

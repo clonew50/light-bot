@@ -1,11 +1,11 @@
 let handler = async (m) => {
 	let hash;
 	if (m.quoted && m.quoted.fileSha256) hash = m.quoted.fileSha256;
-	if (!hash) throw `Tidak ada hash`;
+	if (!hash) throw `No hash`;
 	let sticker = global.db.data.sticker;
-	if (sticker[hash] && sticker[hash].locked) throw 'Kamu tidak memiliki izin untuk menghapus perintah stiker ini';
+	if (sticker[hash] && sticker[hash].locked) throw 'You do not have permission to delete this sticker command';
 	delete sticker[hash];
-	m.reply(`Berhasil!`);
+	m.reply(`Success!`);
 };
 
 handler.help = ['delcmd'];

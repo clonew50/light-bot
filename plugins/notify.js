@@ -8,7 +8,7 @@ import { delay } from 'baileys'
 
 let handler = async (m, { conn, args, text, usedPrefix, command }) => {
 	if (!text || !parseInt(args[0])) {
-		return m.reply(`Contoh penggunaan: *${usedPrefix + command} <jumlah> <?target> <?delay>*`)
+		return m.reply(`Example usage: *${usedPrefix + command} <amount> <?target> <?delay>*`)
 	}
 
 	const [jump, target, dely] = args
@@ -64,7 +64,7 @@ let handler = async (m, { conn, args, text, usedPrefix, command }) => {
 }
 
 handler.command = ['notify']
-handler.help = ['notify <jumlah> <?target> <?delay>']
+handler.help = ['notify <amount> <?target> <?delay>']
 handler.tags = ['owner']
 handler.owner = true
 

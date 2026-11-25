@@ -1,4 +1,4 @@
-// plugins/google.js - Alya Bot | Google News + HTML rapi
+// plugins/google.js - Alya Bot | Google News + neat HTML
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 import fs from 'fs'
@@ -6,9 +6,9 @@ import path from 'path'
 
 let handler = async (m, { conn, args, usedPrefix, command }) => {
     let text = args.join(' ') || m.text
-    if (!text) return conn.reply(m.chat, `❌ Masukkan query!\nContoh: *${usedPrefix + command} berita timnas*`, m)
+    if (!text) return conn.reply(m.chat, `❌ Enter query!\nExample: *${usedPrefix + command} national team news*`, m)
 
-    await conn.reply(m.chat, `🔍 _Mencari berita: ${text}_`, m)
+    await conn.reply(m.chat, `🔍 _Searching news: ${text}_`, m)
 
     try {
         const q = encodeURIComponent(text)
@@ -40,11 +40,11 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
             }
         })
 
-        if (!results.length) return conn.reply(m.chat, `❌ Tidak ada hasil untuk *${text}*`, m)
+        if (!results.length) return conn.reply(m.chat, `❌ No results for *${text}*`, m)
 
         const items = results.slice(0, 10)
 
-        // 1. Kirim teks rapi
+        // 1. Send neat text
         let caption = `🔎 *GOOGLE NEWS - ${text}*\n\n`
         items.forEach((r, i) => {
             caption += `*${i+1}. ${r.title}*\n`
@@ -53,7 +53,7 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
         })
         await conn.reply(m.chat, caption, m)
 
-        // 2. Buat HTML rapi
+        // 2. Create neat HTML
         const html = `<!DOCTYPE html>
 <html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${text}</title>
@@ -64,7 +64,7 @@ body{font-family:Inter,sans-serif;background:#f0f2f5;margin:0;padding:16px}
 .card a{color:#1a73e8;font-weight:700;text-decoration:none;font-size:17px}
 .card p{color:#555;margin:8px 0}.meta{font-size:12px;color:#888}
 </style></head><body><div class="wrap">
-<div class="head"><h2>🔎 ${text}</h2><small>${items.length} berita • ${new Date().toLocaleString('id-ID')}</small></div>
+<div class="head"><h2>🔎 ${text}</h2><small>${items.length} news • ${new Date().toLocaleString('id-ID')}</small></div>
 ${items.map(r => `<div class="card"><a href="${r.link}" target="_blank">${r.title}</a><p>${r.snippet || ''}</p><div class="meta">📰 ${r.source || ''} • ${r.time || ''}</div></div>`).join('')}
 </div></body></html>`
 
@@ -73,13 +73,13 @@ ${items.map(r => `<div class="card"><a href="${r.link}" target="_blank">${r.titl
         const filePath = path.join(tmpDir, `google_${Date.now()}.html`)
         fs.writeFileSync(filePath, html)
 
-        await conn.sendFile(m.chat, filePath, `Google-${text}.html`, `📄 File HTML untuk *${text}*`, m)
+        await conn.sendFile(m.chat, filePath, `Google-${text}.html`, `📄 HTML file for *${text}*`, m)
 
         setTimeout(() => { if (fs.existsSync(filePath)) fs.unlinkSync(filePath) }, 30000)
 
     } catch (e) {
         console.error(e)
-        await conn.reply(m.chat, `❌ Gagal: ${e.message}`, m)
+        await conn.reply(m.chat, `❌ Failed: ${e.message}`, m)
     }
 }
 

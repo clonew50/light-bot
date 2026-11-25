@@ -5,23 +5,23 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
     const cmd = command.toLowerCase()
     
     if (!text || !text.includes('|')) {
-        let helpText = `Halo! Format salah.\n\n`
-        helpText += `*Daftar Perintah:*\n`
+        let helpText = `Hello! Wrong format.\n\n`
+        helpText += `*Command List:*\n`
         helpText += `- *${usedPrefix}fakecall* (Android)\n`
         helpText += `- *${usedPrefix}fakecall-ios* (iPhone)\n\n`
-        helpText += `*Cara Penggunaan:*\n`
-        helpText += `Ketik Nama | Durasi\n\n`
-        helpText += `*Contoh:*\n`
+        helpText += `*How to Use:*\n`
+        helpText += `Type Name | Duration\n\n`
+        helpText += `*Example:*\n`
         helpText += `- *${usedPrefix}fakecall Zann | 03:33:33*\n`
         helpText += `- *${usedPrefix}fakecall-ios Sayangku | 12:00:00*\n\n`
-        helpText += `*Tips:* Reply gambar untuk jadi avatar penelepon!`
+        helpText += `*Tips:* Reply to an image to use it as the caller's avatar!`
         return m.reply(helpText)
     }
 
     const [nama, durasi] = text.split('|').map(s => s.trim())
 
-    if (!nama) return m.reply(`Nama tidak boleh kosong!`)
-    if (!durasi) return m.reply(`Durasi tidak boleh kosong!`)
+    if (!nama) return m.reply(`Name cannot be empty!`)
+    if (!durasi) return m.reply(`Duration cannot be empty!`)
 
     await conn.sendMessage(m.chat, { react: { text: '🕕', key: m.key } })
 
@@ -68,7 +68,7 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
     } catch (err) {
         console.error(err)
         await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } })
-        return m.reply(`❌ Gagal membuat fake call: ${err.message}`)
+        return m.reply(`❌ Failed to create fake call: ${err.message}`)
     }
 }
 

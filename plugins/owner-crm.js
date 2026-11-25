@@ -85,7 +85,7 @@ try {
 const clean = stripFrameworkProps(content)
 return `satanic.relayMessage(\n  m.chat,\n  ${toJsLiteral(clean)},\n  {}\n)`
 } catch (err) {
-return `// Gagal generate relay_code: ${err?.message || err}`
+return `// Failed to generate relay_code: ${err?.message || err}`
 }
 }
 
@@ -112,17 +112,17 @@ let handler = async (m, { satanic, text, command, prefix, isCreator }) => {
 const from = m.chat
 
 if (!isCreator) {
-return m.reply('❌ Fitur khusus owner/pemilik saja ya kak~ 🌸')
+return m.reply('❌ This feature is for the owner only, please~ 🌸')
 }
 
 if (!m.quoted) {
 return m.reply(
-`⚠️ *Cara penggunaan:*\n\n` +
-`Reply pesan yang mau di-relay, lalu kirim *${prefix}${command}*\n\n` +
-`📌 Contoh: Reply pesan button/list/location lalu ketik ${prefix}crm\n\n` +
-`📌 Mode:\n` +
-`• ${prefix}crm - Mode JSON (file relay.js)\n` +
-`• ${prefix}crm2 - Mode JS (file ${typeNameFromContent}.js)`
+`⚠️ *How to use:*\n\n` +
+`Reply to the message you want to relay, then send *${prefix}${command}*\n\n` +
+`📌 Example: Reply to a button/list/location message then type ${prefix}crm\n\n` +
+`📌 Modes:\n` +
+`• ${prefix}crm - JSON mode (relay.js file)\n` +
+`• ${prefix}crm2 - JS mode (${typeNameFromContent}.js file)`
 )
 }
 
@@ -146,7 +146,7 @@ return false
 }
 
 if (crmHasViewOnce(m.quoted)) {
-return m.reply('❌ Pesan view-once tidak bisa disimpan.')
+return m.reply('❌ View-once messages cannot be saved.')
 }
 
 try {
@@ -154,13 +154,13 @@ const quotedMsg = m.quoted
 const rawQuoted = quotedMsg.message || quotedMsg.msg || m.msg?.contextInfo?.quotedMessage
 
 if (!rawQuoted || typeof rawQuoted !== 'object' || !Object.keys(rawQuoted).length) {
-return m.reply('❌ Tidak ada pesan yang bisa di-relay.')
+return m.reply('❌ There is no message that can be relayed.')
 }
 
 const unwrapped = unwrap(rawQuoted)
 
 if (!unwrapped || typeof unwrapped !== 'object' || !Object.keys(unwrapped).length) {
-return m.reply('❌ Jenis pesan ini belum didukung untuk di-relay.')
+return m.reply('❌ This message type is not yet supported for relaying.')
 }
 
 let fullData = {}
@@ -225,7 +225,7 @@ m.chat,
 document: fs.readFileSync(filepath),
 fileName: filename,
 mimetype: 'text/javascript',
-caption: `✅ *Relay berhasil (CRM2)*\n\n📄 ${filename}\n📝 Tipe: ${typeNameFromContent(unwrapped)}`
+caption: `✅ *Relay successful (CRM2)*\n\n📄 ${filename}\n📝 Type: ${typeNameFromContent(unwrapped)}`
 },
 { quoted: m }
 )
@@ -255,14 +255,14 @@ payload: crmPayload
 
 const crmCode = `module.exports = ${JSON.stringify(crmData, null, 2)};\n`
 
-let infoText = `✅ *CRM berhasil dibuat (JSON)*\n\n`
-infoText += `📝 Tipe: ${messageType}\n`
-infoText += `🔘 Button: ${hasButtons ? '✅ Ada' : '❌ Tidak'}\n`
+let infoText = `✅ *CRM created successfully (JSON)*\n\n`
+infoText += `📝 Type: ${messageType}\n`
+infoText += `🔘 Button: ${hasButtons ? '✅ Yes' : '❌ No'}\n`
 if (locationData) {
-infoText += `📍 Location: ${locationData.name || 'Ada'}\n`
+infoText += `📍 Location: ${locationData.name || 'Present'}\n`
 }
-infoText += `📅 Waktu: ${crmData.createdAt}\n\n`
-infoText += `Reply file ini lalu kirim:\n`
+infoText += `📅 Time: ${crmData.createdAt}\n\n`
+infoText += `Reply to this file then send:\n`
 infoText += `*${prefix}runcrm*`
 
 await satanic.sendMessage(
@@ -297,7 +297,7 @@ e
 }
 } catch {}
 return m.reply(
-'❌ Gagal membuat CRM.\n\n' +
+'❌ Failed to create CRM.\n\n' +
 (e?.message || String(e))
 )
 }

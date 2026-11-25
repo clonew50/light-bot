@@ -1,10 +1,10 @@
 let handler = async (m, { text }) => {
 	const nominal = parseInt(text);
-	if (!nominal) throw 'Jumlahnya berapa?';
-	if (nominal < 1000) throw 'Minimal 1.000 ya.';
-	if (nominal > 1000000) throw 'Emg bneran?';
+	if (!nominal) throw 'How much?';
+	if (nominal < 1000) throw 'Minimum 1,000.';
+	if (nominal > 1000000) throw 'Are you serious?';
 
-	if (!global.pakasir || !pakasir.slug || !pakasir.apikey) throw '`pakasir.slug` dan `pakasir.apikey` belum di isi.';
+	if (!global.pakasir || !pakasir.slug || !pakasir.apikey) throw '`pakasir.slug` and `pakasir.apikey` are not filled yet.';
 
 	const cqris = await createQris(pakasir.slug, pakasir.apikey, nominal);
 	const expiredAt = new Date(cqris.expired_at);
@@ -22,9 +22,9 @@ let handler = async (m, { text }) => {
 		{
 			image: { url: `https://quickchart.io/qr?text=${encodeURIComponent(cqris.payment_number)}` },
 			caption:
-				`💳 *QRIS DONASI ${global.namebot || 'BOT'}*\n\n` +
-				`🕓 *Expired:* ${expiredTime} WIB\n` +
-				`💸 *Biaya Admin:* Rp${cqris.fee.toLocaleString('id-ID')}\n` +
+				`💳 *QRIS DONATION ${global.namebot || 'BOT'}*\n\n` +
+				`🕓 *Expired:* ${expiredTime}\n` +
+				`💸 *Admin Fee:* Rp${cqris.fee.toLocaleString('id-ID')}\n` +
 				`💰 *Total:* Rp${cqris.total_payment.toLocaleString('id-ID')}\n` +
 				`📦 *Order ID:* #${cqris.order_id}`,
 		},
@@ -35,14 +35,14 @@ let handler = async (m, { text }) => {
 	while (status !== 'completed') {
 		if (new Date() >= expiredAt) {
 			await conn.sendMessage(m.chat, { delete: sQris.key });
-			return m.reply('⚠️ QRIS sudah *expired*, silakan buat ulang.');
+			return m.reply('⚠️ QRIS has *expired*, please create again.');
 		}
 
 		const res = await checkStatus(pakasir.slug, pakasir.apikey, cqris.order_id, nominal);
 		if (res && res.status === 'completed') {
 			status = 'completed';
 			await conn.sendMessage(m.chat, { delete: sQris.key });
-			m.reply('✅ Pembayaran berhasil!\nTerima kasih sudah donasi 🙏');
+			m.reply('✅ Payment successful!\nThank you for the donation 🙏');
 			break;
 		}
 
@@ -74,11 +74,11 @@ async function createQris(project, apikey, amount) {
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		const data = await res.json();
 
-		if (!data?.payment) throw new Error('Gagal membuat QRIS.');
+		if (!data?.payment) throw new Error('Failed to create QRIS.');
 
 		return data.payment;
 	} catch (e) {
-		throw new Error('Gagal membuat QRIS: ' + e.message);
+		throw new Error('Failed to create QRIS: ' + e.message);
 	}
 }
 
@@ -91,6 +91,6 @@ async function checkStatus(project, apikey, orderId, amount) {
 
 		return data?.transaction;
 	} catch (e) {
-		throw new Error('Gagal mengecek status QRIS: ' + e.message);
+		throw new Error('Failed to check QRIS status: ' + e.message);
 	}
 }

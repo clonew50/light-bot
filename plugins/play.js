@@ -135,7 +135,7 @@ async function ytdlAuto(url, res) {
 let handler = async (m, { conn, args, usedPrefix, command }) => {
   let q = args.join(" ").trim();
   let type = /mp3|audio|play/i.test(command)? 'mp3' : 'mp4';
-  if (!q) return m.reply(`*Contoh:*\n${usedPrefix + command} https://youtu.be/xxx\n${usedPrefix + command} dj terbaru`);
+  if (!q) return m.reply(`*Example:*\n${usedPrefix + command} https://youtu.be/xxx\n${usedPrefix + command} latest dj`);
 
   await conn.sendMessage(m.chat, { react: { text: '🕕', key: m.key } });
   try {
@@ -143,14 +143,14 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
     let isUrl = /youtu\.be|youtube\.com/.test(q);
     if (!isUrl) {
       let search = await ytSearch(q, 1);
-      if (!search.length) return m.reply(`❌ Tidak ditemukan: ${q}`);
+      if (!search.length) return m.reply(`❌ Not found: ${q}`);
       url = search[0].url;
     }
     let res = type === 'mp3'? 'audio' : '720';
     let result = await ytdlAuto(url, res);
     if (!result ||!result.status) {
       await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } });
-      return m.reply(`❌ Gagal download, coba lagi.`);
+      return m.reply(`❌ Download failed, try again.`);
     }
     if (type === 'mp3') {
       await conn.sendMessage(m.chat, { audio: { url: result.download_url }, mimetype: 'audio/mpeg', fileName: `${result.title}.mp3` }, { quoted: m });
@@ -164,7 +164,7 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
   }
 }
 
-handler.help = ['ytmp3 <url/judul>', 'ytmp4 <url/judul>', 'play <judul>'];
+handler.help = ['ytmp3 <url/title>', 'ytmp4 <url/title>', 'play <title>'];
 handler.tags = ['downloader'];
 handler.command = /^(play|ytmp3|ytaudio|ytmp4|ytvideo|yt)$/i;
 handler.limit = true;

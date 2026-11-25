@@ -4,7 +4,7 @@ let handler = async (m, { text }) => {
 
 	if (/image|video|webp/.test(mime)) {
 		if ((q.msg?.seconds || q.seconds) > 10) {
-			return m.reply('Video harus berdurasi di bawah 10 detik.');
+			return m.reply('Video must be under 10 seconds.');
 		}
 
 		let media = await q.download();
@@ -15,7 +15,7 @@ let handler = async (m, { text }) => {
 		}
 		conn.sendSticker(m.chat, media, m, exif);
 	} else {
-		m.reply('Kirim atau reply media untuk dijadikan stiker.');
+		m.reply('Send or reply with media to make it a sticker.');
 	}
 };
 

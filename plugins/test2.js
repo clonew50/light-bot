@@ -7,35 +7,35 @@ let handler = async (m, { conn }) => {
         messageSecret: "DgGbJ00h42ew+1F/8IPvbv/L0bTRGjk3SZiblG2a40U="
       },
       interactiveMessage: {
-        header: { title: "Rem Bot - Uji Semua Tombol", subtitle: "Semua tipe native-flow" },
-        body: { text: "Ini adalah tes semua tombol WhatsApp yang ada, termasuk tombol langka yang belum banyak diketahui.\n\n© Rem Bot - 212674375708" },
-        footer: { text: "Rem Bot - Semua Tombol Lengkap" },
+        header: { title: "Rem Bot - Test All Buttons", subtitle: "All native-flow types" },
+        body: { text: "This is a test of all available WhatsApp buttons, including rare buttons not widely known.\n\n© Rem Bot - 212674375708" },
+        footer: { text: "Rem Bot - All Complete Buttons" },
         nativeFlowMessage: {
           buttons: [
             // === QUICK REPLY ===
-            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "⚡ Balas Cepat Menu", id: ".menu" }) },
-            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🏓 Balas Cepat Ping", id: ".ping" }) },
-            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "👑 Balas Cepat Owner", id: ".owner" }) },
+            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "⚡ Quick Reply Menu", id: ".menu" }) },
+            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🏓 Quick Reply Ping", id: ".ping" }) },
+            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "👑 Quick Reply Owner", id: ".owner" }) },
 
             // === URL / CTA ===
-            { name: "cta_url", buttonParamsJson: JSON.stringify({ display_text: "📢 Channel Resmi", url: "https://whatsapp.com/channel/0029VbDd8Iw5Ejxwlvjl3l1r", merchant_url: "https://whatsapp.com/channel/0029VbDd8Iw5Ejxwlvjl3l1r" }) },
+            { name: "cta_url", buttonParamsJson: JSON.stringify({ display_text: "📢 Official Channel", url: "https://whatsapp.com/channel/0029VbDd8Iw5Ejxwlvjl3l1r", merchant_url: "https://whatsapp.com/channel/0029VbDd8Iw5Ejxwlvjl3l1r" }) },
             { name: "cta_url", buttonParamsJson: JSON.stringify({ display_text: "👑 Developer", url: "https://wa.me/212674375708", merchant_url: "https://wa.me/212674375708" }) },
             { name: "cta_url", buttonParamsJson: JSON.stringify({ display_text: "🌐 Website", url: "https://github.com", merchant_url: "https://github.com" }) },
 
             // === WEBVIEW ===
-            { name: "open_webview", buttonParamsJson: JSON.stringify({ title: "Buka WebView", link: { in_app_webview: true, url: "https://whatsapp.com/channel/0029VbDd8Iw5Ejxwlvjl3l1r" } }) },
+            { name: "open_webview", buttonParamsJson: JSON.stringify({ title: "Open WebView", link: { in_app_webview: true, url: "https://whatsapp.com/channel/0029VbDd8Iw5Ejxwlvjl3l1r" } }) },
 
             // === COPY ===
-            { name: "cta_copy", buttonParamsJson: JSON.stringify({ display_text: "📋 Salin Nomor Dev", copy_code: "+212674375708" }) },
-            { name: "cta_copy", buttonParamsJson: JSON.stringify({ display_text: "📋 Salin Channel", copy_code: "https://whatsapp.com/channel/0029VbDd8Iw5Ejxwlvjl3l1r" }) },
-            { name: "cta_copy", buttonParamsJson: JSON.stringify({ display_text: "📋 Salin Script", copy_code: "Rem Bot MD" }) },
+            { name: "cta_copy", buttonParamsJson: JSON.stringify({ display_text: "📋 Copy Dev Number", copy_code: "+212674375708" }) },
+            { name: "cta_copy", buttonParamsJson: JSON.stringify({ display_text: "📋 Copy Channel", copy_code: "https://whatsapp.com/channel/0029VbDd8Iw5Ejxwlvjl3l1r" }) },
+            { name: "cta_copy", buttonParamsJson: JSON.stringify({ display_text: "📋 Copy Script", copy_code: "Rem Bot MD" }) },
 
             // === CALL ===
-            { name: "cta_call", buttonParamsJson: JSON.stringify({ display_text: "📞 Telepon Owner", phone_number: "+212674375708" }) },
+            { name: "cta_call", buttonParamsJson: JSON.stringify({ display_text: "📞 Call Owner", phone_number: "+212674375708" }) },
 
             // === REMINDER ===
-            { name: "cta_reminder", buttonParamsJson: JSON.stringify({ display_text: "⏰ Atur Pengingat" }) },
-            { name: "cta_cancel_reminder", buttonParamsJson: JSON.stringify({ display_text: "❌ Batal Pengingat" }) },
+            { name: "cta_reminder", buttonParamsJson: JSON.stringify({ display_text: "⏰ Set Reminder" }) },
+            { name: "cta_cancel_reminder", buttonParamsJson: JSON.stringify({ display_text: "❌ Cancel Reminder" }) },
 
             // === LOKASI & ALAMAT (Jarang) ===
             { name: "send_location", buttonParamsJson: JSON.stringify({}) },
@@ -66,13 +66,13 @@ let handler = async (m, { conn }) => {
             {
               name: "single_select",
               buttonParamsJson: JSON.stringify({
-                title: "📋 Menu Utama",
+                title: "📋 Main Menu",
                 sections: [{
-                  title: "Rem Bot", highlight_label: "Utama",
+                  title: "Rem Bot", highlight_label: "Main",
                   rows: [
-                    { header: "BOT", title: "Semua Menu", description: "Lihat semua perintah", id: ".menu" },
-                    { header: "BOT", title: "Ping Bot", description: "Cek kecepatan bot", id: ".ping" },
-                    { header: "BOT", title: "Info Bot", description: "Info runtime", id: ".info" }
+                    { header: "BOT", title: "All Menu", description: "See all commands", id: ".menu" },
+                    { header: "BOT", title: "Ping Bot", description: "Check bot speed", id: ".ping" },
+                    { header: "BOT", title: "Bot Info", description: "Runtime info", id: ".info" }
                   ]
                 }],
                 icon: "DEFAULT"
@@ -83,13 +83,13 @@ let handler = async (m, { conn }) => {
             {
               name: "single_select",
               buttonParamsJson: JSON.stringify({
-                title: "⭐ Menu Alat",
+                title: "⭐ Tools Menu",
                 sections: [{
-                  title: "Alat Canggih", highlight_label: "Alat",
+                  title: "Advanced Tools", highlight_label: "Tools",
                   rows: [
-                    { header: "ALAT", title: "To URL", description: "Upload jadi link", id: ".tourl" },
-                    { header: "ALAT", title: "Stiker", description: "Buat stiker", id: ".s" },
-                    { header: "ALAT", title: "To Image", description: "Ubah jadi gambar", id: ".toimg" }
+                    { header: "TOOLS", title: "To URL", description: "Upload to link", id: ".tourl" },
+                    { header: "TOOLS", title: "Sticker", description: "Make sticker", id: ".s" },
+                    { header: "TOOLS", title: "To Image", description: "Convert to image", id: ".toimg" }
                   ]
                 }],
                 icon: "REVIEW"
@@ -100,12 +100,12 @@ let handler = async (m, { conn }) => {
             {
               name: "single_select",
               buttonParamsJson: JSON.stringify({
-                title: "🎁 Menu Promo",
+                title: "🎁 Promo Menu",
                 sections: [{
-                  title: "Promo Rem Bot", highlight_label: "Promo",
+                  title: "Rem Bot Promo", highlight_label: "Promo",
                   rows: [
-                    { header: "PROMO", title: "Join Channel", description: "Masuk channel resmi", id: ".channel" },
-                    { header: "PROMO", title: "Hubungi Dev", description: "Chat developer", id: ".owner" }
+                    { header: "PROMO", title: "Join Channel", description: "Join official channel", id: ".channel" },
+                    { header: "PROMO", title: "Contact Dev", description: "Chat developer", id: ".owner" }
                   ]
                 }],
                 icon: "PROMOTION"
@@ -116,19 +116,19 @@ let handler = async (m, { conn }) => {
             {
               name: "single_select",
               buttonParamsJson: JSON.stringify({
-                title: "📄 Menu Dokumen",
+                title: "📄 Document Menu",
                 sections: [{
-                  title: "Dokumentasi", highlight_label: "Docs",
+                  title: "Documentation", highlight_label: "Docs",
                   rows: [
-                    { header: "DOCS", title: "Bantuan", description: "Panduan penggunaan", id: ".help" },
-                    { header: "DOCS", title: "Syarat", description: "Syarat & ketentuan", id: ".rules" }
+                    { header: "DOCS", title: "Help", description: "Usage guide", id: ".help" },
+                    { header: "DOCS", title: "Terms", description: "Terms & conditions", id: ".rules" }
                   ]
                 }],
                 icon: "DOCUMENT"
               })
             }
           ],
-          messageParamsJson: JSON.stringify({ limited_time_offer: { text: "Rem Bot - Versi Terbaru", url: "https://whatsapp.com/channel/0029VbDd8Iw5Ejxwlvjl3l1r", copy_code: "Rem Bot MD", expiration_time: 4102444800000 } }),
+          messageParamsJson: JSON.stringify({ limited_time_offer: { text: "Rem Bot - Latest Version", url: "https://whatsapp.com/channel/0029VbDd8Iw5Ejxwlvjl3l1r", copy_code: "Rem Bot MD", expiration_time: 4102444800000 } }),
           messageVersion: 1
         },
         contextInfo: { expiration: 7776000, disappearingMode: { initiator: 0 } }

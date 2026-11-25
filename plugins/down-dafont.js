@@ -4,13 +4,13 @@ let handler = async (m, { conn, args }) => {
 	let cmd = args[0]?.toLowerCase();
 
 	if (!cmd)
-		throw `*Gunakan Salah Satu Command Ini*
+		throw `*Use One of These Commands*
 
-1 *.dafont search [nama_font]*
-   Untuk mencari font berdasarkan nama.
+1 *.dafont search [font_name]*
+   To search for fonts by name.
 
-2 *.dafont dl [link_download]*
-   Untuk mengunduh font dari link hasil pencarian.
+2 *.dafont dl [download_link]*
+   To download a font from the search result link.
 
 *Example :*
 .dafont search fancy
@@ -18,13 +18,13 @@ let handler = async (m, { conn, args }) => {
 
 	switch (cmd) {
 		case 'search': {
-			if (!args[1]) throw 'Mau Cari Apa Di Dafont?';
+			if (!args[1]) throw 'What do you want to search on Dafont?';
 			const query = args[1];
 			try {
 				m.reply('🔍 Searching fonts...');
 
 				let result = await dafont(query);
-				if (!result.length) throw `Font "${query}" tidak ditemukan`;
+				if (!result.length) throw `Font "${query}" not found`;
 
 				let teks = `*『 DAFONT SEARCH 』*`;
 
@@ -37,26 +37,26 @@ let handler = async (m, { conn, args }) => {
 🔗 ${font.link}`;
 				});
 
-				teks += `\n\nGunakan:\n*.dafont dl [link_download]*`;
+				teks += `\n\nUse:\n*.dafont dl [download_link]*`;
 				m.reply(teks);
 			} catch (e) {
 				console.error(e);
-				m.reply('❌ Error saat mencari font');
+				m.reply('❌ Error while searching for font');
 			}
 			break;
 		}
 
 		case 'dl': {
-			if (!args[1]) throw 'Mana Link Nya?';
+			if (!args[1]) throw 'Where is the link?';
 			const url = args[1];
-			if (!url.startsWith('https://dl.dafont.com/')) throw '❌ Link tidak valid';
+			if (!url.startsWith('https://dl.dafont.com/')) throw '❌ Invalid link';
 
 			try {
 				m.reply('⬇️ Downloading font...');
 
 				const res = await fetch(url);
 
-				if (!res.ok) throw `Terjadi kesalahan ${res.statusText}`;
+				if (!res.ok) throw `An error occurred ${res.statusText}`;
 
 				const buffer = Buffer.from(await res.arrayBuffer());
 
@@ -72,13 +72,13 @@ let handler = async (m, { conn, args }) => {
 				);
 			} catch (e) {
 				console.error(e);
-				m.reply('❌ Gagal download font');
+				m.reply('❌ Failed to download font');
 			}
 			break;
 		}
 
 		default:
-			m.reply('*Subcommand Yang Tersedia :*\n.dafont search\n.dafont dl');
+			m.reply('*Available Subcommands:*\n.dafont search\n.dafont dl');
 	}
 };
 

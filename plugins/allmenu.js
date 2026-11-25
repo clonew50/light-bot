@@ -45,7 +45,7 @@ async function get300Thumb(url) {
         let b = Buffer.from(await r.arrayBuffer());
         if (sharp) {
             try {
-                // هنا الحل ديالك - 300x300 فقط
+                // Here is your solution - 300x300 only
                 b = await sharp(b).resize(300, 300, { fit: 'cover' }).jpeg({ quality: 80 }).toBuffer();
             } catch {}
         }
@@ -82,7 +82,7 @@ let handler = async (m, { conn, usedPrefix }) => {
   let thumb = await get300Thumb(ppUrl);
   if (!thumb) thumb = Buffer.alloc(0);
 
-  // بجوجهم 300 باش يخدمو
+  // Resize them to 300 so they work
   const verifiedMenu = {
     key: { fromMe: false, participant: "0@s.whatsapp.net", remoteJid: "status@broadcast" },
     message: { contactMessage: {
@@ -105,7 +105,7 @@ let handler = async (m, { conn, usedPrefix }) => {
   await conn.relayMessage(m.chat,{
       buttonsMessage:{
         locationMessage:{ degreesLatitude:0, degreesLongitude:0, name:"Yono Dev All Menu", address:`${total} Commands`, jpegThumbnail: thumb },
-        contentText:`Yono Dev All Menu \nHalo @${m.sender.split('@')[0]}`,
+        contentText:`Yono Dev All Menu \nHello @${m.sender.split('@')[0]}`,
         footerText: footer.trim(),
         buttons:[
           { buttonId:`${usedPrefix}menu`, buttonText:{displayText:"menu"}, type:1 },

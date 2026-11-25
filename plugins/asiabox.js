@@ -158,21 +158,21 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
   if (!subCmd) {
     return await conn.reply(m.chat,
       `🎬 *ASIABOX DRAMA SCRAPER* 🎬\n\n`+
-      `Gunakan perintah:\n`+
-      `*${usedPrefix + command} search [judul]* - Cari drama/film\n`+
-      `*${usedPrefix + command} detail [slug]* - Info detail drama\n`+
-      `*${usedPrefix + command} eps [slug] [nomor]* - Download langsung videonya\n`, m
+      `Use command:\n`+
+      `*${usedPrefix + command} search [title]* - Search drama/film\n`+
+      `*${usedPrefix + command} detail [slug]* - Drama detail info\n`+
+      `*${usedPrefix + command} eps [slug] [number]* - Direct video download\n`, m
     );
   }
 
   try {
     if (subCmd === 'search' || subCmd === 's') {
-      if (!query) return await conn.reply(m.chat, '⚠️ Masukkan judul drama!', m);
-      await conn.reply(m.chat, '⏳ _Mencari drama di Asiabox..._', m);
+      if (!query) return await conn.reply(m.chat, '⚠️ Enter drama title!', m);
+      await conn.reply(m.chat, '⏳ _Searching drama on Asiabox..._', m);
       const q = new URLSearchParams({ drama: query, page: '1' });
       const res = await listing(BASE + '/' + LANG + '/search?' + q.toString());
-      if (!res.data ||!res.data.length) return await conn.reply(m.chat, '❌ Drama tidak ditemukan.', m);
-      let text = `🔍 *HASIL PENCARIAN:* "${query}"\n\n`;
+      if (!res.data ||!res.data.length) return await conn.reply(m.chat, '❌ Drama not found.', m);
+      let text = `🔍 *SEARCH RESULTS:* "${query}"\n\n`;
       res.data.slice(0, 8).forEach((s, i) => {
         text += `${i + 1}. *${s.title}*\n 🆔 Slug: ${s.slug}\n 🔗 Detail: *${usedPrefix + command} detail ${s.slug}*\n\n`;
       });
@@ -184,11 +184,11 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
       }
     }
     else if (subCmd === 'detail' || subCmd === 'd') {
-      if (!query) return await conn.reply(m.chat, `⚠️ Masukkan slug drama! Contoh: *${usedPrefix + command} detail the-judge-from-hell*`, m);
-      await conn.reply(m.chat, '⏳ _Mengambil detail drama..._', m);
+      if (!query) return await conn.reply(m.chat, `⚠️ Enter drama slug! Example: *${usedPrefix + command} detail the-judge-from-hell*`, m);
+      await conn.reply(m.chat, '⏳ _Getting drama details..._', m);
       const res = await detail(query);
       const film = res.film;
-      let text = `🎬 *DETAIL DRAMA* 🎬\n\n📌 *Judul:* ${film.title}\n🎭 *Genre:* ${film.genres? film.genres.join(', ') : '-'}\n📺 *Total Episode:* ${res.total_episode}\n\n💡 *Cara Download:*\nKetik *${usedPrefix + command} eps ${film.slug} 1*\n\n_Creator: ${CREATOR}_`;
+      let text = `🎬 *DRAMA DETAIL* 🎬\n\n📌 *Title:* ${film.title}\n🎭 *Genre:* ${film.genres? film.genres.join(', ') : '-'}\n📺 *Total Episodes:* ${res.total_episode}\n\n💡 *How to Download:*\nType *${usedPrefix + command} eps ${film.slug} 1*\n\n_Creator: ${CREATOR}_`;
       if (film.image) {
         await conn.sendMessage(m.chat, { image: { url: film.image }, caption: text }, { quoted: m });
       } else {
@@ -198,19 +198,19 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
     else if (subCmd === 'eps' || subCmd === 'e') {
       const slug = args[1];
       const epsNum = args[2];
-      if (!slug ||!epsNum) return await conn.reply(m.chat, `⚠️ Format salah! Gunakan: *${usedPrefix + command} eps [slug] [nomor]*`, m);
+      if (!slug ||!epsNum) return await conn.reply(m.chat, `⚠️ Wrong format! Use: *${usedPrefix + command} eps [slug] [number]*`, m);
 
-      await conn.reply(m.chat, `⏳ _Mengambil link episode ${epsNum}..._`, m);
+      await conn.reply(m.chat, `⏳ _Getting episode ${epsNum} link..._`, m);
       let id; try { id = (await detail(slug)).film.id; } catch (e) {}
       const res = await episode(slug, epsNum, id);
 
-      if (!res.video) return await conn.reply(m.chat, '❌ Link video tidak ditemukan.', m);
+      if (!res.video) return await conn.reply(m.chat, '❌ Video link not found.', m);
 
       if (res.video.includes('.m3u8')) {
-          return await conn.reply(m.chat, `⚠️ Video berformat streaming (.m3u8) tidak bisa dikirim langsung ke WhatsApp.\n\nSilakan tonton manual lewat link ini:\n${res.video}${res.subtitle? `\n\n📝 *Subtitle:* ${res.subtitle}` : ''}`, m);
+          return await conn.reply(m.chat, `⚠️ Streaming format video (.m3u8) cannot be sent directly to WhatsApp.\n\nPlease watch manually via this link:\n${res.video}${res.subtitle? `\n\n📝 *Subtitle:* ${res.subtitle}` : ''}`, m);
       }
 
-      await conn.reply(m.chat, '🚀 _Link MP4 ditemukan! Sedang mendownload dan mengirim video..._', m);
+      await conn.reply(m.chat, '🚀 _MP4 link found! Downloading and sending video..._', m);
 
       try {
           const vidRes = await axios.get(res.video, { responseType: 'arraybuffer', timeout: 0 });
@@ -223,12 +223,12 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
               caption: `🎬 *${slug}* - Episode ${epsNum}`
           }, { quoted: m });
       } catch (err) {
-          await conn.reply(m.chat, `⚠️ Gagal mengirim video karena ukuran terlalu besar.\n\nDownload manual:\n${res.video}`, m);
+          await conn.reply(m.chat, `⚠️ Failed to send video due to large size.\n\nManual download:\n${res.video}`, m);
       }
     }
   } catch (error) {
     console.error('[AsiaBox Error]:', error);
-    await conn.reply(m.chat, '⚠️ Terjadi kesalahan: ' + error.message, m);
+    await conn.reply(m.chat, '⚠️ An error occurred: ' + error.message, m);
   }
 }
 

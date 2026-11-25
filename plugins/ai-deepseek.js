@@ -1,6 +1,6 @@
 let handler = async (m, { text, usedPrefix, command }) => {
 	const input = m.quoted ? m.quoted.text : text;
-	if (!input) throw `Masukkan pertanyaan atau perintah!\n\nContoh:\n${usedPrefix + command} apa itu AI`;
+	if (!input) throw `Enter a question or command!\n\nExample:\n${usedPrefix + command} what is AI`;
 
 	if (!conn.deepseek) conn.deepseek = {};
 	if (!conn.deepseek[m.sender]) conn.deepseek[m.sender] = [];
@@ -11,7 +11,7 @@ let handler = async (m, { text, usedPrefix, command }) => {
 		conn.deepseek[m.sender].push({ role: 'assistant', content: res });
 		m.reply(res);
 	} catch (err) {
-		m.reply('Terjadi Kesalahan');
+		m.reply('An error occurred');
 		console.error(err);
 	}
 };

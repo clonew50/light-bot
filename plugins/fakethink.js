@@ -1,10 +1,10 @@
 let handler = async (m, { conn, text }) => {
-  let teks = text || "Sedang mikir..."
+  let teks = text || "Thinking..."
   
-  // 1. دير typing باش يبان كيكتب
+  // 1. Show typing so it looks like it's typing
   await conn.sendPresenceUpdate('composing', m.chat)
   
-  // 2. الطريقة الجديدة - خدامة بعد التحديث
+  // 2. The new method - works after the update
   let msg = await conn.relayMessage(m.chat, {
     extendedTextMessage: {
       text: teks,
@@ -16,7 +16,7 @@ let handler = async (m, { conn, text }) => {
           newsletterName: "GOJO-AI • Thinking",
           serverMessageId: 1
         },
-        // هادي هي اللي كتخليها تبان كـ AI
+        // This is what makes it look like AI
         businessMessageForwardInfo: {
           businessOwnerJid: m.chat
         },
@@ -32,17 +32,17 @@ let handler = async (m, { conn, text }) => {
     }
   }, {})
 
-  // 3. باش ماتختافيش - نخليوها typing كل 3 ثواني
+  // 3. So you don't worry - keep it typing every 3 seconds
   let loop = setInterval(() => {
     conn.sendPresenceUpdate('composing', m.chat)
   }, 3000)
 
-  // من مور 15 ثانية نوقفو ال typing ونعدلو الرسالة لجواب حقيقي
+  // After 15 seconds stop the typing and change the message to a real answer
   setTimeout(async () => {
     clearInterval(loop)
     await conn.sendPresenceUpdate('paused', m.chat)
-    // تقدر هنا تعدلها لجواب
-    // await conn.relayMessage(m.chat, { protocolMessage: { key: msg, type: 14, editedMessage: { conversation: "✅ Selesai mikir: " + teks } } }, {})
+    // You can change it here to an answer
+    // await conn.relayMessage(m.chat, { protocolMessage: { key: msg, type: 14, editedMessage: { conversation: "✅ Done thinking: " + teks } } }, {})
   }, 15000)
 
   return msg

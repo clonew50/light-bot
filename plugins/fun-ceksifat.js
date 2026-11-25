@@ -1,33 +1,33 @@
 let handler = async (m, { text }) => {
-	if (!text) throw 'Masukkan namamu!';
+	if (!text) throw 'Enter your name!';
 
 	m.reply(
 		`
-╭━━━°「 *Sifat ${text}* 」°━━━
+╭━━━°「 *Character ${text}* 」°━━━
 ┃
-┃• Nama          : ${text}
-┃• Ahlak Baik    : ${randomPersen()}
-┃• Ahlak Buruk   : ${randomPersen()}
-┃• Orang yang    : ${pickRandom(['Baik Hati', 'Sombong', 'Pelit', 'Dermawan', 'Rendah Hati', 'Rendah Diri', 'Pemalu', 'Penakut', 'Pengusil', 'Cengeng'])}
-┃• Selalu        : ${pickRandom([
-			'Rajin',
-			'Malas',
-			'Membantu',
-			'Ngegosip',
-			'Jail',
-			'Gak jelas',
+┃• Name          : ${text}
+┃• Good Morals   : ${randomPersen()}
+┃• Bad Morals    : ${randomPersen()}
+┃• Person who is : ${pickRandom(['Kind-Hearted', 'Arrogant', 'Stingy', 'Generous', 'Humble', 'Self-Deprecating', 'Shy', 'Cowardly', 'Nosy', 'Crybaby'])}
+┃• Always        : ${pickRandom([
+			'Diligent',
+			'Lazy',
+			'Helping',
+			'Gossiping',
+			'Teasing',
+			'Vague',
 			'Shopping',
-			'Chattan sama Doi',
-			'Chattan di WA karena Jomblo',
-			'Sedih',
-			'Kesepian',
-			'Bahagia',
-			'Ngocok tiap hari',
+			'Chatting with a Crush',
+			'Chatting on WhatsApp because Single',
+			'Sad',
+			'Lonely',
+			'Happy',
+			'Masturbating every day',
 		])}
-┃• Kecerdasan    : ${randomPersen()}
-┃• Kenakalan     : ${randomPersen()}
-┃• Keberanian    : ${randomPersen()}
-┃• Ketakutan     : ${randomPersen()}
+┃• Intelligence  : ${randomPersen()}
+┃• Naughtiness   : ${randomPersen()}
+┃• Bravery       : ${randomPersen()}
+┃• Fear          : ${randomPersen()}
 ╰━━━━━━━━━━━━━━━
 `.trim()
 	);

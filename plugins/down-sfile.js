@@ -5,7 +5,7 @@ let handler = async (m, { conn, text }) => {
 
 	if (/https:\/\/sfile\.co\//i.test(text)) {
 		let res = await sfile.download(text, true);
-		if (!res) throw 'Tidak Dapat Mengunduh File';
+		if (!res) throw 'Failed to download file';
 
 		await m.reply(
 			Object.entries(res.metadata)
@@ -113,7 +113,7 @@ const sfile = {
 				headers: h,
 			});
 
-			if (!init.ok) throw new Error(`Init request gagal (${init.status})`);
+			if (!init.ok) throw new Error(`Init request failed (${init.status})`);
 
 			const htmlInit = await init.text();
 
@@ -124,7 +124,7 @@ const sfile = {
 			const meta = sfile.extractMetadata($);
 
 			const dl = $('#download').attr('data-dw-url');
-			if (!dl) throw new Error('Download URL gak ketemu');
+			if (!dl) throw new Error('Download URL not found');
 
 			h.Referer = dl;
 
@@ -132,7 +132,7 @@ const sfile = {
 				headers: h,
 			});
 
-			if (!proc.ok) throw new Error(`Process request gagal (${proc.status})`);
+			if (!proc.ok) throw new Error(`Process request failed (${proc.status})`);
 
 			const htmlProc = await proc.text();
 			$ = cheerio.load(htmlProc);
@@ -145,7 +145,7 @@ const sfile = {
 			const re = /https:\\\/\\\/download\d+\.sfile\.co\\\/downloadfile\\\/\d+\\\/\d+\\\/[a-z0-9]+\\\/[^\s'"]+\.[a-z0-9]+(\?[^"']+)?/gi;
 			const mt = scr.match(re);
 
-			if (!mt?.length) throw new Error('Link download final gak ketemu di script');
+			if (!mt?.length) throw new Error('Final download link not found in script');
 
 			const fin = mt[0].replace(/\\\//g, '/');
 
@@ -154,7 +154,7 @@ const sfile = {
 			if (resultBuffer) {
 				const fileRes = await fetch(fin, { headers: h });
 
-				if (!fileRes.ok) throw new Error(`File download gagal (${fileRes.status})`);
+				if (!fileRes.ok) throw new Error(`File download failed (${fileRes.status})`);
 
 				const arrayBuffer = await fileRes.arrayBuffer();
 				download = Buffer.from(arrayBuffer);

@@ -10,7 +10,7 @@ let handler = async (m) => {
 			let hours = Math.abs(Math.floor((global.db.data.users[user].premiumTime - new Date()) / (60 * 60 * 1000))) % 24;
 			let minutes = Math.abs(Math.floor((global.db.data.users[user].premiumTime - new Date()) / (60 * 1000))) % 60;
 
-			response += `∝───────•••───────\n◦  *${number}*\n•  ${name}\n*Active period*: ${days} Hari ${hours} Jam ${minutes} Menit\n∝───────•••───────\n`;
+			response += `∝───────•••───────\n◦  *${number}*\n•  ${name}\n*Active period*: ${days} Days ${hours} Hours ${minutes} Minutes\n∝───────•••───────\n`;
 
 			totalPremium++;
 		}

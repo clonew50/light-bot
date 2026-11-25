@@ -82,10 +82,10 @@ async function downloadPin(m, conn, text, usedPrefix) {
   const n = parseInt((text || '').trim(), 10)
   const entry = cache.get(keyOf(m))
   if (!entry || Date.now() - entry.at > TTL) {
-    return conn.sendMessage(m.chat, { text: `❌ Cari dulu pakai ${usedPrefix}pinterest <kata kunci>, lalu ketik nomor gambar.\nContoh: ${usedPrefix}pinterest anime` }, { quoted: m })
+    return conn.sendMessage(m.chat, { text: `❌ Search first using ${usedPrefix}pinterest <keyword>, then type the image number.\nExample: ${usedPrefix}pinterest anime` }, { quoted: m })
   }
   if (!n || n < 1 || n > entry.items.length) {
-    return conn.sendMessage(m.chat, { text: `❌ Masukkan nomor 1 sampai ${entry.items.length}.\nContoh: ${usedPrefix}unduh 2` }, { quoted: m })
+    return conn.sendMessage(m.chat, { text: `❌ Enter a number from 1 to ${entry.items.length}.\nExample: ${usedPrefix}unduh 2` }, { quoted: m })
   }
   const it = entry.items[n - 1]
   await conn.sendMessage(m.chat, { react: { text: '⌛', key: m.key } })
@@ -96,7 +96,7 @@ async function downloadPin(m, conn, text, usedPrefix) {
     await conn.sendMessage(m.chat, { image: buf, caption: `*${it.title}*\n\n乂 _• by YONO_` }, { quoted: m })
     await conn.sendMessage(m.chat, { react: { text: '✅', key: m.key } })
   } catch (e) {
-    await conn.sendMessage(m.chat, { text: '❌ Gagal mengunduh gambar, coba nomor lain.' }, { quoted: m })
+    await conn.sendMessage(m.chat, { text: '❌ Failed to download the image, try another number.' }, { quoted: m })
   }
 }
 
@@ -128,7 +128,7 @@ document.getElementById('next').addEventListener('click',()=>{ idx=(idx+1)%items
 let handler = async (m, { conn, text, usedPrefix, command }) => {
   if (/^(pindl|unduh|download)$/i.test(command)) return downloadPin(m, conn, text, usedPrefix)
   const query = (text || '').trim()
-  if (!query) return conn.sendMessage(m.chat, { text: `*乂 Pinterest - Yono Dev*\n\nTulis kata kunci pencarian.\n\nContoh:\n${usedPrefix}pinterest anime aesthetic\n${usedPrefix}pinterest kucing lucu\n\n> Developer: YONO` }, { quoted: m })
+  if (!query) return conn.sendMessage(m.chat, { text: `*乂 Pinterest - Yono Dev*\n\nWrite a search keyword.\n\nExample:\n${usedPrefix}pinterest anime aesthetic\n${usedPrefix}pinterest cute cats\n\n> Developer: YONO` }, { quoted: m })
 
   await conn.sendMessage(m.chat, { react: { text: '⌛', key: m.key } })
   try {
@@ -136,15 +136,15 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
     const items = found.length ? await collectImages(found) : []
     if (!items.length) {
       await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } })
-      return conn.sendMessage(m.chat, { text: '❌ Tidak ada hasil untuk pencarian ini. Coba kata kunci lain.' }, { quoted: m })
+      return conn.sendMessage(m.chat, { text: '❌ No results for this search. Try another keyword.' }, { quoted: m })
     }
     saveCache(m, items)
     const data = {
       response_id: randomUUID(),
       sections: [
-        { __typename: 'GenAIUnifiedResponseSection', view_model: { primitives: [`Kueri: ${query}`, `Hasil: ${found.length}`, `Ditampilkan: ${items.length}`, `Bot: YONO`].map(t => ({ prompt_text: t, prompt_type: 'SUGGESTED_PROMPT', __typename: 'GenAIFollowUpSuggestionPillPrimitive' })), __typename: 'GenAIHScrollLayoutViewModel' } },
+        { __typename: 'GenAIUnifiedResponseSection', view_model: { primitives: [`Query: ${query}`, `Results: ${found.length}`, `Displayed: ${items.length}`, `Bot: YONO`].map(t => ({ prompt_text: t, prompt_type: 'SUGGESTED_PROMPT', __typename: 'GenAIFollowUpSuggestionPillPrimitive' })), __typename: 'GenAIHScrollLayoutViewModel' } },
         { view_model: { primitive: { sources: items.map((x, i) => ({ source_type: 'THIRD_PARTY', source_display_name: `${i + 1} • ${x.title}`.slice(0, 90), source_subtitle: 'YONO', source_url: x.pin, favicon: { url: 'https://www.pinterest.com/favicon.ico', mime_type: 'image/jpeg', width: 16, height: 16 } })) , __typename: 'GenAISearchResultPrimitive' }, __typename: 'GenAISingleLayoutViewModel' } },
-        { view_model: { primitive: { payload: buildHtml(query, items.map(x => ({ img: x.uri })), `Ketik: ${usedPrefix}unduh nomor | YONO`), url: 'https://www.pinterest.com', trusted_sources: ['pinterest.com'], __typename: 'GenAIaeacdsnwHtmlPrimitive' }, __typename: 'GenAISingleLayoutViewModel' } }
+        { view_model: { primitive: { payload: buildHtml(query, items.map(x => ({ img: x.uri })), `Type: ${usedPrefix}unduh number | YONO`), url: 'https://www.pinterest.com', trusted_sources: ['pinterest.com'], __typename: 'GenAIaeacdsnwHtmlPrimitive' }, __typename: 'GenAISingleLayoutViewModel' } }
       ]
     }
     await conn.relayMessage(m.chat, {
@@ -154,11 +154,11 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
     await conn.sendMessage(m.chat, { react: { text: '✅', key: m.key } })
   } catch (e) {
     console.log(e)
-    await conn.sendMessage(m.chat, { text: '❌ Terjadi kesalahan, coba lagi nanti.\n_YONO_' }, { quoted: m })
+    await conn.sendMessage(m.chat, { text: '❌ An error occurred, try again later.\n_YONO_' }, { quoted: m })
   }
 }
 
-handler.help = ['pinterest <kata kunci>']
+handler.help = ['pinterest <keyword>']
 handler.tags = ['search']
 handler.command = /^(pinterest|pin|pindl|unduh|download)$/i
 export default handler

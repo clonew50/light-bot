@@ -67,10 +67,10 @@ class DouyinSearch {
       }
     })
 
-    if (!scriptWithData) throw new Error('Data Douyin tidak ditemukan (Douyin block)')
+    if (!scriptWithData) throw new Error('Douyin data not found (Douyin block)')
 
     const match = scriptWithData.match(/let\s+data\s*=\s*(\{[\s\S]+?\});/)
-    if (!match) throw new Error('Gagal parse data Douyin')
+    if (!match) throw new Error('Failed to parse Douyin data')
 
     let fullData
     try {
@@ -87,7 +87,7 @@ class DouyinSearch {
 let handler = async (m, { conn, satanic, text, prefix, command, usedPrefix }) => {
   const client = conn || satanic
   const _prefix = usedPrefix || prefix
-  if (!text) return m.reply(`Contoh: ${_prefix + command} kata kunci\nContoh: ${_prefix + command} anime dance`)
+  if (!text) return m.reply(`Example: ${_prefix + command} keyword\nExample: ${_prefix + command} anime dance`)
 
   await client.sendMessage(m.chat, { react: { text: '⏳', key: m.key } })
 
@@ -97,16 +97,16 @@ let handler = async (m, { conn, satanic, text, prefix, command, usedPrefix }) =>
 
     if (!results ||!results.length) {
       await client.sendMessage(m.chat, { react: { text: '❌', key: m.key } })
-      return m.reply('Tidak ditemukan.')
+      return m.reply('Not found.')
     }
 
     const first = results[0]
     const videoUrl = first.video?.play_addr?.url_list?.[0]
-    const caption = `${first.desc || 'Tanpa deskripsi'}\nhttps://www.douyin.com/video/${first.aweme_id}\n\n👤 @${first.author?.nickname || ''}`
+    const caption = `${first.desc || 'No description'}\nhttps://www.douyin.com/video/${first.aweme_id}\n\n👤 @${first.author?.nickname || ''}`
 
     if (!videoUrl) {
       await client.sendMessage(m.chat, { react: { text: '⚠️', key: m.key } })
-      return m.reply('Video tidak tersedia.')
+      return m.reply('Video not available.')
     }
 
     await client.sendMessage(m.chat, { react: { text: '✅', key: m.key } })
@@ -119,7 +119,7 @@ let handler = async (m, { conn, satanic, text, prefix, command, usedPrefix }) =>
   } catch (err) {
     console.error('Douyin Error:', err)
     await client.sendMessage(m.chat, { react: { text: '⚠️', key: m.key } })
-    m.reply('Gagal mengambil data:\n' + err.message)
+    m.reply('Failed to fetch data:\n' + err.message)
   }
 }
 

@@ -86,7 +86,7 @@ global.loadDatabase = function () {
 		try {
 			Object.assign(global.db.data, JSON.parse(row.data));
 		} catch {
-			console.error('[DB] JSON rusak, reset database');
+			console.error('[DB] JSON corrupted, reset database');
 		}
 	} else {
 		global.db.sqlite.prepare('INSERT OR IGNORE INTO database (id, data) VALUES (1, ?)').run(JSON.stringify(global.db.data));
@@ -176,13 +176,13 @@ async function connectionUpdate(update) {
 		pushPanelEvent('الاتصال: ' + connection);
 	}
 
-	if (connection === 'connecting') console.log(chalk.redBright('⚡ Mengaktifkan Bot, Mohon tunggu sebentar...'));
-	if (connection === 'open') console.log(chalk.green('✅ Tersambung'));
+	if (connection === 'connecting') console.log(chalk.redBright('⚡ Activating Bot, Please wait a moment...'));
+	if (connection === 'open') console.log(chalk.green('✅ Connected'));
 
-	if (isOnline === true) console.log(chalk.green('Status Aktif'));
-	else if (isOnline === false) console.log(chalk.red('Status Mati'));
+	if (isOnline === true) console.log(chalk.green('Status Active'));
+	else if (isOnline === false) console.log(chalk.red('Status Offline'));
 
-	if (receivedPendingNotifications) console.log(chalk.yellow('Menunggu Pesan Baru'));
+	if (receivedPendingNotifications) console.log(chalk.yellow('Waiting for New Message'));
 
 	const output = lastDisconnect?.error?.output;
 	if (output?.payload) {
@@ -239,14 +239,14 @@ global.reloadHandler = async function (restartConn) {
 		conn.ev.off('creds.update', conn.credsUpdate);
 	}
 
-	conn.welcome = '✦━━━━━━[ *WELCOME* ]━━━━━━✦\n\n┏––––––━━━━━━━━•\n│⫹⫺ @subject\n┣━━━━━━━━┅┅┅\n│( 👋 Hallo @user)\n├[ *INTRO* ]—\n│ *Nama:* \n│ *Umur:* \n│ *Gender:*\n┗––––––━━┅┅┅\n\n––––––┅┅ *DESCRIPTION* ┅┅––––––\n@desc';
+	conn.welcome = '✦━━━━━━[ *WELCOME* ]━━━━━━✦\n\n┏––––––━━━━━━━━•\n│⫹⫺ @subject\n┣━━━━━━━━┅┅┅\n│( 👋 Hello @user)\n├[ *INTRO* ]—\n│ *Name:* \n│ *Age:* \n│ *Gender:*\n┗––––––━━┅┅┅\n\n––––––┅┅ *DESCRIPTION* ┅┅––––––\n@desc';
 	conn.bye = '✦━━━━━━[ *GOOD BYE* ]━━━━━━✦\nSayonara *@user* 👋( ╹▽╹ )';
-	conn.spromote = '@user sekarang admin!';
-	conn.sdemote = '@user sekarang bukan admin!';
-	conn.sDesc = 'Deskripsi telah diubah ke \n@desc';
-	conn.sSubject = 'Judul grup telah diubah ke \n@subject';
-	conn.sIcon = 'Icon grup telah diubah!';
-	conn.sRevoke = 'Link group telah diubah ke \n@revoke';
+	conn.spromote = '@user is now admin!';
+	conn.sdemote = '@user is no longer admin!';
+	conn.sDesc = 'Description has been changed to \n@desc';
+	conn.sSubject = 'Group title has been changed to \n@subject';
+	conn.sIcon = 'Group icon has been changed!';
+	conn.sRevoke = 'Group link has been changed to \n@revoke';
 
 	conn.handler = handler.handler.bind(global.conn);
 	conn.participantsUpdate = handler.participantsUpdate.bind(global.conn);
@@ -261,7 +261,7 @@ global.reloadHandler = async function (restartConn) {
 			const settings = global.db.data.settings[conn.user.jid];
 			if (status === 'offer' && settings.anticall) {
 				await conn.rejectCall(id, from);
-				console.log('Menolak panggilan dari', from);
+				console.log('Rejecting call from', from);
 			}
 		}
 	});

@@ -17,11 +17,11 @@ function buildMainSelect() {
     sections: [
       {
         title: FOOTER,
-        highlight_label: 'MENU UTAMA',
+        highlight_label: 'MAIN MENU',
         rows: [
           { title: 'All Menu', id: `${PREFIX}menu` },
           { title: 'Ping / Status', id: `${PREFIX}ping` },
-          { title: 'Total Fitur', id: `${PREFIX}totalfitur` },
+          { title: 'Total Features', id: `${PREFIX}totalfitur` },
           { title: 'Owner', id: `${PREFIX}owner` }
         ]
       },
@@ -38,7 +38,7 @@ function buildMainSelect() {
         highlight_label: 'GROUP',
         rows: [
           { title: 'Hidetag', id: `${PREFIX}hidetag` },
-          { title: 'Link Grup', id: `${PREFIX}linkgrup` },
+          { title: 'Group Link', id: `${PREFIX}linkgrup` },
           { title: 'List Admin', id: `${PREFIX}listadmin` }
         ]
       }
@@ -52,7 +52,7 @@ function buildInfoSelect() {
     title: '\u0000',
     sections: [{
       title: FOOTER,
-      highlight_label: 'INFORMASI',
+      highlight_label: 'INFORMATION',
       rows: [
         { title: 'Menu', id: `${PREFIX}menu` },
         { title: 'Owner', id: `${PREFIX}owner` },
@@ -146,7 +146,7 @@ let handler = async (m, { conn }) => {
   try {
     const jid = m.chat
 
-    // PESAN 1 : PLAIN NATIVE FLOW
+    // MESSAGE 1 : PLAIN NATIVE FLOW
     const msg1 = {
       body: { text: '\u0000' },
       footer: { text: FOOTER },
@@ -166,7 +166,7 @@ let handler = async (m, { conn }) => {
 
     await new Promise(r => setTimeout(r, 1000))
 
-    // PESAN 2 : FAKE CATALOG QUOTE (tanpa video biar stabil di REM)
+    // MESSAGE 2 : FAKE CATALOG QUOTE (no video for stability on REM)
     const msg2 = {
       body: { text: '\u0000' },
       footer: { text: FOOTER },
@@ -186,7 +186,7 @@ let handler = async (m, { conn }) => {
 
     await new Promise(r => setTimeout(r, 1000))
 
-    // PESAN 3 : LOCATION HEADER + CATALOG
+    // MESSAGE 3 : LOCATION HEADER + CATALOG
     const { header: locHeader, thumb: locThumb, b64 } = await buildLocationHeader()
 
     const msg3 = {

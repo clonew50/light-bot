@@ -1,7 +1,7 @@
 let handler = async (m, { conn, args, usedPrefix, command }) => {
     const username = args[0]
     if (!username) {
-        return m.reply(`📌 *Cara Penggunaan:*\n\n${usedPrefix}${command} <username>\n\nContoh:\n${usedPrefix}${command} go24.q`)
+        return m.reply(`📌 *How to Use:*\n\n${usedPrefix}${command} <username>\n\nExample:\n${usedPrefix}${command} go24.q`)
     }
 
     const cleanUser = username.replace(/^@/, '').replace(/https?:\/\/(www\.)?instagram\.com\//, '').replace(/\/.*$/, '')
@@ -74,7 +74,7 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
                             primitives: [
                                 { __typename: 'GenAISpacerPrimitive' },
                                 {
-                                    text: '# {{social_entity_1}}Lihat Profil\0{{/social_entity_1}} ',
+                                    text: '# {{social_entity_1}}View Profile\0{{/social_entity_1}} ',
                                     inline_entities: [{
                                         key: 'social_entity_1',
                                         metadata: {
