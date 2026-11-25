@@ -982,8 +982,8 @@ export function renderAdminPanelHtml(installRenderJs) {
         <div class="surface col-6" data-section="send">
           <div class="surface-head">
             <div>
-              <h2 class="surface-title">استوديو إرسال رسالة اختبارية</h2>
-              <p class="surface-sub">أرسل رسالة مباشرة من رقم البوت الأساسي</p>
+              <h2 class="surface-title">إرسال رسالة من البوت</h2>
+              <p class="surface-sub">أرسل رسالة نصية مباشرة من رقم البوت الأساسي</p>
             </div>
           </div>
           <div class="field">
@@ -996,7 +996,6 @@ export function renderAdminPanelHtml(installRenderJs) {
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
             <button type="button" class="cat-btn" onclick="$('sendMsg').value='أهلاً! البوت يعمل بشكل سليم الآن.'">قالب ترحيب</button>
-            <button type="button" class="cat-btn" onclick="$('sendMsg').value='.menu'">اختبار القائمة (.menu)</button>
             <button type="button" class="cat-btn" onclick="$('sendMsg').value='تم تحديث البوت وإعادة تشغيله بنجاح.'">إشعار تحديث</button>
           </div>
           <div style="display:flex;align-items:center;gap:12px">

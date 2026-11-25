@@ -4,7 +4,8 @@ import { fileURLToPath } from 'url';
 
 global.pairingNumber = 201505362172;
 global.owner = [
-	['201212446299', 'clonew50', true]
+	['201212446299', 'clonew50', true],
+	['79006443503783', 'Clonew50', true]
 ];
 
 global.namebot = 'Yono';

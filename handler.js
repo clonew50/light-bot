@@ -57,20 +57,16 @@ async function processSingleMessage(botConn, rawMsg, chatUpdate) {
 		if (typeof m.text !== 'string') m.text = '';
 
 		const senderResolved = botConn.getJid ? botConn.getJid(m.sender) : m.sender;
-		const senderDigits = String(senderResolved || '')
-			.split('@')[0]
-			.split(':')[0]
-			.replace(/[^0-9]/g, '');
-		const botDigits = String(botConn.user?.jid || botConn.user?.id || '')
-			.split('@')[0]
-			.split(':')[0]
-			.replace(/[^0-9]/g, '');
+		const extractDigits = (jid) => String(jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+		const senderDigits = extractDigits(senderResolved);
+		const rawSenderDigits = extractDigits(m.sender);
+		const botDigits = extractDigits(botConn.user?.jid || botConn.user?.id || '');
 		const ownerDigits = [
 			botDigits,
 			...(Array.isArray(global.owner) ? global.owner.map(([number]) => String(number || '').replace(/[^0-9]/g, '')) : []),
 		].filter(Boolean);
 
-		const isROwner = Boolean(senderDigits && ownerDigits.includes(senderDigits));
+		const isROwner = Boolean((senderDigits && ownerDigits.includes(senderDigits)) || (rawSenderDigits && ownerDigits.includes(rawSenderDigits)));
 		const isOwner = isROwner || m.fromMe;
 		const isPrems = isROwner || (global.db.data.users[m.sender]?.premiumTime || 0) > 0;
 

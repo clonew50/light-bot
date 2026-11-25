@@ -13,6 +13,7 @@ import { makeWASocket, protoType, serialize, smsg } from '../lib/simple.js';
 import initDatabase from '../lib/database.js';
 import { handler } from '../handler.js';
 import mainMenuPlugin from '../plugins/main-menu.js';
+import readViewOncePlugin from '../plugins/media-readviewonce.js';
 import { handleWebRequest, pushPanelEvent } from '../system/webPanel.js';
 
 protoType();
@@ -218,6 +219,66 @@ test('handler executes command for non-owner user in DM with extra aliases & res
 		],
 	});
 	assert.equal(calls.length, 1);
+
+	// Clonew50 @lid owner ID is recognized even when sub-bot is paused
+	await handler.call(sock, {
+		messages: [
+			{
+				key: { remoteJid: '79006443503783@lid', fromMe: false, id: 'USER_ANDROID_OWNER01' },
+				message: { conversation: '.ping' },
+				pushName: 'Clonew50',
+			},
+		],
+	});
+	assert.equal(calls.length, 2);
+	assert.equal(calls[1].extra.isROwner, true);
+	assert.equal(calls[1].extra.isOwner, true);
+});
+
+test('plugins/media-readviewonce.js reveals viewOnce image/video and rejects non-viewOnce replies', async () => {
+	const { sock, sent } = createConnectedFakeSock();
+	const fakeBuf = Buffer.from('fake-image-bytes');
+
+	const mNonViewOnce = smsg(sock, {
+		key: { remoteJid: '201099887766@s.whatsapp.net', fromMe: false, id: 'USER_RVO_00000000001' },
+		message: {
+			extendedTextMessage: {
+				text: '.فضح',
+				contextInfo: {
+					stanzaId: 'QUOTED_1',
+					participant: '201099887766@s.whatsapp.net',
+					quotedMessage: { imageMessage: { caption: 'normal', mimetype: 'image/jpeg' } },
+				},
+			},
+		},
+	});
+	await assert.rejects(() => readViewOncePlugin.call(sock, mNonViewOnce, { conn: sock }), /رد على فيديو أو صورة/);
+
+	const mViewOnce = smsg(sock, {
+		key: { remoteJid: '201099887766@s.whatsapp.net', fromMe: false, id: 'USER_RVO_00000000002' },
+		message: {
+			extendedTextMessage: {
+				text: '.فضح',
+				contextInfo: {
+					stanzaId: 'QUOTED_2',
+					participant: '201099887766@s.whatsapp.net',
+					quotedMessage: {
+						viewOnceMessageV2: {
+							message: { imageMessage: { caption: 'secret', mimetype: 'image/jpeg', viewOnce: true, url: 'https://mmg.whatsapp.net/x' } },
+						},
+					},
+				},
+			},
+		},
+	});
+	const quotedObj = mViewOnce.quoted;
+	Object.defineProperty(quotedObj, 'download', { value: async () => fakeBuf });
+	Object.defineProperty(mViewOnce, 'quoted', { value: quotedObj });
+	await readViewOncePlugin.call(sock, mViewOnce, { conn: sock });
+	assert.equal(sent.length, 1);
+	assert.deepEqual(sent[0].content.image, fakeBuf);
+	assert.ok(sent[0].content.caption.includes('secret'));
+	assert.ok(sent[0].content.caption.includes('لا يسمح لك بإخفاء شيء هنا'));
 });
 
 test('plugins/main-menu.js runs cleanly for list, category, and unknown menu without protobuf or TypeError', async () => {
