@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkUpdate, applyUpdate } from './autoUpdate.mjs';
-import { renderPublicPortalHtml, renderAdminPanelHtml, renderMaintenanceHtml } from './panelViews.js';
+import { renderPublicPortalHtml, renderAdminPanelHtml, renderMaintenanceHtml, INSTALL_RENDER_JS } from './panelViews.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -310,43 +310,7 @@ function getClientInfo(client) {
 }
 
 /* ============================== HTML views ============================== */
-const LOGIN_HTML = (err) => renderPublicPortalHtml(err);
-const INSTALL_RENDER_JS = `let lastInstallSig='';
-function renderInstall(d){
-  const box=document.getElementById('installBody');
-  const activeId=document.activeElement?document.activeElement.id:'';
-  if(activeId==='lm' || activeId==='ph') return;
-  const sig=[!!d.connected,d.pairingCode||'',d.qr?'1':'0',d.loginMode||'',d.configuredPhone||''].join('|');
-  if(sig===lastInstallSig) return;
-  lastInstallSig=sig;
-  if(d.connected){
-    box.innerHTML='<div class="hint">The main bot is already connected to WhatsApp. To change it to another number use <b>Reset Session</b> then pair again.</div>';
-    return;
-  }
-  let html='';
-  if(d.pairingCode){
-    html+='<div class="hint">Open WhatsApp → Linked devices → Link with phone number and enter the code:</div><div class="code">'+esc(d.pairingCode)+'</div>';
-  }
-  if(d.qr){
-    html+='<div class="qrbox"><div class="hint">Scan the QR code from WhatsApp:</div><div id="qr"></div></div>';
-  }
-  if(!d.pairingCode && !d.qr){
-    html+=(d.loginMode==='code' && !d.configuredPhone)
-      ? '<div class="hint">Enter the main bot WhatsApp number below then press <b>Pair now (no restart)</b> to issue the pairing code.</div>'
-      : '<div class="hint">Waiting for a QR code or pairing code for the main bot...</div>';
-  }
-  html+='<div style="margin-top:12px">'
-     +'<label class="lbl">Login method</label>'
-     +'<select id="lm"><option value="code"'+(d.loginMode==='code'?' selected':'')+'>Pairing code (by phone number)</option>'
-     +'<option value="qr"'+(d.loginMode==='qr'?' selected':'')+'>QR code</option></select>'
-     +'<label class="lbl">Main bot number</label>'
-     +'<input id="ph" class="ltr mono" value="'+esc(d.configuredPhone)+'" placeholder="2010xxxxxxxx">'
-     +'<div class="actions"><button type="button" class="pri" onclick="pairMainNow()">Pair now (no restart)</button>'
-     +'<button type="button" class="sky" onclick="applyLogin()">Save &amp; restart</button>'
-     +'<button type="button" class="ghost" onclick="refresh()">Refresh</button></div></div>';
-  box.innerHTML=html;
-  if(d.qr) renderQR(d.qr);
-}`;
+const LOGIN_HTML = (err) => renderPublicPortalHtml(err, INSTALL_RENDER_JS);
 const PANEL_HTML = renderAdminPanelHtml(INSTALL_RENDER_JS);
 
 /* ============================== Request handler ============================== */
@@ -374,7 +338,7 @@ async function handle(req, res, client) {
     }
   }
 
-  if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
+  if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/admin')) {
     if (authed) return sendHtml(res, 200, PANEL_HTML);
     return sendHtml(res, 200, LOGIN_HTML(''));
   }
