@@ -355,13 +355,29 @@ test('webPanel routes: /admin login, /api/public/status, sub-bot pairing, and se
 		assert.equal(sendJson.ok, true);
 		assert.equal(sent[sent.length - 1].content.text, 'hello test');
 
-		// 6. Public commands catalog route
+		// 6. Public commands catalog route (returns full commands list by default without 48 cap)
 		const pubCmdsRes = await fetch(`${base}/api/public/commands?q=ping`);
 		assert.equal(pubCmdsRes.status, 200);
 		const pubCmds = await pubCmdsRes.json();
 		assert.equal(pubCmds.ok, true);
 		assert.equal(pubCmds.total, 1);
 		assert.equal(pubCmds.commands[0].primary, 'ping');
+
+		const origPlugins = global.plugins;
+		try {
+			const manyPlugins = {};
+			for (let i = 1; i <= 60; i++) {
+				manyPlugins[`p${i}.js`] = { command: `cmd${i}`, tags: ['tools'], help: [`cmd${i}`] };
+			}
+			global.plugins = manyPlugins;
+			const fullRes = await fetch(`${base}/api/public/commands`);
+			const fullJson = await fullRes.json();
+			assert.equal(fullJson.ok, true);
+			assert.equal(fullJson.total, 60);
+			assert.equal(fullJson.commands.length, 60);
+		} finally {
+			global.plugins = origPlugins;
+		}
 
 		// 7. Save main bot settings route updates db & global.opts
 		const saveSetRes = await fetch(`${base}/api/action`, {
@@ -375,10 +391,17 @@ test('webPanel routes: /admin login, /api/public/status, sub-bot pairing, and se
 		assert.equal(saveSetJson.botSettings.autoread, true);
 		assert.equal(saveSetJson.botSettings.gconly, false);
 
-		// 8. Rendered HTML pages (/) and (/admin) have valid inline JS syntax
+		// 8. Rendered HTML pages (/) and (/admin) have valid inline JS syntax & public portal exposes commands menu without simulator
+		const publicHtml = await (await fetch(`${base}/`)).text();
+		assert.ok(publicHtml.includes('قائمة أوامر البوت'));
+		assert.ok(!publicHtml.includes('معاينة تفاعلية للأوامر'));
+		assert.ok(!publicHtml.includes('id="simulator"'));
+		assert.ok(!publicHtml.includes('id="simInput"'));
+
+		const adminHtml = await (await fetch(`${base}/admin`, { headers: { Cookie: pwCookie } })).text();
 		for (const [label, html] of [
-			['public', await (await fetch(`${base}/`)).text()],
-			['admin', await (await fetch(`${base}/admin`, { headers: { Cookie: pwCookie } })).text()],
+			['public', publicHtml],
+			['admin', adminHtml],
 		]) {
 			const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
 			assert.ok(scripts.length >= 1, `Expected inline script in ${label}`);

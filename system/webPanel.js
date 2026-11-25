@@ -486,9 +486,9 @@ function getClientInfo(client) {
 	const conn = client || global.conn;
 	const connected = !!(conn && conn.user && st.connection === 'open');
 	const mem = process.memoryUsage();
-	const cmdCount = Object.keys(global.plugins || {}).length;
-	const subBots = listAllSubBots();
 	const catalog = buildCommandsCatalog({ limit: 1 });
+	const cmdCount = catalog.total;
+	const subBots = listAllSubBots();
 	const statsSnap = getStatsSnapshot();
 	return {
 		ok: true,
@@ -613,7 +613,7 @@ export async function handleWebRequest(req, res, client, options = {}) {
 		const cat = url.searchParams.get('cat') || '';
 		const hasLimit = url.searchParams.has('limit') || url.searchParams.has('page');
 		const page = parseInt(url.searchParams.get('page') || '1', 10) || 1;
-		const limit = hasLimit ? parseInt(url.searchParams.get('limit') || '36', 10) || 36 : 48;
+		const limit = hasLimit ? parseInt(url.searchParams.get('limit') || '36', 10) || 36 : 0;
 		return sendJson(res, 200, buildCommandsCatalog({ q, cat, page, limit }));
 	}
 

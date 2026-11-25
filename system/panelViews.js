@@ -39,7 +39,7 @@ const CODE_TILES_HELPER_JS = `function buildCodeTilesHtml(code, targetId){
 }`;
 
 /* =====================================================================
- * PUBLIC PORTAL (Sub-Bot Pairing + Interactive Simulator + Commands)
+ * PUBLIC PORTAL (Sub-Bot Pairing + Full Commands Menu + Live Status)
  * ===================================================================== */
 export function renderPublicPortalHtml(err) {
 	return `<!DOCTYPE html>
@@ -47,7 +47,7 @@ export function renderPublicPortalHtml(err) {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Yono — بوابة ربط البوت واستكشاف الأوامر</title>
+<title>Yono — بوابة ربط البوت وقائمة الأوامر</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>${PANEL_CSS}</style>
 </head>
@@ -61,9 +61,9 @@ export function renderPublicPortalHtml(err) {
     </a>
     <nav class="topnav" aria-label="التنقل الرئيسي">
       <a href="#pair">ربط رقمك</a>
-      <a href="#simulator">محاكي الأوامر</a>
-      <a href="#commands">دليل الأوامر</a>
-      <a href="#status">الحالة المباشرة</a>
+      <a href="#status">حالة البوت</a>
+      <a href="#commands">قائمة الأوامر</a>
+      <a href="#events">السجل المباشر</a>
     </nav>
     <div class="top-cta">
       <a class="btn sm ghost" href="/admin">لوحة الإدارة</a>
@@ -182,20 +182,20 @@ export function renderPublicPortalHtml(err) {
           <div class="form-row">
             <div class="field">
               <label for="sbMode">وضع التشغيل</label>
-              <select id="sbMode" onchange="syncSimulatorPreview()">
+              <select id="sbMode">
                 <option value="public">عام — يرد على الجميع</option>
                 <option value="self">خاص — يرد على رقمك فقط</option>
               </select>
             </div>
             <div class="field">
               <label for="sbPrefix">بادئة الأوامر</label>
-              <input id="sbPrefix" class="mono ltr" maxlength="4" value="." oninput="syncSimulatorPreview()"/>
+              <input id="sbPrefix" class="mono ltr" maxlength="4" value="." oninput="refreshCmdPrefixes()"/>
             </div>
           </div>
           <div class="form-row">
             <div class="field">
               <label for="sbCustomName">اسم البوت المخصص</label>
-              <input id="sbCustomName" placeholder="Yono Sub-Bot" oninput="syncSimulatorPreview()"/>
+              <input id="sbCustomName" placeholder="Yono Sub-Bot"/>
             </div>
             <div class="field">
               <label for="sbNotes">ملاحظة شخصية</label>
@@ -238,47 +238,24 @@ export function renderPublicPortalHtml(err) {
       </div>
     </section>
 
-    <!-- Companion Column: Interactive WhatsApp Command Simulator -->
-    <section class="surface reveal-d1" id="simulator">
+    <!-- Companion Column: Bot Status & Command Distribution -->
+    <section class="surface reveal-d1" id="status">
       <div class="surface-head">
         <div>
-          <h2 class="surface-title">معاينة تفاعلية للأوامر</h2>
-          <p class="surface-sub">جرّب طريقة عمل الأوامر وشاهد مظهر بوتك مباشرة</p>
+          <h2 class="surface-title">حالة البوت وتوزيع الأوامر</h2>
+          <p class="surface-sub">ملخص التشغيل الحي وأقسام الأوامر المتاحة لجميع المستخدمين</p>
         </div>
-        <span class="meta-line mono ltr" id="simPrefixBadge">.</span>
+        <span class="meta-line">مباشر</span>
       </div>
 
-      <div class="wa-sim">
-        <div class="wa-head">
-          <div class="wa-profile">
-            <div class="wa-avatar" id="simAvatar">Y</div>
-            <div>
-              <div class="wa-name" id="simBotName">Yono</div>
-              <div class="wa-sub" id="simModeText">وضع عام · يستقبل الخاص والمجموعات</div>
-            </div>
-          </div>
-          <span class="muted mono ltr" style="font-size:11px">WhatsApp</span>
-        </div>
+      <div id="catBars" style="margin-bottom:18px"></div>
 
-        <div class="wa-body" id="simChatBody">
-          <div class="wa-msg out"><span class="wa-cmd-txt">.menu</span><span class="wa-msg-time">12:00</span></div>
-          <div class="wa-msg in">أهلاً بك في قائمة Yono الرئيسية — اضغط على أي أمر بالأسفل أو اكتب أمراً لتجربته.<span class="wa-msg-time">12:00</span></div>
-        </div>
-
-        <div class="wa-chips" id="simChips">
-          <button type="button" class="wa-chip active" onclick="runSimCmd('menu')">.menu</button>
-          <button type="button" class="wa-chip" onclick="runSimCmd('ping')">.ping</button>
-          <button type="button" class="wa-chip" onclick="runSimCmd('sticker')">.sticker</button>
-          <button type="button" class="wa-chip" onclick="runSimCmd('hd')">.hd</button>
-          <button type="button" class="wa-chip" onclick="runSimCmd('play')">.play</button>
-          <button type="button" class="wa-chip" onclick="runSimCmd('owner')">.owner</button>
-        </div>
-
-        <form class="wa-composer" onsubmit="event.preventDefault();submitSimInput();">
-          <label for="simInput" class="hidden">اكتب أمراً لتجربته</label>
-          <input id="simInput" placeholder=".menu, .ping, .sticker" autocomplete="off"/>
-          <button type="submit" class="btn sm primary">جرّب</button>
-        </form>
+      <div style="border-top:1px solid var(--line);padding-top:12px;margin-top:auto">
+        <div class="kv-row"><span class="kv-key">وضع البوت الأساسي</span><span class="kv-val" id="s-botmode">-</span></div>
+        <div class="kv-row"><span class="kv-key">حالة الجلسة</span><span class="kv-val" id="s-reg">-</span></div>
+        <div class="kv-row"><span class="kv-key">المستخدمون / المجموعات</span><span class="kv-val ltr" id="s-users">-</span></div>
+        <div class="kv-row"><span class="kv-key">طريقة الربط الافتراضية</span><span class="kv-val" id="s-mode">-</span></div>
+        <div class="kv-row"><span class="kv-key">الإصدار</span><span class="kv-val ltr" id="s-commit">-</span></div>
       </div>
     </section>
   </div>
@@ -307,50 +284,29 @@ export function renderPublicPortalHtml(err) {
     </div>
   </section>
 
-  <!-- Commands Explorer + Category Distribution -->
-  <section class="grid-12 section-gap reveal-d3" id="commands">
-    <div class="surface col-8">
-      <div class="surface-head">
-        <div>
-          <h2 class="surface-title">مستكشف الأوامر المباشر</h2>
-          <p class="surface-sub">ابحث أو صفّي حسب القسم، واضغط على أي أمر لنسخه أو تجربته في المحاكي</p>
-        </div>
-        <span class="meta-line" id="pubCmdMeta">-</span>
+  <!-- Full Commands Directory (Available to All Users) -->
+  <section class="surface section-gap reveal-d3" id="commands">
+    <div class="surface-head">
+      <div>
+        <h2 class="surface-title">قائمة أوامر البوت</h2>
+        <p class="surface-sub">جميع الأوامر المتاحة لجميع المستخدمين للاستخدام في واتساب — ابحث أو اختر القسم واضغط على أي أمر لنسخه</p>
       </div>
+      <span class="meta-line" id="pubCmdMeta">-</span>
+    </div>
 
-      <div class="cmd-toolbar">
-        <div class="search-wrap">
-          <label for="pubCmdSearch" class="hidden">بحث في الأوامر</label>
-          <input id="pubCmdSearch" placeholder="ابحث عن أمر أو وصف (مثال: menu, sticker, hd)..." oninput="filterPublicCommands()" style="width:100%;min-height:40px;padding:8px 12px;border-radius:6px;background:var(--bg);border:1px solid var(--line-strong);color:var(--txt)"/>
-        </div>
-      </div>
-
-      <div class="cat-bar" id="pubCatBar" role="group" aria-label="تصنيفات الأوامر">
-        <button type="button" class="cat-btn active" onclick="selectPubCat('', this)">الكل</button>
-      </div>
-
-      <div class="cmd-grid" id="pubCmdGrid">
-        <div class="muted">جاري تحميل الأوامر...</div>
+    <div class="cmd-toolbar">
+      <div class="search-wrap">
+        <label for="pubCmdSearch" class="hidden">بحث في الأوامر</label>
+        <input id="pubCmdSearch" placeholder="ابحث عن أمر أو وصف (مثال: menu, sticker, hd)..." oninput="filterPublicCommands()" style="width:100%;min-height:40px;padding:8px 12px;border-radius:6px;background:var(--bg);border:1px solid var(--line-strong);color:var(--txt)"/>
       </div>
     </div>
 
-    <div class="surface col-4" id="status">
-      <div class="surface-head">
-        <div>
-          <h2 class="surface-title">توزيع الأوامر والنظام</h2>
-          <p class="surface-sub">إحصائيات حية من الخادم</p>
-        </div>
-      </div>
+    <div class="cat-bar" id="pubCatBar" role="group" aria-label="تصنيفات الأوامر">
+      <button type="button" class="cat-btn active" onclick="selectPubCatEl(this)">الكل</button>
+    </div>
 
-      <div id="catBars" style="margin-bottom:18px"></div>
-
-      <div style="border-top:1px solid var(--line);padding-top:12px">
-        <div class="kv-row"><span class="kv-key">وضع البوت الأساسي</span><span class="kv-val" id="s-botmode">-</span></div>
-        <div class="kv-row"><span class="kv-key">حالة الجلسة</span><span class="kv-val" id="s-reg">-</span></div>
-        <div class="kv-row"><span class="kv-key">المستخدمون / المجموعات</span><span class="kv-val ltr" id="s-users">-</span></div>
-        <div class="kv-row"><span class="kv-key">طريقة الربط الافتراضية</span><span class="kv-val" id="s-mode">-</span></div>
-        <div class="kv-row"><span class="kv-key">الإصدار</span><span class="kv-val ltr" id="s-commit">-</span></div>
-      </div>
+    <div class="cmd-grid" id="pubCmdGrid" style="max-height:540px">
+      <div class="muted">جاري تحميل قائمة الأوامر...</div>
     </div>
   </section>
 
@@ -428,71 +384,13 @@ function switchTab(name){
   $('tabLoginPanel').className = !isNew ? '' : 'hidden';
 }
 
-function syncSimulatorPreview(){
-  const name = ($('sbCustomName') && $('sbCustomName').value.trim()) || ($('topBotName') && $('topBotName').textContent) || 'Yono';
+function refreshCmdPrefixes(){
   const prefix = ($('sbPrefix') && $('sbPrefix').value.trim()) || '.';
-  const mode = ($('sbMode') && $('sbMode').value) === 'self' ? 'وضع خاص (للمالك فقط)' : 'وضع عام · يستقبل الخاص والمجموعات';
-  if($('simBotName')) $('simBotName').textContent = name;
-  if($('simAvatar')) $('simAvatar').textContent = name.charAt(0).toUpperCase() || 'Y';
-  if($('simModeText')) $('simModeText').textContent = mode;
-  if($('simPrefixBadge')) $('simPrefixBadge').textContent = 'Prefix: ' + prefix;
-  const chips = document.querySelectorAll('#simChips .wa-chip');
-  chips.forEach((ch) => {
-    const raw = ch.getAttribute('data-cmd') || ch.textContent.replace(/^[.!#$%&?/]+/, '');
-    ch.setAttribute('data-cmd', raw);
-    ch.textContent = prefix + raw;
+  document.querySelectorAll('#pubCmdGrid .cmd-card').forEach((card) => {
+    const cmd = card.dataset?.cmd || '';
+    const codeEl = card.querySelector('.cmd-code');
+    if(cmd && codeEl) codeEl.textContent = prefix + cmd;
   });
-}
-
-const SIM_REPLIES = {
-  menu: 'قائمة أوامر البوت الرئيسية\\n• الأوامر العامة ووسائط التحميل\\n• أدوات الصور والملصقات والذكاء\\n• إدارة المجموعات والألعاب',
-  ping: 'الاستجابة: نشط ومستقر\\nالزمن: 42ms · الجلسة متصلة',
-  sticker: 'أرسل أو ردّ على أي صورة أو فيديو قصير لتحويله فوراً إلى ملصق واتساب.',
-  hd: 'جاري تحسين دقة الصورة وإزالة التشويش وإرسالها بأعلى جودة.',
-  play: 'ابحث باسم الأغنية أو رابط يوتيوب لإرسال الملف الصوتي مباشرة.',
-  owner: 'جهة تواصل المطور وإعدادات المالك مفعّلة لهذه الجلسة.'
-};
-
-function runSimCmd(cmd, desc){
-  const prefix = ($('sbPrefix') && $('sbPrefix').value.trim()) || '.';
-  const clean = String(cmd || 'menu').replace(/^[.!#$%&?/]+/, '');
-  const botName = ($('simBotName') && $('simBotName').textContent) || 'Yono';
-  const body = $('simChatBody');
-  if(!body) return;
-  const now = new Date();
-  const hhmm = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
-  const matched = (window._pubCatalog || []).find((c) => c.primary === clean || (c.triggers || []).includes(clean));
-  const resolvedDesc = desc || (matched && matched.description) || '';
-  const reply = resolvedDesc
-    ? (botName + ' (' + (matched?.categoryLabel || 'Command') + '): ' + resolvedDesc + '\\nتم تجهيز الأمر بنجاح ✓')
-    : (SIM_REPLIES[clean] || (botName + ': تم استلام الأمر ' + prefix + clean + ' وجاري المعالجة.'));
-
-  const outMsg = document.createElement('div');
-  outMsg.className = 'wa-msg out';
-  outMsg.innerHTML = '<span class="wa-cmd-txt">' + esc(prefix + clean) + '</span><span class="wa-msg-time">' + hhmm + '</span>';
-
-  const inMsg = document.createElement('div');
-  inMsg.className = 'wa-msg in';
-  inMsg.innerHTML = esc(reply) + '<span class="wa-msg-time">' + hhmm + '</span>';
-
-  body.appendChild(outMsg);
-  setTimeout(() => {
-    body.appendChild(inMsg);
-    body.scrollTop = body.scrollHeight;
-  }, 110);
-  body.scrollTop = body.scrollHeight;
-
-  document.querySelectorAll('#simChips .wa-chip').forEach((c) => {
-    c.classList.toggle('active', (c.getAttribute('data-cmd') || '') === clean);
-  });
-}
-
-function submitSimInput(){
-  const inp = $('simInput');
-  const val = (inp && inp.value || '').trim();
-  if(!val) return;
-  runSimCmd(val);
-  inp.value = '';
 }
 
 function renderSubQr(qr){
@@ -583,7 +481,7 @@ function applySubBotView(bot){
     $('sbWelcome').checked = bot.settings.welcome !== false;
     $('sbAutoReply').checked = bot.settings.autoReply !== false;
     $('sbPaused').checked = !!bot.settings.paused;
-    syncSimulatorPreview();
+    refreshCmdPrefixes();
   }
 }
 
@@ -703,7 +601,7 @@ function selectPubCatEl(btn){
 async function filterPublicCommands(){
   const q = ($('pubCmdSearch') && $('pubCmdSearch').value) || '';
   try{
-    const r = await api('/api/public/commands?limit=48&q=' + encodeURIComponent(q) + '&cat=' + encodeURIComponent(currentPubCat));
+    const r = await api('/api/public/commands?q=' + encodeURIComponent(q) + '&cat=' + encodeURIComponent(currentPubCat));
     if(!r.ok) return;
     const catSig = (r.categories || []).map((c) => c.id + ':' + c.count).join('|');
     if(catSig !== lastCatsSig){
@@ -711,7 +609,7 @@ async function filterPublicCommands(){
       const bar = $('pubCatBar');
       if(bar){
         let h = '<button type="button" class="cat-btn' + (currentPubCat === '' ? ' active' : '') + '" data-cat="" onclick="selectPubCatEl(this)">الكل (' + (r.total || 0) + ')</button>';
-        (r.categories || []).slice(0, 10).forEach((c) => {
+        (r.categories || []).forEach((c) => {
           h += '<button type="button" class="cat-btn' + (currentPubCat === c.id ? ' active' : '') + '" data-cat="' + esc(c.id) + '" onclick="selectPubCatEl(this)">' + esc(c.label) + ' (' + c.count + ')</button>';
         });
         bar.innerHTML = h;
@@ -719,10 +617,9 @@ async function filterPublicCommands(){
     }
     const grid = $('pubCmdGrid');
     const prefix = ($('sbPrefix') && $('sbPrefix').value.trim()) || '.';
-    if(!window._pubCatalog && Array.isArray(r.commands)) window._pubCatalog = r.commands;
     if(grid){
       grid.innerHTML = (r.commands || []).map((c) =>
-        '<button type="button" class="cmd-card" data-cmd="' + esc(c.primary) + '" data-desc="' + esc(c.description || '') + '" onclick="pickPublicCommandEl(this)">'
+        '<button type="button" class="cmd-card" title="اضغط لنسخ الأمر" data-cmd="' + esc(c.primary) + '" onclick="pickPublicCommandEl(this)">'
         + '<div class="cmd-card-top"><span class="cmd-code">' + esc(prefix + c.primary) + '</span><span class="cmd-meta">' + esc(c.categoryLabel) + '</span></div>'
         + '<div class="cmd-desc">' + esc(c.description || c.primary) + '</div>'
         + '</button>'
@@ -734,11 +631,9 @@ async function filterPublicCommands(){
 
 function pickPublicCommandEl(el){
   const cmd = el?.dataset?.cmd || '';
-  const desc = el?.dataset?.desc || '';
   if(!cmd) return;
   const prefix = ($('sbPrefix') && $('sbPrefix').value.trim()) || '.';
   copyCodeValue(prefix + cmd);
-  runSimCmd(cmd, desc);
 }
 
 function renderCategoryBars(cats){
@@ -773,7 +668,6 @@ async function refresh(){
       }
       if(s.botName){
         $('topBotName').textContent = s.botName;
-        if(!$('sbCustomName')?.value) syncSimulatorPreview();
       }
       $('k-plugins').textContent = s.commands || 0;
       $('k-cats').textContent = (s.categoriesCount || 0) + ' تصنيف نشط';
@@ -811,7 +705,6 @@ async function refresh(){
 setInterval(refresh, 3000);
 refresh();
 filterPublicCommands();
-syncSimulatorPreview();
 </script>
 </body>
 </html>`;

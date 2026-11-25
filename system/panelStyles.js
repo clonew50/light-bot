@@ -334,69 +334,6 @@ export const PANEL_CSS = `
     margin-top:14px;padding-right:18px;font-size:12.5px;color:var(--mut);line-height:1.85;
   }
 
-  /* ---------- WhatsApp Interactive Simulator ---------- */
-  .wa-sim{
-    background:var(--wa-bg);border:1px solid var(--line);border-radius:10px;
-    overflow:hidden;display:flex;flex-direction:column;flex:1;min-height:360px;
-  }
-  .wa-head{
-    background:#1f2c34;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);
-    display:flex;align-items:center;justify-content:space-between;gap:10px;
-  }
-  .wa-profile{display:flex;align-items:center;gap:10px;min-width:0}
-  .wa-avatar{
-    width:34px;height:34px;border-radius:50%;
-    background:var(--acc-soft);border:1px solid var(--acc-border);color:var(--acc);
-    display:grid;place-items:center;font-weight:700;font-size:14px;flex-shrink:0;
-  }
-  .wa-name{font-size:13.5px;font-weight:700;color:#e9edef;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .wa-sub{font-size:11.5px;color:#8696a0}
-  .wa-body{
-    flex:1;padding:14px;display:flex;flex-direction:column;gap:10px;
-    background-image:radial-gradient(rgba(255,255,255,.03) 1px, transparent 0);
-    background-size:18px 18px;
-    max-height:260px;overflow-y:auto;
-  }
-  .wa-msg{
-    max-width:86%;padding:8px 12px;border-radius:8px;font-size:12.5px;line-height:1.55;
-    animation:msgIn .2s var(--ease) both;white-space:pre-line;word-break:break-word;
-  }
-  .wa-msg.out{
-    align-self:flex-start;background:var(--wa-out);color:#e9edef;border-top-right-radius:2px;
-  }
-  .wa-msg.in{
-    align-self:flex-end;background:var(--wa-in);color:#e9edef;border-top-left-radius:2px;
-  }
-  .wa-cmd-txt{
-    display:inline-block;direction:ltr;unicode-bidi:isolate;
-    font-family:'IBM Plex Mono',monospace;font-weight:600;
-  }
-  .wa-msg-time{
-    display:block;font-size:10px;color:rgba(233,237,239,.6);margin-top:4px;text-align:left;
-    font-family:'IBM Plex Mono',monospace;direction:ltr;
-  }
-  .wa-chips{
-    padding:10px 12px;border-top:1px solid rgba(255,255,255,.06);
-    background:#141d23;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
-  }
-  .wa-chip{
-    min-height:30px;padding:4px 10px;border-radius:5px;border:1px solid #2b3942;
-    background:#1d2830;color:#d1d7db;font-size:12px;font-family:'IBM Plex Mono',monospace;
-    cursor:pointer;direction:ltr;
-    transition:border-color .15s var(--ease),background-color .15s var(--ease),color .15s var(--ease);
-  }
-  .wa-chip:hover,.wa-chip.active{border-color:var(--acc);color:var(--acc);background:rgba(16,185,129,.1)}
-  .wa-composer{
-    display:flex;gap:8px;padding:10px 12px;background:#1a252c;
-    border-top:1px solid rgba(255,255,255,.06);
-  }
-  .wa-composer input{
-    flex:1;min-height:36px;padding:6px 12px;border-radius:6px;
-    background:#0f171c;border:1px solid #2b3942;color:#e9edef;
-    font-family:'IBM Plex Mono','IBM Plex Sans Arabic',monospace;font-size:12.5px;direction:ltr;text-align:left;
-  }
-  .wa-composer input:focus{outline:none;border-color:var(--acc)}
-
   /* ---------- Key-Value Rows & Data Tables ---------- */
   .kv-row{
     display:flex;justify-content:space-between;align-items:center;gap:12px;
