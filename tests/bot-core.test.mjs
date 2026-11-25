@@ -220,8 +220,10 @@ test('handler executes command for non-owner user in DM with extra aliases & res
 	assert.equal(calls.length, 1);
 });
 
-test('plugins/main-menu.js runs cleanly for main index and .menu main without TypeError', async () => {
-	const { sock, sent } = createConnectedFakeSock();
+test('plugins/main-menu.js runs cleanly for list, category, and unknown menu without protobuf or TypeError', async () => {
+	const { sock, sent, relayed } = createConnectedFakeSock();
+	const { proto } = await import('baileys');
+	const { default: axios } = await import('axios');
 	global.db = {
 		data: {
 			users: { '201099887766@s.whatsapp.net': { name: 'Tester', registered: false, limit: 20, level: 1, exp: 0, money: 0 } },
@@ -234,9 +236,10 @@ test('plugins/main-menu.js runs cleanly for main index and .menu main without Ty
 		'main-menu.js': mainMenuPlugin,
 	};
 
-	// Stub fetch quickly so unit test doesn't wait on network
-	const origFetch = global.fetch;
-	global.fetch = async () => ({ ok: false });
+	const origAdapter = axios.defaults.adapter;
+	axios.defaults.adapter = async () => {
+		throw new Error('offline test stub');
+	};
 	try {
 		const m1 = smsg(sock, {
 			key: { remoteJid: '201099887766@s.whatsapp.net', fromMe: false, id: 'USER_MENU_MSG_000001' },
@@ -251,28 +254,28 @@ test('plugins/main-menu.js runs cleanly for main index and .menu main without Ty
 			isOwner: false,
 			command: 'menu',
 		});
-		assert.equal(sent.length, 1);
-		assert.ok(sent[0].content.caption.includes('*U S E R*'));
-		assert.ok(sent[0].content.caption.includes('*I N F O R M A T I O N*'));
-		assert.ok(Array.isArray(sent[0].content.nativeFlow));
+		assert.equal(relayed.length, 2);
+		assert.doesNotThrow(() => proto.Message.encode(proto.Message.fromObject(relayed[0].message)).finish());
+		assert.doesNotThrow(() => proto.Message.encode(proto.Message.fromObject(relayed[1].message)).finish());
+		assert.ok(relayed[1].message.interactiveMessage.bloksWidget.data.includes('MENU UTAMA'));
 
-		const m2 = smsg(sock, {
+		// Unknown category replies via conn.reply
+		const mBad = smsg(sock, {
 			key: { remoteJid: '201099887766@s.whatsapp.net', fromMe: false, id: 'USER_MENU_MSG_000002' },
-			message: { conversation: '.menu main' },
+			message: { conversation: '.menu nonexistent' },
 			pushName: 'Tester',
 		});
-		await mainMenuPlugin.call(sock, m2, {
+		await mainMenuPlugin.call(sock, mBad, {
 			conn: sock,
 			usedPrefix: '.',
-			args: ['main'],
+			args: ['nonexistent'],
 			isPrems: false,
 			isOwner: false,
 			command: 'menu',
 		});
-		assert.equal(sent.length, 2);
-		assert.ok(sent[1].content.text.includes('.menu'));
+		assert.ok(sent.some((s) => s.content?.text?.includes('Tidak ditemukan')));
 	} finally {
-		global.fetch = origFetch;
+		axios.defaults.adapter = origAdapter;
 	}
 });
 

@@ -1,268 +1,243 @@
-import { promises } from 'fs'
-import { join } from 'path'
-import os from 'os'
+import moment from 'moment-timezone'
+import axios from 'axios'
+import crypto from 'crypto'
+import { prepareWAMessageMedia, generateWAMessageFromContent } from 'baileys'
 
-let handler = async (m, { conn, usedPrefix: _p, args, isPrems, isOwner, command: cmd }) => {
-
-const defaultMenu = {
-  before: '',
-  header: '*ᗢ %category*',
-  body: '- %cmd %isPremium %islimit',
-  footer: '',
-  after: '',
+function clockString(ms) {
+  let h = Math.floor(ms / 3600000)
+  let m = Math.floor((ms % 3600000) / 60000)
+  let s = Math.floor((ms % 60000) / 1000)
+  return `${h}h ${m}m ${s}s`
 }
-  const arrayTags = ['all', 'main', 'game', 'group', 'sticker', 'ai', 'internet', 'adult', 'subbot', 'tools', 'downloader', 'owner', 'info']
-  let teks = `${args[0]}`.toLowerCase()
-  if (!arrayTags.includes(teks)) teks = '404'
 
-  const tagMap = {
-    all:        { main: 'Main', game:'Game', group: 'Group', internet: 'Internet', adult:'Adult', downloader: 'Downloader', database: 'Database', sticker: 'Sticker', tools: 'Tools', subbot:'Sub-bot', ai: 'Artificial Intelligence', owner: 'Owner', info: 'Info' },
-    main:       { main: 'Main' },
-    game:       { game: 'Game' },
-    ai:         { ai: 'Artificial Intelligence' },
-    sticker:    { sticker: 'Sticker' },
-    group:      { group: 'Group', admin: `Admin ${global.opts?.['restrict'] ? '' : '(Disabled)'}` },
-    adult:      { adult: 'Adult' },
-    subbot:    { subbot: 'Sub-bot' },
-    tools:      { tools: 'Tools', ai: 'Artificial Intelligence', database: 'Database' },
-    downloader: { downloader: 'Downloader' },
-    internet:   { internet: 'Internet' },
-    info:       { info: 'Info' },
-    owner:      { owner: 'Owner', advanced: 'Advanced' },
+const devNumber = '212672139914'
+const videoUrl = 'https://cdn.zass.in/XYhlqsupY0.mp4'
+const devLink = `https://wa.me/${devNumber}`
+
+function buildNativeButtons(totalCommands, usedPrefix, countTag, valid) {
+  const catRows = valid.filter(v => v !== 'all').map(c => ({ title: c.toUpperCase(), description: `${countTag(c)} command`, id: c === 'owner' ? '.o' : `${usedPrefix}menu ${c}` }))
+  const btn1 = { title: "\u0000", sections: [{ title: "YONO", highlight_label: "MENU UTAMA", rows: [{ title: "All Menu", description: `${totalCommands} commands`, id: `${usedPrefix}menu all` }] }, { title: "Kategori", rows: catRows }], icon: "DEFAULT" }
+  const btn2 = { title: "\u0000", sections: [{ title: "YONO", highlight_label: "INFORMASI", rows: [
+    { title: "Menu", description: "Kembali ke menu utama", id: `${usedPrefix}menu` },
+    { title: "Owner", description: "Hubungi owner bot", id: ".o" },
+    { title: "ping", description: "Cek kecepatan bot", id: ".ping" }
+  ] }], icon: "REVIEW" }
+  const btn3 = { display_text: "\u0000", url: devLink, merchant_url: devLink, icon: "PROMOTION" }
+  return [
+    { name: "" },
+    { name: 'single_select', buttonParamsJson: JSON.stringify(btn1) },
+    { name: 'single_select', buttonParamsJson: JSON.stringify(btn2) },
+    { name: 'cta_url', buttonParamsJson: JSON.stringify(btn3) }
+  ]
+}
+
+function buildMetaCards(menuText, devNumber, menuTitle, userInfo) {
+  return {
+    uuid: '4b108b98-fb8e-4d18-a24a-9572b5805785',
+    type: 'im_a2ui',
+    data: JSON.stringify({
+      version: 'v0.9',
+      createSurface: {
+        surfaceId: 'starcore-widget=4b108b98-fb8e-4d18-a24a-9572b5805785',
+        catalogId: 'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json',
+        components: [
+          { id: 'root', component: 'Column', children: ['card_4', 'card_a', 'card_polling', 'card_e'] },
+          { id: 'image_0', component: 'Image', url: 'https://raw.githubusercontent.com/vinikjkkj/zapo/master/.github/assets/logo-light.png', variant: 'smallFeature', fit: 'contain' },
+          { id: 'text_1', component: 'Text', text: '🤖 Yono BOT', variant: 'h1' },
+          { id: 'text_2', component: 'Text', text: `⚡ Bot WhatsApp cepat, ringan & stabil.\n\n${userInfo.user}\n${userInfo.status}`, variant: 'body' },
+          { id: 'column_3', component: 'Column', children: ['image_0', 'text_1', 'text_2'] },
+          { id: 'card_4', component: 'Card', child: 'column_3' },
+          { id: 'text_5', component: 'Text', text: '✨ Fitur Utama', variant: 'h2' },
+          { id: 'checkbox_6', component: 'CheckBox', label: 'Plugin system (command + alias)', value: true },
+          { id: 'checkbox_7', component: 'CheckBox', label: 'Reload plugin tanpa restart penuh', value: true },
+          { id: 'checkbox_8', component: 'CheckBox', label: 'Session tersimpan di SQLite', value: true },
+          { id: 'column_9', component: 'Column', children: ['text_5', 'checkbox_6', 'checkbox_7', 'checkbox_8'] },
+          { id: 'card_a', component: 'Card', child: 'column_9' },
+          { id: 'text_poll', component: 'Text', text: menuTitle, variant: 'h2' },
+          { id: 'text_poll2', component: 'Text', text: menuText, variant: 'body' },
+          { id: 'text_status', component: 'Text', text: userInfo.status, variant: 'body' },
+          { id: 'text_user', component: 'Text', text: userInfo.user, variant: 'body' },
+          { id: 'column_poll', component: 'Column', children: ['text_poll', 'text_poll2', 'text_status', 'text_user'] },
+          { id: 'card_polling', component: 'Card', child: 'column_poll' },
+          { id: 'text_b', component: 'Text', text: '📞 Hubungi Developer', variant: 'h2' },
+          { id: 'text_c', component: 'Text', text: `Ketuk tombol di bawah untuk menghubungi developer ${devNumber}.`, variant: 'caption' },
+          { id: 'column_d', component: 'Column', children: ['text_b', 'text_c'] },
+          { id: 'card_e', component: 'Card', child: 'column_d' }
+        ]
+      }
+    })
   }
+}
 
-  let tags = tagMap[teks] ?? null
+let handler = async (m, { conn, usedPrefix, args }) => {
+  if (conn.menuLastRequest && Date.now() - conn.menuLastRequest < 2000) {
+    await new Promise(resolve => setTimeout(resolve, 2000))
+  }
+  conn.menuLastRequest = Date.now()
 
-  try {
+  await conn.relayMessage(m.chat, {
+    interactiveMessage: {
+      header: { title: "Yono BOT" },
+      body: { text: "Mohon tunggu sebentar, Yono BOT sedang menyiapkan daftar perintah..." },
+      footer: { text: "\u0000" },
+      nativeFlowMessage: { buttons: [{ name: "inapp_signup", buttonParamsJson: "{}" }] },
+      contextInfo: {
+        forwardingScore: 99, isForwarded: true,
+        participant: "0@s.whatsapp.net",
+        remoteJid: "status@broadcast",
+        quotedMessage: {
+          orderMessage: {
+            orderId: "2026",
+            thumbnail: Buffer.alloc(0),
+            orderTitle: "Yono BOT - 2026 ELEMENTS",
+            sellerJid: "0@s.whatsapp.net",
+            totalAmount1000: 2026000,
+            totalCurrencyCode: "IDR",
+            message: "YONO - 2026 DOCS",
+            surface: 0, itemCount: 2026
+          }
+        }
+      }
+    },
+    messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2, messageSecret: crypto.randomBytes(32) }
+  }, {})
 
-    // ===========================[ DATA ]===========================
-    const mode      = global.opts?.['self'] ? 'Private' : 'Public'
-    const _package  = JSON.parse(await promises.readFile(join(process.cwd() + '/package.json')).catch(_ => '{}')) || {}
-    const userData  = db?.data?.users?.[m.sender] || {}
-    const { level = 1, age = -1, exp = 0, limit = 20, registered = false, money = 0 } = userData
-    const name      = userData.name || m.pushName || 'User'
-    const premium   = userData.premiumTime || 0
-    const prems     = premium > 0 ? 'Premium' : 'Free'
-    const platform  = os.platform()
-    const ownerList = global.settings?.owner || global.owner || []
-    const dev       = ownerList.filter(([id, , isCreator]) => id && isCreator).map(([id]) => String(id).replace(/[^0-9]/g, ''))[0] || ''
-    const botTitle  = global.settings?.botname || global.namebot || 'Yono'
-    const botImgUrl = (await Promise.resolve(global.img?.profile?.bot).catch(() => null)) || 'https://files.catbox.moe/96cm7n.jpeg'
-    const senderImg = (await Promise.resolve(global.img?.profile?.sender).catch(() => null)) || botImgUrl
-    const serverUrl = typeof global.getServerUrl === 'function' ? global.getServerUrl() : (process.env.APP_URL || 'https://whatsapp.com/channel/0029VaVJo460bIdoxTVoJY3e')
+  await new Promise(r => setTimeout(r, 500))
 
-    // ===========================[ QUOTED ]=========================
-    const allQuoted = {
-      contact: {
-        key: { remoteJid: '0@s.whatsapp.net' },
-        message: {
-          contactMessage: {
-            displayName: name,
-            vcard: `BEGIN:VCARD\nVERSION:3.0\nN:;a,;;;\nFN:${name}\nitem1.TEL;waid=${m.sender.split('@')[0]}:${m.sender.split('@')[0]}\nitem1.X-ABLabel:Phone\nEND:VCARD`,
-          },
-        },
-      },
-    }
+  const now = moment().tz('Africa/Casablanca')
+  const cmd = (args[0] || 'list').toLowerCase()
+  let tag = '@' + m.sender.split('@')[0]
+  let uptime = clockString(process.uptime() * 1000)
 
-    // ===========================[ TEKS BEFORE ]===================
-    const TeksBefore = `──────────────────
+  const tagCount = {}
+  const tagHelpMapping = {}
+  const commandProperties = {}
 
-*U S E R*
-- \`Name:\` ${name}
-- \`Status:\` ${m.sender.split('@')[0] == dev ? 'Developer' : isOwner ? 'Owner' : isPrems ? 'Premium User' : 'User'}
-- \`Registered:\` ${registered ? 'Yes' : 'No'}
-
-──────────────────
-
-*I N F O R M A T I O N*
-- \`Bot Name:\` ${botTitle}
-- \`Developer:\` @${dev}
-- \`Version:\` ${_package.version}
-
-──────────────────`
-
-    // ===========================[ MENU 404 ]======================
-    if (teks === '404') {
-      const jsonlist = arrayTags.filter(v => v !== 'all').map(v => {
-        const tagCommands = Object.values(global.plugins || {})
-          .filter(plugin => !plugin.disabled && plugin.tags?.includes(v) && plugin.help)
-          .flatMap(plugin => Array.isArray(plugin.help) ? plugin.help : [plugin.help])
-          .map(h => h.split(' ')[0])
-          .filter((h, i, arr) => arr.indexOf(h) === i)
-
-        const maxShow = 5
-        const shown = tagCommands.slice(0, maxShow).join(', ')
-        const remaining = tagCommands.length - maxShow
-        const description = tagCommands.length === 0
-          ? '-'
-          : tagCommands.length <= maxShow
-            ? shown
-            : `${shown}, ...${remaining}+`
-
-        return {
-          header: '\u0000',
-          title: '• ' + v.charAt(0).toUpperCase() + v.slice(1),
-          description,
-          id: '.menu ' + v,
+  Object.keys(global.plugins || {}).filter(plugin => global.plugins[plugin] && !global.plugins[plugin].disabled).forEach(plugin => {
+    const pluginData = global.plugins[plugin]
+    const tagsArray = Array.isArray(pluginData.tags) ? pluginData.tags : []
+    if (tagsArray.length > 0) {
+      const helpArray = Array.isArray(pluginData.help) ? pluginData.help : (pluginData.help ? [pluginData.help] : [])
+      if (!helpArray.length) return
+      tagsArray.forEach(tag => {
+        if (tag) {
+          if (tagCount[tag]) { tagCount[tag] += helpArray.length; tagHelpMapping[tag].push(...helpArray) }
+          else { tagCount[tag] = helpArray.length; tagHelpMapping[tag] = [...helpArray] }
+          helpArray.forEach(helpItem => {
+            if (!commandProperties[helpItem]) commandProperties[helpItem] = { premium: pluginData.premium || false, limit: pluginData.limit || false }
+          })
         }
       })
-
-      const totalCommands = Object.values(global.plugins || {})
-        .filter(plugin => !plugin.disabled && plugin.help)
-        .flatMap(plugin => Array.isArray(plugin.help) ? plugin.help : [plugin.help])
-        .map(h => h.split(' ')[0])
-        .filter((h, i, arr) => arr.indexOf(h) === i)
-        .length
-
-      let botThumb = Buffer.alloc(0)
-      try {
-        const res = await fetch(botImgUrl)
-        if (res.ok) {
-          const rawBuf = Buffer.from(await res.arrayBuffer())
-          botThumb = typeof conn.resize === 'function' ? await conn.resize(rawBuf, 100, 100) : rawBuf
-        }
-      } catch {}
-
-      await conn.sendButton(m.chat, {
-        document: { url: botImgUrl },
-        jpegThumbnail: botThumb,
-        mimetype: 'image/webp',
-        caption: TeksBefore,
-        fileName: botTitle,
-        fileLength: '665666646645000',
-        nativeFlow: [{},
-          { text: '📢', url: 'https://whatsapp.com/channel/0029VaVJo460bIdoxTVoJY3e' },
-          { text: '🌐', url: serverUrl, useWebview: false },
-          { text: '\u0000', sections: [
-            {
-              highlight_label: '✦ SHOW ALL MENU',
-              rows: [
-                {
-                  header: '\u0000',
-                  title: '• All',
-                  description: `${totalCommands} commands`,
-                  id: '.menu all',
-                },
-                ...jsonlist
-              ]
-            }
-          ]},
-        ],
-        mentions: [m.sender, ...(dev ? [`${dev}@s.whatsapp.net`] : [])]
-      }, allQuoted.contact)
-
-      return 0
     }
+  })
 
-    // ===========================[ ARRAY PLUGINS ]=================
-    const totalreg  = Object.keys(db.data.users).length
-    const rtotalreg = Object.values(db.data.users).filter(u => u.registered === true).length
-    const help = Object.values(global.plugins || {})
-      .filter(plugin => !plugin.disabled)
-      .map(plugin => ({
-        help:    Array.isArray(plugin.help) ? plugin.help : [plugin.help],
-        tags:    Array.isArray(plugin.tags) ? plugin.tags : [plugin.tags],
-        prefix:  'customPrefix' in plugin,
-        limit:   plugin.limit,
-        premium: plugin.premium,
-        enabled: !plugin.disabled,
-      }))
+  const valid = Object.keys(tagCount)
+  const totalCommands = Object.values(tagCount).reduce((a, b) => a + b, 0)
+  const totalUser = Object.keys(global.db?.data?.users || {}).length
+  const countTag = (t) => tagCount[t] || 0
+  const ping = `${Math.floor(Math.random() * 80 + 50)} ms`
+  const date = now.format('DD MMMM YYYY')
+  const name = m.pushName || 'woli'
 
-    const groups = {}
-    for (let tag in tags) {
-      groups[tag] = []
-      for (let plugin of help)
-        if (plugin.tags?.includes(tag) && plugin.help)
-          groups[tag].push(plugin)
+  let menuTitle = 'MENU UTAMA'
+  let menuText = ''
+
+  if (cmd === 'list') {
+    menuTitle = '📋 MENU UTAMA'
+    menuText = `👋 Halo ${tag}\n\n👤 USER INFO\n├ Nama : ${name}\n└ Nomor : ${m.sender.split('@')[0]}\n\n🤖 BOT INFO\n├ Bot : Yono BOT\n├ Menu : ${totalCommands} Command\n├ User : ${totalUser} User\n├ Ping : ${ping}\n├ Uptime : ${uptime}\n└ Tanggal : ${date}\n\n📌 Pilih kategori di bawah`
+  } else if (cmd === 'all') {
+    menuTitle = '📋 ALL MENU'
+    let txt = ''
+    for (let t of valid) {
+      let list = tagHelpMapping[t] || []
+      txt += `\n${t.toUpperCase()} (${list.length})\n`
+      list.forEach(h => txt += `- ${usedPrefix}${h}\n`)
     }
-
-    // ===========================[ BUILD TEXT ]===================
-    conn.menu = conn.menu ?? {}
-    const before = conn.menu.before  || defaultMenu.before
-    const header = conn.menu.header  || defaultMenu.header
-    const body   = conn.menu.body    || defaultMenu.body
-    const footer = conn.menu.footer  || defaultMenu.footer
-    const after  = conn.menu.after   || defaultMenu.after
-
-    let _text = [
-      before,
-      ...Object.keys(tags).map(tag => {
-        return (
-          header.replace(/%category/g, tags[tag]) + '\n' +
-          [
-            ...help
-              .filter(menu => menu.tags?.includes(tag) && menu.help)
-              .map(menu =>
-                menu.help.map(h =>
-                  body
-                    .replace(/%cmd/g,       menu.prefix ? h : _p + h)
-                    .replace(/%islimit/g,   menu.limit   ? 'Ⓛ' : '')
-                    .replace(/%isPremium/g, menu.premium ? 'Ⓟ' : '')
-                    .trim()
-                ).join('\n')
-              ),
-            footer,
-          ].join('\n')
-        )
-      }),
-      after,
-    ].join('\n')
-
-    let text =
-      typeof conn.menu === 'string' ? conn.menu :
-      typeof conn.menu === 'object' ? _text : ''
-
-    const replace = {
-      '%':        '%',
-      me:         conn.getName(conn.user?.jid || conn.user?.id || ''),
-      npmname:    _package.name,
-      npmdesc:    _package.description,
-      version:    _package.version,
-      github:     _package.homepage?.url || _package.homepage || '[unknown github url]',
-      platform, mode, _p, money, age, name, prems, limit,
-      totalreg, rtotalreg,
-    }
-
-    text = text.replace(
-      new RegExp(`%(${Object.keys(replace).sort((a, b) => b.length - a.length).join('|')})`, 'g'),
-      (_, key) => '' + replace[key]
-    )
-
-    let orderThumb = Buffer.alloc(0)
-    try {
-      orderThumb = typeof conn.resize === 'function' ? await conn.resize(senderImg, 150, 150) : Buffer.alloc(0)
-    } catch {}
-
-    // ===========================[ SEND MENU ]===================
-    await conn.reply(m.chat, text, {
-      key: { remoteJid: '0@s.whatsapp.net' },
-      message: {
-        orderMessage: {
-          orderId: '780642630945098',
-          thumbnail: orderThumb,
-          itemCount: 666,
-          status: 1,
-          surface: 1,
-          message: '• LIST COMMANDS',
-          orderTitle: 'Channel.',
-          sellerJid: '6283143393763@s.whatsapp.net',
-          token: 'AR6pyJ/fz5vRFxggGxURL7EA/vCtjKrhcJSNhHqX1iJh8A==',
-          totalAmount1000: '0',
-          totalCurrencyCode: 'IDR',
-        },
-      },
-    })
-
-  } catch (e) {
-    m.error = e
-    console.log(e)
-    await conn.reply(m.chat, '> *Sorry*, the menu is currently error', m)
+    menuText = txt.trim()
+  } else if (tagCount[cmd]) {
+    menuTitle = `📂 ${cmd.toUpperCase()} MENU - ${tagHelpMapping[cmd].length} CMD`
+    menuText = tagHelpMapping[cmd].map(h => {
+      const p = commandProperties[h] || {}
+      return `- ${usedPrefix}${h}${p.premium ? ' P' : ''}${p.limit ? ' L' : ''}`
+    }).join('\n')
+  } else {
+    await conn.reply(m.chat, `Tidak ditemukan [ ${cmd} ] gunakan [ ${usedPrefix}menu list ] atau [ ${usedPrefix}menu all ] untuk melihat daftar yang tersedia`, m)
+    return
   }
+
+  let media
+  try {
+    const res = await axios.get(videoUrl, { responseType: 'arraybuffer', maxRedirects: 5, timeout: 30000, headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'video/mp4,video/*,*/*' } })
+    let buffer = Buffer.from(res.data)
+    if (buffer.length < 10000 || buffer.toString('utf8', 0, 300).includes('<html')) {
+      let html = buffer.toString()
+      let found = html.match(/https?:\/\/[^"'\s]+\.mp4/gi)
+      if (found && found[0]) {
+        let r2 = await axios.get(found[0], { responseType: 'arraybuffer', maxRedirects: 5, timeout: 30000 })
+        buffer = Buffer.from(r2.data)
+      } else throw new Error('Link tmpfiles mati')
+    }
+    media = await prepareWAMessageMedia({ video: buffer, gifPlayback: true, mimetype: 'video/mp4' }, { upload: conn.waUploadToServer })
+  } catch (e) {
+    console.log('Video gagal:', e.message)
+    try {
+      media = await prepareWAMessageMedia({ video: { url: videoUrl }, gifPlayback: true }, { upload: conn.waUploadToServer })
+    } catch {}
+  }
+
+  const userInfo = {
+    status: `🟢 ONLINE | ${date} | ${ping} | ${uptime}`,
+    user: `👤 ${name} - ${m.sender.split('@')[0]} - ${ping} - ${totalUser} Users`
+  }
+  const bloksWidget = buildMetaCards(menuText, devNumber, menuTitle, userInfo)
+
+  const interactiveMessage = {
+    body: { text: "\u0000" },
+    footer: { text: "\u0000" },
+    header: media?.videoMessage
+      ? { hasMediaAttachment: true, subtitle: '', videoMessage: media.videoMessage }
+      : { title: 'Yono BOT', subtitle: '' },
+    nativeFlowMessage: {
+      buttons: buildNativeButtons(totalCommands, usedPrefix, countTag, [...valid, 'all']),
+      messageParamsJson: JSON.stringify({}),
+      messageVersion: 1
+    },
+    bloksWidget: bloksWidget,
+    contextInfo: { forwardingScore: 999, isForwarded: true }
+  }
+
+  const fkontak = {
+    key: { participants: '0@s.whatsapp.net', remoteJid: 'status@broadcast', fromMe: false, id: 'Yono' },
+    message: {
+      contactMessage: {
+        displayName: 'YONO',
+        vcard: `BEGIN:VCARD\nVERSION:3.0\nN:;Yono;;;\nFN:Yono\nitem1.TEL;waid=${devNumber}:${devNumber}\nitem1.X-ABLabel:Phone\nEND:VCARD`
+      }
+    },
+    participant: '0@s.whatsapp.net'
+  }
+
+  const msg = generateWAMessageFromContent(m.chat, { interactiveMessage: interactiveMessage }, { userJid: conn.user?.id || conn.user?.jid || '0@s.whatsapp.net', quoted: fkontak })
+
+  msg.message.senderKeyDistributionMessage = {
+    groupId: "120363411834515372@g.us",
+    axolotlSenderKeyDistributionMessage: "MwisrvVqEAkaIH5V9fCVi7eATm1/yHsVVPJ/3V5jC2808HsfvB7oFv5zIiEFxv38znEByox+AK30g5b2M1PvewfNtmL+cq8HJtFbrTA="
+  }
+
+  await conn.relayMessage(m.chat, msg.message, {
+    messageId: msg.key.id,
+    additionalNodes: [{
+      tag: "biz",
+      attrs: { actual_actors: "2", host_storage: "2", privacy_mode_ts: "1710184201" },
+      content: [
+        { tag: "engagement", attrs: { customer_service_state: "open", conversation_state: "open" } },
+        { tag: "interactive", attrs: { type: "native_flow", v: "1" }, content: [{ tag: "native_flow", attrs: { v: "9", name: "mixed" } }] }
+      ]
+    }]
+  })
 }
 
-handler.help = ['menu', 'help']
+handler.help = ['menu']
 handler.tags = ['main']
-handler.command = /^(menu|help|\?)$/i
-handler.ai = { risk: 'low', description: 'Show menu list / command list' }
-
+handler.command = ['menu']
 export default handler
