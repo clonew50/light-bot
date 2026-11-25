@@ -18,7 +18,7 @@ const filePath = path.join(srcDir, 'sticker-s.json')
 const historyPath = path.join(srcDir, 'sticker-s-history.json')
 
 const defaultSticker = {
-    url: "https://mmg.whatsapp.net/o1/v/t24/f2/m239/AQMZAIJaoK7mY5ThptxpHwSVoKEzz-A6HATXianf4uBhCNji_avtoDjwwdqypdsL27QIJ9pwrZC4T7TXprgHL8sYxbbD2l5_sxEJa8bLZw?ccb=9-4&oh=01_Q5Aa6AEUkm97Kne-vC3Pqg9DShfnIHa7HPfug8_ruym38-7QqA&oe=6B240182&_nc_sid=e6ed6c&mms3=true",
+    url: "https://mmg.whatsapp.net/v/t62.15575-24/796687741_1133156819626312_6595524698866287334_n.enc?ccb=11-4&oh=01_Q5Aa6AEWQhWWHkvRF9xhv__r8ANanaKkpQOrdQpSwEIy5fcl_Q&oe=6B2E5992&_nc_sid=5e03e0&mms3=true",
     fileSha256: "dAy0SYFJX6KALNu31o39ln2gDn+TjuYTRurAOsLgZgs=",
     fileEncSha256: "jx6LJf0Aa7PYWgeMPEXRQd5gwk/vxbYPxIgm5MTwfKc=",
     mediaKey: "HUVsSYaTHswy3oUSb4whMt494T+EyF7iA2zW0TLqlkI=",
