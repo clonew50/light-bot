@@ -362,6 +362,125 @@ function isMaintenanceActive() {
 	}
 }
 
+function buildCommandsCatalog({ q = '', cat = '', page = 1, limit = 0 } = {}) {
+	const all = [];
+	const catMap = new Map();
+	for (const [file, p] of Object.entries(global.plugins || {})) {
+		if (!p || p.disabled) continue;
+		const triggers = [];
+		const cmd = p.command;
+		if (Array.isArray(cmd)) triggers.push(...cmd.map(String));
+		else if (cmd instanceof RegExp) {
+			const src = cmd.source.replace(/^\^/, '').replace(/\$$/, '');
+			src.split('|').forEach((t) => {
+				const clean = t.replace(/[^a-z0-9_\u0600-\u06FF]/gi, '');
+				if (clean) triggers.push(clean.toLowerCase());
+			});
+		} else if (typeof cmd === 'string') triggers.push(cmd);
+		if (!triggers.length) continue;
+		const category = (Array.isArray(p.tags) && p.tags[0]) || 'misc';
+		const entry = {
+			primary: triggers[0],
+			triggers,
+			category,
+			categoryLabel: category.charAt(0).toUpperCase() + category.slice(1),
+			description: (Array.isArray(p.help) && p.help[0]) || '',
+			file,
+		};
+		all.push(entry);
+		let prev = catMap.get(category);
+		if (!prev) {
+			prev = { id: category, label: entry.categoryLabel, count: 0 };
+			catMap.set(category, prev);
+		}
+		prev.count += 1;
+	}
+	const qNorm = String(q || '').trim().toLowerCase();
+	const catNorm = String(cat || '').trim();
+	const filtered =
+		!qNorm && !catNorm
+			? all
+			: all.filter((c) => {
+					if (catNorm && c.category !== catNorm) return false;
+					if (!qNorm) return true;
+					return (
+						c.primary.toLowerCase().includes(qNorm) ||
+						(c.description || '').toLowerCase().includes(qNorm) ||
+						c.categoryLabel.toLowerCase().includes(qNorm) ||
+						c.triggers.some((t) => t.toLowerCase().includes(qNorm))
+					);
+				});
+	const safePageNum = Math.max(1, Number(page) || 1);
+	const safeLimit = limit > 0 ? Math.min(500, Math.max(1, Number(limit) || 24)) : 0;
+	const totalPages = safeLimit > 0 ? Math.max(1, Math.ceil(filtered.length / safeLimit)) : 1;
+	const safePage = Math.min(safePageNum, totalPages);
+	const commandsSlice =
+		safeLimit > 0
+			? filtered.slice((safePage - 1) * safeLimit, safePage * safeLimit)
+			: filtered.length > 500
+				? filtered.slice(0, 500)
+				: filtered;
+	return {
+		ok: true,
+		total: all.length,
+		filtered: filtered.length,
+		page: safePage,
+		limit: safeLimit || commandsSlice.length,
+		totalPages,
+		truncated: safeLimit === 0 && filtered.length > 500,
+		categories: [...catMap.values()].sort((a, b) => b.count - a.count),
+		commands: commandsSlice,
+	};
+}
+
+function resolveMainBotJid(client) {
+	const conn = client || global.conn;
+	const raw =
+		conn?.user?.jid ||
+		(conn?.user?.id && typeof conn.decodeJid === 'function' ? conn.decodeJid(conn.user.id) : conn?.user?.id) ||
+		'';
+	if (raw) return raw;
+	const keys = Object.keys(global.db?.data?.settings || {});
+	return keys[0] || 'main';
+}
+
+function getBotSettingsSnapshot(client) {
+	const jid = resolveMainBotJid(client);
+	const s = global.db?.data?.settings?.[jid] || {};
+	return {
+		botJid: jid,
+		public: s.public ?? global.opts?.public ?? !global.opts?.self,
+		gconly: Boolean(s.gconly ?? global.opts?.gconly ?? false),
+		autoread: Boolean(s.autoread ?? global.opts?.autoread ?? false),
+		anticall: Boolean(s.anticall ?? global.opts?.anticall ?? false),
+	};
+}
+
+function getStatsSnapshot() {
+	const data = global.db?.data || {};
+	const users = Object.keys(data.users || {}).length;
+	const chatKeys = Object.keys(data.chats || {});
+	const groups = chatKeys.filter((k) => k.endsWith('@g.us')).length;
+	const stats = data.stats || {};
+	let totalHits = 0;
+	const topCommands = Object.entries(stats)
+		.map(([name, val]) => {
+			const hits = Number(val?.total || 0);
+			totalHits += hits;
+			return { name: name.replace(/\.js$/, ''), hits, success: Number(val?.success || 0) };
+		})
+		.filter((x) => x.hits > 0)
+		.sort((a, b) => b.hits - a.hits)
+		.slice(0, 6);
+	return {
+		usersCount: users,
+		chatsCount: chatKeys.length,
+		groupsCount: groups,
+		totalCommandsRun: totalHits,
+		topCommands,
+	};
+}
+
 function getClientInfo(client) {
 	const st = global.__panelState || (global.__panelState = {});
 	const conn = client || global.conn;
@@ -369,6 +488,8 @@ function getClientInfo(client) {
 	const mem = process.memoryUsage();
 	const cmdCount = Object.keys(global.plugins || {}).length;
 	const subBots = listAllSubBots();
+	const catalog = buildCommandsCatalog({ limit: 1 });
+	const statsSnap = getStatsSnapshot();
 	return {
 		ok: true,
 		connected,
@@ -379,6 +500,8 @@ function getClientInfo(client) {
 		phone: (conn && (conn.user?.jid || conn.user?.id)) || '',
 		name: (conn && conn.user && (conn.user.name || conn.user.verifiedName)) || global.namebot || 'Yono',
 		commands: cmdCount,
+		categoriesCount: catalog.categories.length,
+		topCategories: catalog.categories.slice(0, 8),
 		memoryMB: Math.round(mem.rss / 1024 / 1024),
 		uptimeSec: Math.round(process.uptime()),
 		commit: currentCommit(),
@@ -387,6 +510,8 @@ function getClientInfo(client) {
 		qr: st.lastQR || null,
 		maintenance: isMaintenanceActive(),
 		autoUpdateIntervalMin: Number(process.env.AUTO_UPDATE_INTERVAL_MIN) || 60,
+		botSettings: getBotSettingsSnapshot(client),
+		stats: statsSnap,
 		subBots,
 		events: getEvents(),
 	};
@@ -402,6 +527,12 @@ function getPublicStatusInfo(client) {
 		loginMode: info.loginMode,
 		botName: info.name,
 		commands: info.commands,
+		categoriesCount: info.categoriesCount,
+		topCategories: info.topCategories,
+		usersCount: info.stats.usersCount,
+		groupsCount: info.stats.groupsCount,
+		botMode: info.botSettings.public ? 'public' : 'self',
+		gconly: info.botSettings.gconly,
 		memoryMB: info.memoryMB,
 		uptimeSec: info.uptimeSec,
 		commit: info.commit,
@@ -475,6 +606,15 @@ export async function handleWebRequest(req, res, client, options = {}) {
 
 	if (req.method === 'GET' && url.pathname === '/api/public/status') {
 		return sendJson(res, 200, getPublicStatusInfo(client));
+	}
+
+	if (req.method === 'GET' && url.pathname === '/api/public/commands') {
+		const q = url.searchParams.get('q') || '';
+		const cat = url.searchParams.get('cat') || '';
+		const hasLimit = url.searchParams.has('limit') || url.searchParams.has('page');
+		const page = parseInt(url.searchParams.get('page') || '1', 10) || 1;
+		const limit = hasLimit ? parseInt(url.searchParams.get('limit') || '36', 10) || 36 : 48;
+		return sendJson(res, 200, buildCommandsCatalog({ q, cat, page, limit }));
 	}
 
 	/* ============ Public sub-bot pairing (no admin login required) ============ */
@@ -674,71 +814,12 @@ export async function handleWebRequest(req, res, client, options = {}) {
 	}
 
 	if (req.method === 'GET' && url.pathname === '/api/commands') {
-		const all = [];
-		const catMap = new Map();
-		for (const [file, p] of Object.entries(global.plugins || {})) {
-			if (!p || p.disabled) continue;
-			const triggers = [];
-			const cmd = p.command;
-			if (Array.isArray(cmd)) triggers.push(...cmd.map(String));
-			else if (cmd instanceof RegExp) {
-				const src = cmd.source.replace(/^\^/, '').replace(/\$$/, '');
-				src.split('|').forEach((t) => {
-					const clean = t.replace(/[^a-z0-9_\u0600-\u06FF]/gi, '');
-					if (clean) triggers.push(clean.toLowerCase());
-				});
-			} else if (typeof cmd === 'string') triggers.push(cmd);
-			if (!triggers.length) continue;
-			const category = (Array.isArray(p.tags) && p.tags[0]) || 'misc';
-			const entry = {
-				primary: triggers[0],
-				triggers,
-				category,
-				categoryLabel: category.charAt(0).toUpperCase() + category.slice(1),
-				description: (Array.isArray(p.help) && p.help[0]) || '',
-				file,
-			};
-			all.push(entry);
-			let prev = catMap.get(category);
-			if (!prev) {
-				prev = { id: category, label: entry.categoryLabel, count: 0 };
-				catMap.set(category, prev);
-			}
-			prev.count += 1;
-		}
-		const q = (url.searchParams.get('q') || '').trim().toLowerCase();
-		const cat = (url.searchParams.get('cat') || '').trim();
-		const filtered =
-			!q && !cat
-				? all
-				: all.filter((c) => {
-						if (cat && c.category !== cat) return false;
-						if (!q) return true;
-						return (
-							c.primary.toLowerCase().includes(q) ||
-							(c.description || '').toLowerCase().includes(q) ||
-							c.categoryLabel.toLowerCase().includes(q) ||
-							c.triggers.some((t) => t.toLowerCase().includes(q))
-						);
-					});
+		const q = url.searchParams.get('q') || '';
+		const cat = url.searchParams.get('cat') || '';
 		const hasLimit = url.searchParams.has('limit') || url.searchParams.has('page');
-		const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
-		const limit = hasLimit ? Math.min(500, Math.max(1, parseInt(url.searchParams.get('limit') || '24', 10) || 24)) : 0;
-		const totalPages = limit > 0 ? Math.max(1, Math.ceil(filtered.length / limit)) : 1;
-		const safePage = Math.min(page, totalPages);
-		const commandsSlice =
-			limit > 0 ? filtered.slice((safePage - 1) * limit, safePage * limit) : filtered.length > 500 ? filtered.slice(0, 500) : filtered;
-		return sendJson(res, 200, {
-			ok: true,
-			total: all.length,
-			filtered: filtered.length,
-			page: safePage,
-			limit: limit || commandsSlice.length,
-			totalPages,
-			truncated: limit === 0 && filtered.length > 500,
-			categories: [...catMap.values()].sort((a, b) => b.count - a.count),
-			commands: commandsSlice,
-		});
+		const page = parseInt(url.searchParams.get('page') || '1', 10) || 1;
+		const limit = hasLimit ? parseInt(url.searchParams.get('limit') || '24', 10) || 24 : 0;
+		return sendJson(res, 200, buildCommandsCatalog({ q, cat, page, limit }));
 	}
 
 	if (req.method === 'POST' && url.pathname === '/api/maintenance') {
@@ -934,11 +1015,58 @@ export async function handleWebRequest(req, res, client, options = {}) {
 					return sendJson(res, 200, { ok: true, message: `تم إيقاف البوت الفرعي ${phone}` });
 				}
 
+				case 'sub-toggle-pause': {
+					const phone = sanitizePhone(json?.phone);
+					if (!phone) return sendJson(res, 400, { ok: false, message: 'رقم غير صالح' });
+					const store = ensureSubBotStore();
+					const rec = store[phone];
+					if (!rec) return sendJson(res, 404, { ok: false, message: 'البوت الفرعي غير موجود' });
+					rec.settings = rec.settings || {};
+					rec.settings.paused = typeof json?.paused === 'boolean' ? json.paused : !rec.settings.paused;
+					saveSubBotStateToDisk();
+					pushEvent(`${rec.settings.paused ? 'إيقاف مؤقت' : 'تفعيل'} للبوت الفرعي: ${phone}`);
+					return sendJson(res, 200, {
+						ok: true,
+						paused: rec.settings.paused,
+						message: rec.settings.paused ? `تم إيقاف الردود للبوت ${phone}` : `تم استئناف الردود للبوت ${phone}`,
+					});
+				}
+
 				case 'sub-reset': {
 					const phone = sanitizePhone(json?.phone);
 					if (!phone) return sendJson(res, 400, { ok: false, message: 'رقم غير صالح' });
 					await resetSubBotSession(phone);
 					return sendJson(res, 200, { ok: true, message: `تم إعادة ضبط جلسة ${phone}` });
+				}
+
+				case 'save-bot-settings': {
+					const botJid = resolveMainBotJid(activeConn);
+					global.db = global.db || {};
+					global.db.data = global.db.data || {};
+					global.db.data.settings = global.db.data.settings || {};
+					const cur = global.db.data.settings[botJid] || {};
+					const next = {
+						...cur,
+						public: typeof json?.public === 'boolean' ? json.public : cur.public ?? true,
+						gconly: typeof json?.gconly === 'boolean' ? json.gconly : cur.gconly ?? false,
+						autoread: typeof json?.autoread === 'boolean' ? json.autoread : cur.autoread ?? false,
+						anticall: typeof json?.anticall === 'boolean' ? json.anticall : cur.anticall ?? false,
+					};
+					global.db.data.settings[botJid] = next;
+					if (global.opts) {
+						global.opts.public = next.public;
+						global.opts.self = !next.public;
+						global.opts.gconly = next.gconly;
+						global.opts.autoread = next.autoread;
+						global.opts.anticall = next.anticall;
+					}
+					try {
+						if (global.db.sqlite) {
+							global.db.sqlite.prepare('UPDATE database SET data = ? WHERE id = 1').run(JSON.stringify(global.db.data));
+						}
+					} catch {}
+					pushEvent(`تحديث إعدادات البوت الأساسي (${next.public ? 'عام' : 'خاص'} · ${next.gconly ? 'مجموعات فقط' : 'خاص ومجموعات'})`);
+					return sendJson(res, 200, { ok: true, botSettings: getBotSettingsSnapshot(activeConn), message: 'تم حفظ إعدادات البوت الأساسي وتطبيقها فوراً' });
 				}
 
 				default:

@@ -1,244 +1,14 @@
 /**
- * panelViews.js — Arabic-first dark ops UI for Elaina-Multidevice
- * ----------------------------------------------------------------
- * Views:
- *   - Public Portal (/): live public status, real WhatsApp sub-bot pairing
- *     (Pairing Code + QR), existing sub-bot control-code login, settings & actions.
- *   - Admin Login (/admin unauthenticated): clean password form -> /login.
- *   - Admin Panel (/admin authenticated): main bot pairing, controls, send test,
- *     sub-bots monitor, commands browser, maintenance toggle, password rotation, updates.
- *   - Maintenance Screen (503).
+ * panelViews.js — Bespoke Arabic-first web portal & admin studio for Yono
+ * -------------------------------------------------------------------------
+ * Exports:
+ *   - renderPublicPortalHtml
+ *   - renderAdminLoginHtml
+ *   - renderAdminPanelHtml
+ *   - renderMaintenanceHtml
+ *   - INSTALL_RENDER_JS
  */
-
-const SHARED_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap');
-
-  :root{
-    --bg:#0b0d12;
-    --bg2:#10141d;
-    --card:#121620;
-    --card2:#171c29;
-    --line:#232a3b;
-    --line2:#313b52;
-    --txt:#eef2f7;
-    --mut:#94a3b8;
-    --dim:#64748b;
-    --acc:#22d3ee;
-    --acc-bg:rgba(34,211,238,.12);
-    --ok:#10b981;
-    --ok-bg:rgba(16,185,129,.12);
-    --warn:#f59e0b;
-    --warn-bg:rgba(245,158,11,.12);
-    --err:#ef4444;
-    --err-bg:rgba(239,68,68,.12);
-    --radius:8px;
-  }
-
-  *{box-sizing:border-box;margin:0;padding:0}
-  html,body{min-height:100%}
-  body{
-    font-family:'IBM Plex Sans Arabic','Plus Jakarta Sans',system-ui,-apple-system,sans-serif;
-    background:var(--bg);
-    color:var(--txt);
-    line-height:1.6;
-    -webkit-font-smoothing:antialiased;
-    font-feature-settings:"tnum" 1;
-    font-variant-numeric:tabular-nums;
-  }
-  a{color:var(--acc);text-decoration:none}
-  a:hover{text-decoration:underline}
-
-  /* ---------- Topbar ---------- */
-  .topbar{
-    position:sticky;top:0;z-index:40;
-    background:rgba(11,13,18,.92);
-    backdrop-filter:blur(10px);
-    border-bottom:1px solid var(--line);
-    padding:12px 24px;
-    display:flex;align-items:center;justify-content:space-between;gap:16px;
-  }
-  .brand{display:flex;align-items:center;gap:12px}
-  .brand-mark{
-    width:36px;height:36px;border-radius:8px;
-    background:var(--acc-bg);border:1px solid rgba(34,211,238,.35);
-    color:var(--acc);display:grid;place-items:center;
-    font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:16px;
-  }
-  .brand-name{font-weight:700;font-size:15px;color:var(--txt)}
-  .brand-sub{font-size:12px;color:var(--mut)}
-  .topbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-
-  .conn-indicator{
-    display:inline-flex;align-items:center;gap:7px;
-    padding:5px 10px;border-radius:6px;
-    border:1px solid var(--line);background:var(--bg2);
-    font-size:12px;color:var(--mut);
-  }
-  .status-dot{width:8px;height:8px;border-radius:2px;background:var(--dim)}
-  .status-dot.on{background:var(--ok)}
-  .status-dot.off{background:var(--err)}
-  .status-dot.warn{background:var(--warn)}
-
-  /* ---------- Buttons ---------- */
-  .btn, button.primary{
-    display:inline-flex;align-items:center;justify-content:center;gap:6px;
-    padding:9px 15px;border-radius:6px;border:1px solid var(--line2);
-    background:var(--card2);color:var(--txt);
-    font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;
-    transition:border-color .15s,background .15s,color .15s;
-  }
-  .btn:hover{border-color:var(--acc);color:var(--acc)}
-  .btn.primary, button.primary{
-    background:var(--acc);color:#061218;border-color:var(--acc);font-weight:700;
-  }
-  .btn.primary:hover, button.primary:hover{filter:brightness(1.08)}
-  .btn.danger{border-color:rgba(239,68,68,.45);color:#fca5a5;background:var(--err-bg)}
-  .btn.danger:hover{border-color:var(--err);background:var(--err);color:#fff}
-  .btn.ok{border-color:rgba(16,185,129,.45);color:#6ee7b7;background:var(--ok-bg)}
-  .btn.ok:hover{border-color:var(--ok);background:var(--ok);color:#052e16}
-  .btn.ghost{background:transparent;border-color:var(--line)}
-  .btn.sm{padding:6px 11px;font-size:12px}
-  .btn:disabled{opacity:.45;cursor:not-allowed}
-
-  /* ---------- Layout & Grid ---------- */
-  .container{max-width:1240px;margin:0 auto;padding:24px}
-  .kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
-  .kpi{
-    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-    padding:14px 16px;
-  }
-  .kpi-label{font-size:12px;color:var(--mut);margin-bottom:4px}
-  .kpi-val{font-size:20px;font-weight:700;color:var(--txt);font-family:'IBM Plex Mono',monospace}
-  .kpi-val.ok{color:var(--ok)}
-  .kpi-val.err{color:var(--err)}
-
-  .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
-  .col-4{grid-column:span 4}
-  .col-5{grid-column:span 5}
-  .col-6{grid-column:span 6}
-  .col-7{grid-column:span 7}
-  .col-8{grid-column:span 8}
-  .col-12{grid-column:span 12}
-  @media(max-width:960px){
-    .kpi-strip{grid-template-columns:repeat(2,1fr)}
-    .col-4,.col-5,.col-6,.col-7,.col-8{grid-column:span 12}
-  }
-  @media(max-width:560px){
-    .container{padding:14px}
-    .topbar{padding:10px 14px}
-    .kpi-strip{grid-template-columns:1fr 1fr;gap:10px}
-  }
-
-  /* ---------- Card ---------- */
-  .card{
-    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-    padding:20px;
-  }
-  .card-head{
-    display:flex;align-items:center;justify-content:space-between;gap:12px;
-    padding-bottom:12px;margin-bottom:14px;border-bottom:1px solid var(--line);
-  }
-  .card-title{font-size:14px;font-weight:700;color:var(--txt);display:flex;align-items:center;gap:8px}
-  .card-title .accent{width:4px;height:14px;border-radius:2px;background:var(--acc)}
-
-  /* ---------- Tabs ---------- */
-  .tabs{display:flex;gap:6px;margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:10px}
-  .tab{
-    padding:7px 14px;border-radius:6px;border:1px solid transparent;
-    background:transparent;color:var(--mut);font-size:13px;font-weight:600;
-    cursor:pointer;font-family:inherit;
-  }
-  .tab:hover{color:var(--txt);background:var(--bg2)}
-  .tab.active{background:var(--acc-bg);color:var(--acc);border-color:rgba(34,211,238,.35)}
-
-  /* ---------- Forms ---------- */
-  .field{margin-bottom:14px}
-  .field label{display:block;font-size:12px;font-weight:600;color:var(--mut);margin-bottom:6px}
-  .field input,.field select,.field textarea{
-    width:100%;padding:10px 12px;border-radius:6px;
-    background:var(--bg);border:1px solid var(--line2);color:var(--txt);
-    font-family:inherit;font-size:13px;transition:border-color .15s;
-  }
-  .field input.mono,.field select.mono{font-family:'IBM Plex Mono',monospace}
-  .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--acc)}
-  .field input::placeholder{color:var(--dim)}
-  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  @media(max-width:600px){.form-row{grid-template-columns:1fr}}
-  .check-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;color:var(--txt);cursor:pointer}
-  .check-row input{width:16px;height:16px;accent-color:var(--acc)}
-
-  /* ---------- Data rows & tables ---------- */
-  .data-row{
-    display:flex;justify-content:space-between;align-items:center;gap:12px;
-    padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;
-  }
-  .data-row:last-child{border-bottom:0}
-  .data-key{color:var(--mut);font-size:12px}
-  .data-val{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--txt)}
-  .data-val.ok{color:var(--ok)} .data-val.err{color:var(--err)} .data-val.warn{color:var(--warn)}
-
-  .tbl-wrap{overflow:auto;border:1px solid var(--line);border-radius:6px}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th,td{padding:10px 12px;text-align:right;border-bottom:1px solid var(--line)}
-  th{background:var(--bg2);color:var(--mut);font-size:12px;font-weight:600}
-  tr:last-child td{border-bottom:0}
-
-  /* ---------- Pairing Code & QR ---------- */
-  .code-panel{
-    background:var(--bg);border:1px solid var(--line2);border-radius:8px;
-    padding:16px;margin:12px 0;
-  }
-  .code-block{
-    font-family:'IBM Plex Mono',monospace;font-size:26px;font-weight:700;
-    letter-spacing:4px;text-align:center;padding:12px;direction:ltr;
-    color:var(--acc);user-select:all;
-  }
-  .code-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:8px}
-  .qr-box{display:flex;justify-content:center;padding:14px;background:#fff;border-radius:6px;margin:10px auto;width:fit-content}
-  .steps-list{
-    margin-top:12px;padding-right:18px;font-size:12px;color:var(--mut);line-height:1.8;
-  }
-
-  /* ---------- Logs & Commands ---------- */
-  .log-box{
-    height:250px;overflow:auto;background:var(--bg);border:1px solid var(--line);
-    border-radius:6px;padding:10px 12px;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.6;
-  }
-  .log-line{padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);display:flex;gap:10px}
-  .log-line:last-child{border-bottom:0}
-  .log-time{color:var(--dim);flex-shrink:0;direction:ltr}
-  .log-msg{color:var(--txt);word-break:break-word}
-
-  .cmd-list{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
-  .cmd-item{
-    padding:9px 12px;border-bottom:1px solid var(--line);font-size:13px;
-    display:flex;align-items:center;gap:10px;
-  }
-  .cmd-item:last-child{border-bottom:0}
-  .cmd-name{font-family:'IBM Plex Mono',monospace;color:var(--acc);font-weight:600;min-width:130px;direction:ltr;text-align:left}
-  .cmd-cat{font-size:11px;color:var(--mut);background:var(--card2);border:1px solid var(--line);border-radius:4px;padding:2px 8px}
-  .cmd-desc{color:var(--mut);font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-  /* ---------- Banners ---------- */
-  .banner{padding:10px 14px;border-radius:6px;font-size:13px;margin:10px 0;border:1px solid}
-  .banner.err,.err-banner{background:var(--err-bg);border-color:rgba(239,68,68,.4);color:#fca5a5;padding:10px 12px;border-radius:6px;font-size:13px}
-  .banner.ok,.ok-banner{background:var(--ok-bg);border-color:rgba(16,185,129,.4);color:#6ee7b7;padding:10px 12px;border-radius:6px;font-size:13px}
-  .banner.warn,.maint-banner{background:var(--warn-bg);border-color:rgba(245,158,11,.4);color:#fcd34d;padding:11px 14px;border-radius:6px;font-size:13px;display:flex;align-items:center;gap:10px;margin-bottom:16px}
-
-  .login-wrap{min-height:100vh;display:grid;place-items:center;padding:24px}
-  .login-card{
-    width:100%;max-width:420px;background:var(--card);border:1px solid var(--line2);
-    border-radius:10px;padding:28px;
-  }
-  .login-title{font-size:20px;font-weight:700;margin-bottom:6px}
-  .login-sub{color:var(--mut);font-size:13px;margin-bottom:20px}
-
-  .hidden{display:none !important}
-  .mono{font-family:'IBM Plex Mono',monospace}
-  .ltr{direction:ltr;text-align:left}
-  .hint{color:var(--mut);font-size:12px;line-height:1.6}
-  .muted{color:var(--mut);font-size:12px}
-`;
+import { PANEL_CSS } from './panelStyles.js';
 
 function esc(s) {
 	return String(s == null ? '' : s)
@@ -249,8 +19,27 @@ function esc(s) {
 		.replace(/'/g, '&#39;');
 }
 
+const CODE_TILES_HELPER_JS = `function buildCodeTilesHtml(code, targetId){
+  const raw = String(code || '').trim();
+  if(!raw) return '';
+  const parts = raw.split('-');
+  let html = '<div class="code-tiles" role="button" tabindex="0" title="اضغط لنسخ الكود" data-code="' + esc(raw) + '" onclick="copyCodeValue(this.dataset.code)" onkeydown="if(event.key===\\'Enter\\'||event.key===\\' \\'){event.preventDefault();copyCodeValue(this.dataset.code)}">';
+  parts.forEach((part, pIdx) => {
+    for(let i = 0; i < part.length; i++){
+      const delay = ((pIdx * 4 + i) * 35);
+      html += '<span class="code-tile" style="animation-delay:' + delay + 'ms">' + esc(part[i]) + '</span>';
+    }
+    if(pIdx < parts.length - 1){
+      html += '<span class="code-dash">-</span>';
+    }
+  });
+  html += '</div>';
+  if(targetId) html += '<span class="hidden" id="' + esc(targetId) + '">' + esc(raw) + '</span>';
+  return html;
+}`;
+
 /* =====================================================================
- * PUBLIC PORTAL (Sub-Bot Pairing + Control + Live Public Status)
+ * PUBLIC PORTAL (Sub-Bot Pairing + Interactive Simulator + Commands)
  * ===================================================================== */
 export function renderPublicPortalHtml(err) {
 	return `<!DOCTYPE html>
@@ -258,208 +47,343 @@ export function renderPublicPortalHtml(err) {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>بوابة ربط البوت — Yono</title>
+<title>Yono — بوابة ربط البوت واستكشاف الأوامر</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<style>${SHARED_CSS}</style>
+<style>${PANEL_CSS}</style>
 </head>
 <body>
 
 <header class="topbar">
-  <div class="brand">
-    <div class="brand-mark">Y</div>
-    <div>
-      <div class="brand-name" id="topBotName">Yono Bot</div>
-      <div class="brand-sub">بوابة ربط البوتات الفرعية والحالة المباشرة</div>
+  <div class="topbar-inner">
+    <a class="wordmark" href="/">
+      <span class="wordmark-icon">Y</span>
+      <span id="topBotName">Yono</span>
+    </a>
+    <nav class="topnav" aria-label="التنقل الرئيسي">
+      <a href="#pair">ربط رقمك</a>
+      <a href="#simulator">محاكي الأوامر</a>
+      <a href="#commands">دليل الأوامر</a>
+      <a href="#status">الحالة المباشرة</a>
+    </nav>
+    <div class="top-cta">
+      <a class="btn sm ghost" href="/admin">لوحة الإدارة</a>
     </div>
-  </div>
-  <div class="topbar-right">
-    <div class="conn-indicator">
-      <span class="status-dot" id="statusDot"></span>
-      <span id="statusText">جاري الاتصال...</span>
-    </div>
-    <a class="btn sm ghost" href="/admin">لوحة الإدارة</a>
   </div>
 </header>
 
 <main class="container">
-  <section class="kpi-strip">
+  <!-- Hero Workspace Split -->
+  <div class="hero-split">
+    <!-- Primary Anchor: Sub-Bot Pairing & Control -->
+    <section class="surface reveal" id="pair">
+      <div class="surface-head">
+        <div>
+          <h1 class="surface-title">ربط وإدارة البوت الفرعي</h1>
+          <p class="surface-sub">اربط رقم واتساب الخاص بك ليصبح بوتاً مستقلاً بكامل أوامر النظام</p>
+        </div>
+        <span class="meta-line" id="subSessionBadge">غير مسجل</span>
+      </div>
+
+      <div id="subAuthArea">
+        <div class="seg-bar" role="tablist" aria-label="وضع الدخول">
+          <button type="button" class="seg-btn active" id="tabNewBtn" role="tab" aria-selected="true" onclick="switchTab('new')">ربط رقم جديد</button>
+          <button type="button" class="seg-btn" id="tabLoginBtn" role="tab" aria-selected="false" onclick="switchTab('login')">لدي كود تحكم</button>
+        </div>
+
+        <!-- Tab 1: New pairing -->
+        <div id="tabNewPanel">
+          <p class="hint" style="margin-bottom:14px">
+            أدخل رقم هاتفك بالرمز الدولي بدون علامة + أو أصفار في البداية، ثم اختر طريقة الربط المناسبة.
+          </p>
+          <div class="form-row">
+            <div class="field">
+              <label for="subPhone">رقم الهاتف (مع رمز الدولة)</label>
+              <input id="subPhone" class="mono ltr" inputmode="numeric" placeholder="201xxxxxxxxx"/>
+            </div>
+            <div class="field">
+              <label for="subPairMode">طريقة الربط</label>
+              <select id="subPairMode">
+                <option value="code">كود ربط (8 خانات)</option>
+                <option value="qr">رمز QR</option>
+              </select>
+            </div>
+          </div>
+          <button type="button" class="primary" id="btnPairSub" onclick="pairSubBot()">إصدار كود الربط الآن</button>
+          <div id="subPairMsg" class="hidden" style="margin-top:12px"></div>
+          <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line)">
+            <div style="font-size:12.5px;font-weight:600;color:var(--txt);margin-bottom:6px">كيف يتم الربط خلال ثوانٍ؟</div>
+            <ol class="steps-ordered" style="margin-top:0">
+              <li>أدخل رقمك بالرمز الدولي واضغط <b>إصدار كود الربط الآن</b> للحصول على كود من 8 خانات.</li>
+              <li>في واتساب افتح <b>الأجهزة المرتبطة ← ربط جهاز ← الربط برقم الهاتف</b> وأدخل الكود.</li>
+              <li>احتفظ بـ <b>كود التحكم</b> لتعديل البادئة واسم البوت أو إيقاف الردود لاحقاً.</li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- Tab 2: Control code login -->
+        <div id="tabLoginPanel" class="hidden">
+          <p class="hint" style="margin-bottom:14px">
+            استخدم رقم الهاتف وكود التحكم الخاص بك (مثال: LB-XXXX-YYYY) لإدارة الإعدادات أو إعادة الربط.
+          </p>
+          <div class="form-row">
+            <div class="field">
+              <label for="authPhone">رقم الهاتف</label>
+              <input id="authPhone" class="mono ltr" inputmode="numeric" placeholder="201xxxxxxxxx"/>
+            </div>
+            <div class="field">
+              <label for="authCode">كود التحكم</label>
+              <input id="authCode" class="mono ltr" placeholder="LB-XXXX-YYYY"/>
+            </div>
+          </div>
+          <button type="button" class="primary" onclick="loginSubBot()">فتح لوحة البوت الفرعي</button>
+          <div id="subAuthMsg" class="hidden" style="margin-top:12px"></div>
+        </div>
+      </div>
+
+      <!-- Authenticated / Active Sub-Bot View -->
+      <div id="subActivePanel" class="hidden">
+        <div class="kv-row">
+          <span class="kv-key">الرقم المسجل</span>
+          <span class="kv-val ltr" id="sbPhone">-</span>
+        </div>
+        <div class="kv-row">
+          <span class="kv-key">الحالة في واتساب</span>
+          <span class="kv-val" id="sbState">-</span>
+        </div>
+        <div class="kv-row">
+          <span class="kv-key">كود التحكم الخاص بك</span>
+          <span style="display:flex;align-items:center;gap:8px">
+            <span class="kv-val ltr" id="sbControlCode" style="color:var(--acc);font-weight:700">-</span>
+            <button type="button" class="btn sm ghost" onclick="copyCodeValue($('sbControlCode').textContent, this)">نسخ</button>
+          </span>
+        </div>
+
+        <!-- Live Pairing Code / QR Stage -->
+        <div id="sbPairingBox" class="pair-stage hidden">
+          <div class="hint" id="sbPairingTitle" style="text-align:center">أدخل هذا الكود في واتساب للربط:</div>
+          <div id="sbPairCodeWrap"></div>
+          <div id="sbQrBox" class="qr-frame hidden"></div>
+          <div style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:10px" id="sbCopyCodeWrap">
+            <button type="button" class="btn sm primary" id="sbCopyCodeBtn" onclick="copyCodeValue(currentSubPairCode, this)">نسخ كود واتساب</button>
+            <button type="button" class="btn sm" onclick="subAction('repair','code')">إصدار كود جديد</button>
+            <button type="button" class="btn sm" onclick="subAction('repair','qr')">عرض QR بدلاً من الكود</button>
+          </div>
+          <ol class="steps-ordered">
+            <li>افتح تطبيق واتساب ثم انتقل إلى <b>الأجهزة المرتبطة (Linked Devices)</b>.</li>
+            <li>اضغط <b>ربط جهاز</b> ثم اختر <b>الربط برقم الهاتف</b> أسفل الشاشة.</li>
+            <li>أدخل الكود المكون من 8 خانات أعلاه واضغط تأكيد.</li>
+          </ol>
+        </div>
+
+        <div id="sbErrorBanner" class="banner err hidden"></div>
+
+        <!-- Sub-Bot Settings -->
+        <div style="margin-top:16px">
+          <div class="form-row">
+            <div class="field">
+              <label for="sbMode">وضع التشغيل</label>
+              <select id="sbMode" onchange="syncSimulatorPreview()">
+                <option value="public">عام — يرد على الجميع</option>
+                <option value="self">خاص — يرد على رقمك فقط</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="sbPrefix">بادئة الأوامر</label>
+              <input id="sbPrefix" class="mono ltr" maxlength="4" value="." oninput="syncSimulatorPreview()"/>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="field">
+              <label for="sbCustomName">اسم البوت المخصص</label>
+              <input id="sbCustomName" placeholder="Yono Sub-Bot" oninput="syncSimulatorPreview()"/>
+            </div>
+            <div class="field">
+              <label for="sbNotes">ملاحظة شخصية</label>
+              <input id="sbNotes" placeholder="مثال: بوت إدارة جروب الشغل"/>
+            </div>
+          </div>
+
+          <label class="switch-row">
+            <div class="switch-info">
+              <div class="switch-title">رسائل الترحيب في المجموعات</div>
+              <div class="switch-desc">تفعيل رسائل الترحيب التلقائية عند دخول أعضاء جدد</div>
+            </div>
+            <span class="switch-ctl"><input type="checkbox" id="sbWelcome"/><span class="switch-track"></span></span>
+          </label>
+          <label class="switch-row">
+            <div class="switch-info">
+              <div class="switch-title">الردود التلقائية</div>
+              <div class="switch-desc">السماح للبوت الفرعي بمعالجة الأوامر والردود</div>
+            </div>
+            <span class="switch-ctl"><input type="checkbox" id="sbAutoReply"/><span class="switch-track"></span></span>
+          </label>
+          <label class="switch-row">
+            <div class="switch-info">
+              <div class="switch-title">إيقاف الردود مؤقتاً</div>
+              <div class="switch-desc">تعطيل استقبال الأوامر دون حذف الجلسة</div>
+            </div>
+            <span class="switch-ctl"><input type="checkbox" id="sbPaused"/><span class="switch-track"></span></span>
+          </label>
+
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+            <button type="button" class="primary" onclick="saveSubSettings()">حفظ الإعدادات</button>
+            <button type="button" class="btn" onclick="subAction('repair','code')">إعادة الربط</button>
+            <button type="button" class="btn" onclick="subAction('regenerate-code')">تغيير كود التحكم</button>
+            <button type="button" class="btn" onclick="subAction('disconnect')">فصل مؤقت</button>
+            <button type="button" class="btn danger" onclick="subAction('reset-session')">حذف الجلسة</button>
+            <button type="button" class="btn ghost" onclick="subAction('logout')">خروج</button>
+          </div>
+          <div id="sbActionMsg" class="hidden" style="margin-top:10px"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Companion Column: Interactive WhatsApp Command Simulator -->
+    <section class="surface reveal-d1" id="simulator">
+      <div class="surface-head">
+        <div>
+          <h2 class="surface-title">معاينة تفاعلية للأوامر</h2>
+          <p class="surface-sub">جرّب طريقة عمل الأوامر وشاهد مظهر بوتك مباشرة</p>
+        </div>
+        <span class="meta-line mono ltr" id="simPrefixBadge">.</span>
+      </div>
+
+      <div class="wa-sim">
+        <div class="wa-head">
+          <div class="wa-profile">
+            <div class="wa-avatar" id="simAvatar">Y</div>
+            <div>
+              <div class="wa-name" id="simBotName">Yono</div>
+              <div class="wa-sub" id="simModeText">وضع عام · يستقبل الخاص والمجموعات</div>
+            </div>
+          </div>
+          <span class="muted mono ltr" style="font-size:11px">WhatsApp</span>
+        </div>
+
+        <div class="wa-body" id="simChatBody">
+          <div class="wa-msg out"><span class="wa-cmd-txt">.menu</span><span class="wa-msg-time">12:00</span></div>
+          <div class="wa-msg in">أهلاً بك في قائمة Yono الرئيسية — اضغط على أي أمر بالأسفل أو اكتب أمراً لتجربته.<span class="wa-msg-time">12:00</span></div>
+        </div>
+
+        <div class="wa-chips" id="simChips">
+          <button type="button" class="wa-chip active" onclick="runSimCmd('menu')">.menu</button>
+          <button type="button" class="wa-chip" onclick="runSimCmd('ping')">.ping</button>
+          <button type="button" class="wa-chip" onclick="runSimCmd('sticker')">.sticker</button>
+          <button type="button" class="wa-chip" onclick="runSimCmd('hd')">.hd</button>
+          <button type="button" class="wa-chip" onclick="runSimCmd('play')">.play</button>
+          <button type="button" class="wa-chip" onclick="runSimCmd('owner')">.owner</button>
+        </div>
+
+        <form class="wa-composer" onsubmit="event.preventDefault();submitSimInput();">
+          <label for="simInput" class="hidden">اكتب أمراً لتجربته</label>
+          <input id="simInput" placeholder=".menu, .ping, .sticker" autocomplete="off"/>
+          <button type="submit" class="btn sm primary">جرّب</button>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <!-- Full-Width 4-KPI Strip Below Hero Split -->
+  <section class="kpi-strip reveal-d2" aria-label="ملخص الحالة">
     <div class="kpi">
       <div class="kpi-label">حالة البوت الأساسي</div>
-      <div class="kpi-val" id="k-conn">-</div>
+      <div class="kpi-val" id="k-conn">جاري الاتصال</div>
+      <div class="kpi-sub" id="k-conn-sub">يتم التحديث تلقائياً كل 3 ثوانٍ</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">الأوامر المتاحة</div>
       <div class="kpi-val" id="k-plugins">-</div>
+      <div class="kpi-sub" id="k-cats">- تصنيف نشط</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">البوتات الفرعية النشطة</div>
       <div class="kpi-val ltr" id="k-subs">-</div>
+      <div class="kpi-sub">متصل / إجمالي المسجلين</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">مدة التشغيل</div>
       <div class="kpi-val ltr" id="k-uptime">-</div>
+      <div class="kpi-sub" id="k-mem">- MB ذاكرة</div>
     </div>
   </section>
 
-  <div class="grid">
-    <!-- Sub-Bot Pairing & Control Panel -->
-    <section class="col-7">
-      <div class="card">
-        <div class="card-head">
-          <div class="card-title"><span class="accent"></span>ربط وإدارة البوت الفرعي (Sub-Bot)</div>
-          <span class="muted" id="subSessionBadge">غير مسجل</span>
+  <!-- Commands Explorer + Category Distribution -->
+  <section class="grid-12 section-gap reveal-d3" id="commands">
+    <div class="surface col-8">
+      <div class="surface-head">
+        <div>
+          <h2 class="surface-title">مستكشف الأوامر المباشر</h2>
+          <p class="surface-sub">ابحث أو صفّي حسب القسم، واضغط على أي أمر لنسخه أو تجربته في المحاكي</p>
         </div>
-
-        <div id="subAuthArea">
-          <div class="tabs">
-            <button type="button" class="tab active" id="tabNewBtn" onclick="switchTab('new')">ربط رقم جديد</button>
-            <button type="button" class="tab" id="tabLoginBtn" onclick="switchTab('login')">لدي كود تحكم</button>
-          </div>
-
-          <!-- Tab 1: New pairing -->
-          <div id="tabNewPanel">
-            <p class="hint" style="margin-bottom:14px">
-              اربط رقم واتساب الخاص بك ليصبح بوتاً فرعياً مستقلاً. أدخل رقمك بالرمز الدولي بدون علامة + أو أصفار زائدة.
-            </p>
-            <div class="form-row">
-              <div class="field">
-                <label for="subPhone">رقم الهاتف (مع رمز الدولة)</label>
-                <input id="subPhone" class="mono ltr" inputmode="numeric" placeholder="201xxxxxxxxx"/>
-              </div>
-              <div class="field">
-                <label for="subPairMode">طريقة الربط</label>
-                <select id="subPairMode">
-                  <option value="code">كود ربط (8 أحرف وأرقام)</option>
-                  <option value="qr">رمز QR</option>
-                </select>
-              </div>
-            </div>
-            <button type="button" class="primary" id="btnPairSub" onclick="pairSubBot()">إصدار كود الربط الآن</button>
-            <div id="subPairMsg" class="hidden" style="margin-top:12px"></div>
-          </div>
-
-          <!-- Tab 2: Control code login -->
-          <div id="tabLoginPanel" class="hidden">
-            <p class="hint" style="margin-bottom:14px">
-              أدخل رقم هاتفك وكود التحكم الخاص بك (مثال: LB-XXXX-YYYY) لإدارة بوتك أو إعادة إصدار كود الربط.
-            </p>
-            <div class="form-row">
-              <div class="field">
-                <label for="authPhone">رقم الهاتف</label>
-                <input id="authPhone" class="mono ltr" inputmode="numeric" placeholder="201xxxxxxxxx"/>
-              </div>
-              <div class="field">
-                <label for="authCode">كود التحكم</label>
-                <input id="authCode" class="mono ltr" placeholder="LB-XXXX-YYYY"/>
-              </div>
-            </div>
-            <button type="button" class="primary" onclick="loginSubBot()">فتح لوحة البوت الفرعي</button>
-            <div id="subAuthMsg" class="hidden" style="margin-top:12px"></div>
-          </div>
-        </div>
-
-        <!-- Authenticated / Active Sub-Bot View -->
-        <div id="subActivePanel" class="hidden">
-          <div class="data-row">
-            <span class="data-key">الرقم</span>
-            <span class="data-val ltr" id="sbPhone">-</span>
-          </div>
-          <div class="data-row">
-            <span class="data-key">الحالة في واتساب</span>
-            <span class="data-val" id="sbState">-</span>
-          </div>
-          <div class="data-row">
-            <span class="data-key">كود التحكم (احفظه لإدارة البوت لاحقاً)</span>
-            <span style="display:flex;align-items:center;gap:8px">
-              <span class="data-val ltr" id="sbControlCode" style="color:var(--acc);font-weight:700">-</span>
-              <button type="button" class="btn sm ghost" onclick="copyText($('sbControlCode').textContent, this)">نسخ</button>
-            </span>
-          </div>
-
-          <!-- Live Pairing Code / QR Box -->
-          <div id="sbPairingBox" class="code-panel hidden">
-            <div class="hint" id="sbPairingTitle" style="text-align:center">أدخل هذا الكود في واتساب للربط:</div>
-            <div id="sbPairCodeText" class="code-block hidden"></div>
-            <div id="sbQrBox" class="qr-box hidden"></div>
-            <div class="code-actions" id="sbCopyCodeWrap">
-              <button type="button" class="btn sm primary" id="sbCopyCodeBtn" onclick="copyText($('sbPairCodeText').textContent, this)">نسخ كود واتساب</button>
-              <button type="button" class="btn sm" onclick="subAction('repair','code')">إصدار كود جديد</button>
-              <button type="button" class="btn sm" onclick="subAction('repair','qr')">عرض QR بدلاً من الكود</button>
-            </div>
-            <ol class="steps-list">
-              <li>افتح تطبيق واتساب على هاتفك ثم اختر <b>الأجهزة المرتبطة (Linked Devices)</b>.</li>
-              <li>اضغط <b>ربط جهاز (Link a Device)</b> ثم اختر <b>الربط برقم الهاتف</b> في الأسفل.</li>
-              <li>أدخل الكود المكون من 8 خانات أعلاه واضغط تأكيد.</li>
-            </ol>
-          </div>
-
-          <div id="sbErrorBanner" class="banner err hidden"></div>
-
-          <!-- Sub-Bot Settings -->
-          <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
-            <div class="form-row">
-              <div class="field">
-                <label for="sbMode">وضع التشغيل</label>
-                <select id="sbMode">
-                  <option value="public">عام (يرد على الجميع)</option>
-                  <option value="self">خاص (يرد على رقمك فقط)</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="sbPrefix">بادئة الأوامر</label>
-                <input id="sbPrefix" class="mono ltr" maxlength="4" value="."/>
-              </div>
-            </div>
-            <div class="field">
-              <label for="sbCustomName">اسم البوت المخصص</label>
-              <input id="sbCustomName" placeholder="Yono Sub-Bot"/>
-            </div>
-            <label class="check-row">
-              <input type="checkbox" id="sbPaused"/>
-              <span>إيقاف الردود مؤقتاً (Pause)</span>
-            </label>
-
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-              <button type="button" class="primary" onclick="saveSubSettings()">حفظ الإعدادات</button>
-              <button type="button" class="btn" onclick="subAction('repair','code')">إعادة الربط</button>
-              <button type="button" class="btn" onclick="subAction('regenerate-code')">تغيير كود التحكم</button>
-              <button type="button" class="btn danger" onclick="subAction('reset-session')">حذف الجلسة</button>
-              <button type="button" class="btn ghost" onclick="subAction('logout')">خروج</button>
-            </div>
-            <div id="sbActionMsg" class="hidden" style="margin-top:10px"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- System Status & Event Log -->
-    <section class="col-5">
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-head">
-          <div class="card-title"><span class="accent"></span>معلومات الخادم</div>
-        </div>
-        <div class="data-row"><span class="data-key">اسم البوت</span><span class="data-val" id="s-name">-</span></div>
-        <div class="data-row"><span class="data-key">حالة الجلسة</span><span class="data-val" id="s-reg">-</span></div>
-        <div class="data-row"><span class="data-key">وضع الربط الافتراضي</span><span class="data-val" id="s-mode">-</span></div>
-        <div class="data-row"><span class="data-key">الذاكرة المستخدمة</span><span class="data-val ltr" id="s-mem">-</span></div>
-        <div class="data-row"><span class="data-key">رقم الإصدار</span><span class="data-val ltr" id="s-commit">-</span></div>
+        <span class="meta-line" id="pubCmdMeta">-</span>
       </div>
 
-      <div class="card">
-        <div class="card-head">
-          <div class="card-title"><span class="accent"></span>سجل الأحداث المباشر</div>
+      <div class="cmd-toolbar">
+        <div class="search-wrap">
+          <label for="pubCmdSearch" class="hidden">بحث في الأوامر</label>
+          <input id="pubCmdSearch" placeholder="ابحث عن أمر أو وصف (مثال: menu, sticker, hd)..." oninput="filterPublicCommands()" style="width:100%;min-height:40px;padding:8px 12px;border-radius:6px;background:var(--bg);border:1px solid var(--line-strong);color:var(--txt)"/>
         </div>
-        <div class="log-box" id="log"></div>
       </div>
-    </section>
-  </div>
+
+      <div class="cat-bar" id="pubCatBar" role="group" aria-label="تصنيفات الأوامر">
+        <button type="button" class="cat-btn active" onclick="selectPubCat('', this)">الكل</button>
+      </div>
+
+      <div class="cmd-grid" id="pubCmdGrid">
+        <div class="muted">جاري تحميل الأوامر...</div>
+      </div>
+    </div>
+
+    <div class="surface col-4" id="status">
+      <div class="surface-head">
+        <div>
+          <h2 class="surface-title">توزيع الأوامر والنظام</h2>
+          <p class="surface-sub">إحصائيات حية من الخادم</p>
+        </div>
+      </div>
+
+      <div id="catBars" style="margin-bottom:18px"></div>
+
+      <div style="border-top:1px solid var(--line);padding-top:12px">
+        <div class="kv-row"><span class="kv-key">وضع البوت الأساسي</span><span class="kv-val" id="s-botmode">-</span></div>
+        <div class="kv-row"><span class="kv-key">حالة الجلسة</span><span class="kv-val" id="s-reg">-</span></div>
+        <div class="kv-row"><span class="kv-key">المستخدمون / المجموعات</span><span class="kv-val ltr" id="s-users">-</span></div>
+        <div class="kv-row"><span class="kv-key">طريقة الربط الافتراضية</span><span class="kv-val" id="s-mode">-</span></div>
+        <div class="kv-row"><span class="kv-key">الإصدار</span><span class="kv-val ltr" id="s-commit">-</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Live Events Log -->
+  <section class="surface section-gap" id="events">
+    <div class="surface-head">
+      <div>
+        <h2 class="surface-title">سجل الأحداث المباشر</h2>
+        <p class="surface-sub">آخر تحديثات الاتصال وحالة الربط</p>
+      </div>
+      <span class="meta-line" id="eventsCount">0 حدث</span>
+    </div>
+    <div class="log-box" id="log"></div>
+  </section>
 </main>
 
-${err ? `<div style="position:fixed;bottom:16px;left:16px;right:16px;max-width:600px;margin:auto" class="err-banner">${esc(err)}</div>` : ''}
+<div class="toast-wrap" id="toasts" aria-live="polite"></div>
+
+${err ? `<div style="position:fixed;bottom:16px;right:16px;max-width:460px;z-index:90" class="err-banner">${esc(err)}</div>` : ''}
 
 <script>
 const $ = (id) => document.getElementById(id);
-let subQrObj = null, lastSubQr = null;
+let subQrObj = null, lastSubQr = null, currentSubPairCode = '', currentPubCat = '', lastCatsSig = '';
+
+function toast(msg, kind = 'ok'){
+  const wrap = $('toasts');
+  if(!wrap) return;
+  const el = document.createElement('div');
+  el.className = 'toast ' + kind;
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(() => { el.remove(); }, 2800);
+}
 
 async function api(path, opts){
   const r = await fetch(path, opts);
@@ -470,8 +394,10 @@ async function api(path, opts){
 
 function esc(s){
   return String(s == null ? '' : s)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
+
+${CODE_TILES_HELPER_JS}
 
 function showMsg(el, text, isErr){
   if(!el) return;
@@ -479,35 +405,106 @@ function showMsg(el, text, isErr){
   el.className = isErr ? 'err-banner' : 'ok-banner';
 }
 
-function copyText(text, btn){
-  if(!text) return;
-  navigator.clipboard?.writeText(String(text).trim()).then(() => {
+function copyCodeValue(text, btn){
+  const clean = String(text || '').trim();
+  if(!clean || clean === '-') return;
+  navigator.clipboard?.writeText(clean).then(() => {
+    toast('تم نسخ: ' + clean, 'ok');
     if(btn){
       const old = btn.textContent;
       btn.textContent = 'تم النسخ ✓';
-      setTimeout(() => { btn.textContent = old; }, 1500);
+      setTimeout(() => { btn.textContent = old; }, 1400);
     }
   }).catch(() => {});
 }
 
 function switchTab(name){
   const isNew = name === 'new';
-  $('tabNewBtn').className = isNew ? 'tab active' : 'tab';
-  $('tabLoginBtn').className = !isNew ? 'tab active' : 'tab';
+  $('tabNewBtn').className = isNew ? 'seg-btn active' : 'seg-btn';
+  $('tabLoginBtn').className = !isNew ? 'seg-btn active' : 'seg-btn';
+  $('tabNewBtn').setAttribute('aria-selected', String(isNew));
+  $('tabLoginBtn').setAttribute('aria-selected', String(!isNew));
   $('tabNewPanel').className = isNew ? '' : 'hidden';
   $('tabLoginPanel').className = !isNew ? '' : 'hidden';
+}
+
+function syncSimulatorPreview(){
+  const name = ($('sbCustomName') && $('sbCustomName').value.trim()) || ($('topBotName') && $('topBotName').textContent) || 'Yono';
+  const prefix = ($('sbPrefix') && $('sbPrefix').value.trim()) || '.';
+  const mode = ($('sbMode') && $('sbMode').value) === 'self' ? 'وضع خاص (للمالك فقط)' : 'وضع عام · يستقبل الخاص والمجموعات';
+  if($('simBotName')) $('simBotName').textContent = name;
+  if($('simAvatar')) $('simAvatar').textContent = name.charAt(0).toUpperCase() || 'Y';
+  if($('simModeText')) $('simModeText').textContent = mode;
+  if($('simPrefixBadge')) $('simPrefixBadge').textContent = 'Prefix: ' + prefix;
+  const chips = document.querySelectorAll('#simChips .wa-chip');
+  chips.forEach((ch) => {
+    const raw = ch.getAttribute('data-cmd') || ch.textContent.replace(/^[.!#$%&?/]+/, '');
+    ch.setAttribute('data-cmd', raw);
+    ch.textContent = prefix + raw;
+  });
+}
+
+const SIM_REPLIES = {
+  menu: 'قائمة أوامر البوت الرئيسية\\n• الأوامر العامة ووسائط التحميل\\n• أدوات الصور والملصقات والذكاء\\n• إدارة المجموعات والألعاب',
+  ping: 'الاستجابة: نشط ومستقر\\nالزمن: 42ms · الجلسة متصلة',
+  sticker: 'أرسل أو ردّ على أي صورة أو فيديو قصير لتحويله فوراً إلى ملصق واتساب.',
+  hd: 'جاري تحسين دقة الصورة وإزالة التشويش وإرسالها بأعلى جودة.',
+  play: 'ابحث باسم الأغنية أو رابط يوتيوب لإرسال الملف الصوتي مباشرة.',
+  owner: 'جهة تواصل المطور وإعدادات المالك مفعّلة لهذه الجلسة.'
+};
+
+function runSimCmd(cmd, desc){
+  const prefix = ($('sbPrefix') && $('sbPrefix').value.trim()) || '.';
+  const clean = String(cmd || 'menu').replace(/^[.!#$%&?/]+/, '');
+  const botName = ($('simBotName') && $('simBotName').textContent) || 'Yono';
+  const body = $('simChatBody');
+  if(!body) return;
+  const now = new Date();
+  const hhmm = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+  const matched = (window._pubCatalog || []).find((c) => c.primary === clean || (c.triggers || []).includes(clean));
+  const resolvedDesc = desc || (matched && matched.description) || '';
+  const reply = resolvedDesc
+    ? (botName + ' (' + (matched?.categoryLabel || 'Command') + '): ' + resolvedDesc + '\\nتم تجهيز الأمر بنجاح ✓')
+    : (SIM_REPLIES[clean] || (botName + ': تم استلام الأمر ' + prefix + clean + ' وجاري المعالجة.'));
+
+  const outMsg = document.createElement('div');
+  outMsg.className = 'wa-msg out';
+  outMsg.innerHTML = '<span class="wa-cmd-txt">' + esc(prefix + clean) + '</span><span class="wa-msg-time">' + hhmm + '</span>';
+
+  const inMsg = document.createElement('div');
+  inMsg.className = 'wa-msg in';
+  inMsg.innerHTML = esc(reply) + '<span class="wa-msg-time">' + hhmm + '</span>';
+
+  body.appendChild(outMsg);
+  setTimeout(() => {
+    body.appendChild(inMsg);
+    body.scrollTop = body.scrollHeight;
+  }, 110);
+  body.scrollTop = body.scrollHeight;
+
+  document.querySelectorAll('#simChips .wa-chip').forEach((c) => {
+    c.classList.toggle('active', (c.getAttribute('data-cmd') || '') === clean);
+  });
+}
+
+function submitSimInput(){
+  const inp = $('simInput');
+  const val = (inp && inp.value || '').trim();
+  if(!val) return;
+  runSimCmd(val);
+  inp.value = '';
 }
 
 function renderSubQr(qr){
   const box = $('sbQrBox');
   if(!box) return;
-  if(!qr){ box.className = 'qr-box hidden'; box.innerHTML = ''; lastSubQr = null; return; }
-  box.className = 'qr-box';
+  if(!qr){ box.className = 'qr-frame hidden'; box.innerHTML = ''; lastSubQr = null; return; }
+  box.className = 'qr-frame';
   if(qr === lastSubQr) return;
   lastSubQr = qr;
   box.innerHTML = '';
   try {
-    subQrObj = new QRCode(box, { text: qr, width: 210, height: 210, correctLevel: QRCode.CorrectLevel.M });
+    subQrObj = new QRCode(box, { text: qr, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
   } catch { box.textContent = qr; }
 }
 
@@ -516,6 +513,7 @@ function applySubBotView(bot){
     $('subAuthArea').className = '';
     $('subActivePanel').className = 'hidden';
     $('subSessionBadge').textContent = 'غير مسجل';
+    currentSubPairCode = '';
     return;
   }
   $('subAuthArea').className = 'hidden';
@@ -527,43 +525,44 @@ function applySubBotView(bot){
   const stEl = $('sbState');
   if(bot.pairStatus === 'connected' || bot.connection === 'open'){
     stEl.textContent = 'متصل بالواتساب ✓';
-    stEl.className = 'data-val ok';
+    stEl.className = 'kv-val ok';
   } else if(bot.pairStatus === 'pairing_code'){
     stEl.textContent = 'بانتظار إدخال كود الربط';
-    stEl.className = 'data-val warn';
+    stEl.className = 'kv-val warn';
   } else if(bot.pairStatus === 'qr'){
     stEl.textContent = 'بانتظار مسح QR';
-    stEl.className = 'data-val warn';
+    stEl.className = 'kv-val warn';
   } else if(bot.pairStatus === 'error' || bot.pairStatus === 'logged_out'){
     stEl.textContent = 'غير متصل (' + bot.pairStatus + ')';
-    stEl.className = 'data-val err';
+    stEl.className = 'kv-val err';
   } else {
     stEl.textContent = bot.connection || bot.pairStatus || 'خامل';
-    stEl.className = 'data-val';
+    stEl.className = 'kv-val';
   }
 
   const pairBox = $('sbPairingBox');
-  const codeEl = $('sbPairCodeText');
+  const codeWrap = $('sbPairCodeWrap');
   const copyBtn = $('sbCopyCodeBtn');
   if(bot.pairStatus !== 'connected' && (bot.pairingCode || bot.qr)){
-    pairBox.className = 'code-panel';
+    pairBox.className = 'pair-stage';
     if(bot.pairingCode){
-      codeEl.className = 'code-block';
-      codeEl.textContent = bot.pairingCode;
+      if(currentSubPairCode !== bot.pairingCode){
+        currentSubPairCode = bot.pairingCode;
+        codeWrap.innerHTML = buildCodeTilesHtml(bot.pairingCode);
+      }
       if(copyBtn) copyBtn.className = 'btn sm primary';
       $('sbPairingTitle').textContent = 'أدخل كود الربط في واتساب (الأجهزة المرتبطة):';
     } else {
-      codeEl.className = 'code-block hidden';
+      currentSubPairCode = '';
+      codeWrap.innerHTML = '';
       if(copyBtn) copyBtn.className = 'btn sm primary hidden';
-      $('sbPairingTitle').textContent = 'امسح رمز QR من تطبيق واتساب (الأجهزة المرتبطة):';
+      $('sbPairingTitle').textContent = 'امسح رمز QR من تطبيق واتساب:';
     }
-    if(bot.qr){
-      renderSubQr(bot.qr);
-    } else {
-      renderSubQr(null);
-    }
+    renderSubQr(bot.qr || null);
   } else {
-    pairBox.className = 'code-panel hidden';
+    currentSubPairCode = '';
+    pairBox.className = 'pair-stage hidden';
+    codeWrap.innerHTML = '';
     renderSubQr(null);
   }
 
@@ -576,11 +575,15 @@ function applySubBotView(bot){
   }
 
   const actId = document.activeElement ? document.activeElement.id : '';
-  if(!['sbMode','sbPrefix','sbCustomName','sbPaused'].includes(actId) && bot.settings){
+  if(!['sbMode','sbPrefix','sbCustomName','sbNotes','sbWelcome','sbAutoReply','sbPaused'].includes(actId) && bot.settings){
     $('sbMode').value = bot.settings.mode === 'self' ? 'self' : 'public';
     $('sbPrefix').value = bot.settings.prefix || '.';
     $('sbCustomName').value = bot.settings.customName || '';
+    $('sbNotes').value = bot.settings.notes || '';
+    $('sbWelcome').checked = bot.settings.welcome !== false;
+    $('sbAutoReply').checked = bot.settings.autoReply !== false;
     $('sbPaused').checked = !!bot.settings.paused;
+    syncSimulatorPreview();
   }
 }
 
@@ -600,6 +603,7 @@ async function pairSubBot(){
     });
     if(r.ok && r.bot){
       showMsg(msg, r.message || 'تم إصدار بيانات الربط', false);
+      toast('تم إنشاء جلسة البوت الفرعي', 'ok');
       applySubBotView(r.bot);
     } else {
       showMsg(msg, r.error || 'تعذر بدء الربط', true);
@@ -624,6 +628,7 @@ async function loginSubBot(){
     });
     if(r.ok && r.bot){
       msg.className = 'hidden';
+      toast('تم فتح لوحة البوت الفرعي', 'ok');
       applySubBotView(r.bot);
     } else {
       showMsg(msg, r.error || 'بيانات الدخول غير صحيحة', true);
@@ -641,11 +646,15 @@ async function saveSubSettings(){
         mode: $('sbMode').value,
         prefix: $('sbPrefix').value,
         customName: $('sbCustomName').value,
+        notes: $('sbNotes').value,
+        welcome: $('sbWelcome').checked,
+        autoReply: $('sbAutoReply').checked,
         paused: $('sbPaused').checked
       })
     });
     if(r.ok){
       showMsg(msg, r.message || 'تم الحفظ', false);
+      toast('تم حفظ إعدادات البوت الفرعي', 'ok');
       if(r.bot) applySubBotView(r.bot);
     } else showMsg(msg, r.error || 'فشل الحفظ', true);
   } catch(e){ showMsg(msg, e.message, true); }
@@ -663,10 +672,12 @@ async function subAction(action, mode){
     });
     if(action === 'logout'){
       applySubBotView(null);
+      toast('تم تسجيل الخروج', 'ok');
       return;
     }
     if(r.ok){
       showMsg(msg, r.message || 'تم التنفيذ', false);
+      toast(r.message || 'تم التنفيذ', 'ok');
       if(r.bot) applySubBotView(r.bot);
     } else {
       showMsg(msg, r.error || 'تعذر تنفيذ الطلب', true);
@@ -682,43 +693,110 @@ function fmtUptime(sec){
   return (d ? d + 'd ' : '') + h + 'h ' + m + 'm';
 }
 
+function selectPubCatEl(btn){
+  currentPubCat = btn ? (btn.dataset.cat || '') : '';
+  document.querySelectorAll('#pubCatBar .cat-btn').forEach((b) => b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  filterPublicCommands();
+}
+
+async function filterPublicCommands(){
+  const q = ($('pubCmdSearch') && $('pubCmdSearch').value) || '';
+  try{
+    const r = await api('/api/public/commands?limit=48&q=' + encodeURIComponent(q) + '&cat=' + encodeURIComponent(currentPubCat));
+    if(!r.ok) return;
+    const catSig = (r.categories || []).map((c) => c.id + ':' + c.count).join('|');
+    if(catSig !== lastCatsSig){
+      lastCatsSig = catSig;
+      const bar = $('pubCatBar');
+      if(bar){
+        let h = '<button type="button" class="cat-btn' + (currentPubCat === '' ? ' active' : '') + '" data-cat="" onclick="selectPubCatEl(this)">الكل (' + (r.total || 0) + ')</button>';
+        (r.categories || []).slice(0, 10).forEach((c) => {
+          h += '<button type="button" class="cat-btn' + (currentPubCat === c.id ? ' active' : '') + '" data-cat="' + esc(c.id) + '" onclick="selectPubCatEl(this)">' + esc(c.label) + ' (' + c.count + ')</button>';
+        });
+        bar.innerHTML = h;
+      }
+    }
+    const grid = $('pubCmdGrid');
+    const prefix = ($('sbPrefix') && $('sbPrefix').value.trim()) || '.';
+    if(!window._pubCatalog && Array.isArray(r.commands)) window._pubCatalog = r.commands;
+    if(grid){
+      grid.innerHTML = (r.commands || []).map((c) =>
+        '<button type="button" class="cmd-card" data-cmd="' + esc(c.primary) + '" data-desc="' + esc(c.description || '') + '" onclick="pickPublicCommandEl(this)">'
+        + '<div class="cmd-card-top"><span class="cmd-code">' + esc(prefix + c.primary) + '</span><span class="cmd-meta">' + esc(c.categoryLabel) + '</span></div>'
+        + '<div class="cmd-desc">' + esc(c.description || c.primary) + '</div>'
+        + '</button>'
+      ).join('') || '<div class="muted">لا توجد أوامر مطابقة للبحث.</div>';
+    }
+    if($('pubCmdMeta')) $('pubCmdMeta').textContent = (r.filtered || 0) + ' من ' + (r.total || 0) + ' أمر';
+  } catch {}
+}
+
+function pickPublicCommandEl(el){
+  const cmd = el?.dataset?.cmd || '';
+  const desc = el?.dataset?.desc || '';
+  if(!cmd) return;
+  const prefix = ($('sbPrefix') && $('sbPrefix').value.trim()) || '.';
+  copyCodeValue(prefix + cmd);
+  runSimCmd(cmd, desc);
+}
+
+function renderCategoryBars(cats){
+  const wrap = $('catBars');
+  if(!wrap || !Array.isArray(cats) || !cats.length) return;
+  const max = Math.max(1, ...cats.map((c) => c.count || 0));
+  wrap.innerHTML = cats.slice(0, 6).map((c) => {
+    const pct = Math.max(6, Math.round(((c.count || 0) / max) * 100));
+    return '<div class="bar-row">'
+      + '<div class="bar-head"><span>' + esc(c.label) + '</span><span class="mono">' + (c.count || 0) + '</span></div>'
+      + '<div class="bar-track"><div class="bar-fill" style="transform:scaleX(' + (pct / 100) + ')"></div></div>'
+      + '</div>';
+  }).join('');
+}
+
 async function refresh(){
   try{
     const s = await api('/api/public/status');
     if(s.ok){
-      const dot = $('statusDot'), txt = $('statusText');
       if(s.connected){
-        dot.className = 'status-dot on';
-        txt.textContent = 'متصل';
         $('k-conn').textContent = 'متصل ✓';
         $('k-conn').className = 'kpi-val ok';
+        $('k-conn-sub').textContent = 'يعمل ويستقبل الرسائل الآن';
       } else if(s.connection === 'connecting' || s.connection === 'starting'){
-        dot.className = 'status-dot warn';
-        txt.textContent = 'جاري الاتصال';
         $('k-conn').textContent = 'جاري الاتصال';
-        $('k-conn').className = 'kpi-val';
+        $('k-conn').className = 'kpi-val warn';
+        $('k-conn-sub').textContent = 'جاري تهيئة الجلسة مع واتساب';
       } else {
-        dot.className = 'status-dot off';
-        txt.textContent = 'غير متصل';
         $('k-conn').textContent = 'غير متصل';
         $('k-conn').className = 'kpi-val err';
+        $('k-conn-sub').textContent = 'بانتظار إتمام الربط من لوحة الإدارة';
       }
-      if(s.botName) $('topBotName').textContent = s.botName;
+      if(s.botName){
+        $('topBotName').textContent = s.botName;
+        if(!$('sbCustomName')?.value) syncSimulatorPreview();
+      }
       $('k-plugins').textContent = s.commands || 0;
+      $('k-cats').textContent = (s.categoriesCount || 0) + ' تصنيف نشط';
       $('k-subs').textContent = (s.activeSubBotsCount || 0) + ' / ' + (s.subBotsCount || 0);
       $('k-uptime').textContent = fmtUptime(s.uptimeSec);
-      $('s-name').textContent = s.botName || '-';
-      $('s-reg').textContent = s.sessionRegistered ? 'مسجلة' : 'غير مسجلة';
-      $('s-mode').textContent = s.loginMode === 'qr' ? 'QR' : 'Pairing Code';
-      $('s-mem').textContent = (s.memoryMB || 0) + ' MB';
-      $('s-commit').textContent = s.commit || '-';
+      $('k-mem').textContent = (s.memoryMB || 0) + ' MB ذاكرة';
 
+      $('s-botmode').textContent = (s.botMode === 'self' ? 'خاص' : 'عام') + ' · ' + (s.gconly ? 'مجموعات فقط' : 'الخاص والمجموعات');
+      $('s-reg').textContent = s.sessionRegistered ? 'مسجلة' : 'غير مسجلة';
+      $('s-users').textContent = (s.usersCount || 0) + ' / ' + (s.groupsCount || 0);
+      $('s-mode').textContent = s.loginMode === 'qr' ? 'QR' : 'Pairing Code';
+      $('s-commit').textContent = s.commit || 'v2.0.0';
+
+      if(s.topCategories) renderCategoryBars(s.topCategories);
+
+      const evs = s.events || [];
+      if($('eventsCount')) $('eventsCount').textContent = evs.length + ' حدث';
       const log = $('log');
       if(log){
-        log.innerHTML = (s.events || []).map(e => {
+        log.innerHTML = evs.map(e => {
           const t = new Date(e.ts || Date.now()).toLocaleTimeString();
           return '<div class="log-line"><span class="log-time">'+esc(t)+'</span><span class="log-msg">'+esc(e.text || '')+'</span></div>';
-        }).join('') || '<div class="muted">لا توجد أحداث بعد</div>';
+        }).join('') || '<div class="muted">لا توجد أحداث مسجلة بعد</div>';
         log.scrollTop = log.scrollHeight;
       }
     }
@@ -732,6 +810,8 @@ async function refresh(){
 
 setInterval(refresh, 3000);
 refresh();
+filterPublicCommands();
+syncSimulatorPreview();
 </script>
 </body>
 </html>`;
@@ -747,27 +827,30 @@ export function renderAdminLoginHtml(err) {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>دخول الإدارة — Yono</title>
-<style>${SHARED_CSS}</style>
+<style>${PANEL_CSS}</style>
 </head>
 <body>
 <div class="login-wrap">
   <div class="login-card">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
-      <div class="brand-mark">A</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <div class="wordmark-icon" style="width:40px;height:40px;font-size:17px">A</div>
       <div>
-        <div class="login-title" style="margin-bottom:0">لوحة تحكم الإدارة</div>
-        <div class="muted">إدارة البوت الأساسي والبوتات الفرعية</div>
+        <h1 class="login-title" style="margin-bottom:0">لوحة تحكم الإدارة</h1>
+        <div class="muted">إدارة البوت الأساسي · الإعدادات · البوتات الفرعية</div>
       </div>
     </div>
-    ${err ? `<div class="err-banner" style="margin-bottom:14px">${esc(err)}</div>` : ''}
+    ${err ? `<div class="err-banner" style="margin-bottom:16px">${esc(err)}</div>` : ''}
     <form method="POST" action="/login">
       <div class="field">
         <label for="password">كلمة مرور الإدارة (من ملف system/panel-config.json)</label>
-        <input id="password" name="password" type="password" class="mono ltr" required autofocus placeholder="أدخل كلمة المرور"/>
+        <div style="display:flex;gap:8px">
+          <input id="password" name="password" type="password" class="mono ltr" required autofocus placeholder="أدخل كلمة المرور"/>
+          <button type="button" class="btn sm ghost" id="togglePwBtn" onclick="const p=document.getElementById('password');const s=p.type==='password';p.type=s?'text':'password';this.textContent=s?'إخفاء':'إظهار';">إظهار</button>
+        </div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:16px">
+      <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:20px">
         <button type="submit" class="primary">تسجيل الدخول</button>
-        <a class="btn ghost sm" href="/">العودة لبوابة الربط</a>
+        <a class="btn ghost sm" href="/">العودة للبوابة العامة</a>
       </div>
     </form>
   </div>
@@ -779,7 +862,8 @@ export function renderAdminLoginHtml(err) {
 /* =====================================================================
  * INSTALL RENDER JS (Admin main bot pairing box)
  * ===================================================================== */
-export const INSTALL_RENDER_JS = `function formatPairErr(err){
+export const INSTALL_RENDER_JS = `${CODE_TILES_HELPER_JS}
+function formatPairErr(err){
   const raw = String(err || '').trim();
   if(!raw) return '';
   if(/rate-overlimit/i.test(raw)){
@@ -802,14 +886,14 @@ function renderInstall(d){
   }
   let html = '';
   if(d.pairingCode && d.loginMode !== 'qr'){
-    html += '<div class="code-panel">'
-      + '<div class="hint" style="text-align:center">افتح واتساب ← الأجهزة المرتبطة ← الربط برقم الهاتف ثم أدخل:</div>'
-      + '<div class="code-block" id="mainPairCodeVal">' + esc(d.pairingCode) + '</div>'
-      + '<div class="code-actions"><button type="button" class="btn sm primary" onclick="copyText(document.getElementById(\\'mainPairCodeVal\\').textContent, this)">نسخ كود الربط</button></div>'
+    html += '<div class="pair-stage">'
+      + '<div class="hint" style="text-align:center">افتح واتساب ← الأجهزة المرتبطة ← الربط برقم الهاتف ثم أدخل الكود:</div>'
+      + buildCodeTilesHtml(d.pairingCode, 'mainPairCodeVal')
+      + '<div style="display:flex;justify-content:center;gap:8px;margin-top:8px"><button type="button" class="btn sm primary" onclick="copyCodeValue(document.getElementById(\\'mainPairCodeVal\\').textContent, this)">نسخ كود الربط</button></div>'
       + '</div>';
   }
   if(showQr){
-    html += '<div class="code-panel"><div class="hint" style="text-align:center">امسح رمز QR من تطبيق واتساب:</div><div class="qr-box" id="qr"></div></div>';
+    html += '<div class="pair-stage"><div class="hint" style="text-align:center">امسح رمز QR من تطبيق واتساب:</div><div class="qr-frame" id="qr"></div></div>';
   }
   if(d.pairingError && d.loginMode !== 'qr' && !d.pairingCode){
     html += '<div class="banner err">' + esc(formatPairErr(d.pairingError)) + '</div>';
@@ -818,11 +902,11 @@ function renderInstall(d){
       ? '<div class="hint">أدخل رقم البوت بالرمز الدولي ثم اضغط <b>إصدار كود الربط</b>.</div>'
       : '<div class="hint">بانتظار استجابة خادم واتساب لإصدار ' + (d.loginMode === 'qr' ? 'رمز QR' : 'كود الربط') + '...</div>';
   }
-  html += '<div style="margin-top:14px"><div class="form-row">'
-     + '<div class="field"><label>طريقة الربط</label>'
+  html += '<div style="margin-top:16px"><div class="form-row">'
+     + '<div class="field"><label for="lm">طريقة الربط</label>'
      + '<select id="lm"><option value="code"' + (d.loginMode === 'code' ? ' selected' : '') + '>كود ربط (Pairing Code)</option>'
      + '<option value="qr"' + (d.loginMode === 'qr' ? ' selected' : '') + '>رمز QR</option></select></div>'
-     + '<div class="field"><label>رقم البوت الأساسي</label>'
+     + '<div class="field"><label for="ph">رقم البوت الأساسي</label>'
      + '<input id="ph" class="ltr mono" value="' + esc(d.configuredPhone) + '" placeholder="201505xxxxxx"></div></div>'
      + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
      + '<button type="button" class="primary sm" onclick="pairMainNow()">إصدار كود الربط الآن</button>'
@@ -833,7 +917,7 @@ function renderInstall(d){
 }`;
 
 /* =====================================================================
- * ADMIN PANEL (authenticated)
+ * ADMIN STUDIO (authenticated Sidebar + Workspace)
  * ===================================================================== */
 export function renderAdminPanelHtml(installRenderJs) {
 	const IJS = installRenderJs || INSTALL_RENDER_JS;
@@ -844,108 +928,199 @@ export function renderAdminPanelHtml(installRenderJs) {
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>لوحة الإدارة — Yono</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<style>${SHARED_CSS}</style>
+<style>${PANEL_CSS}</style>
 </head>
 <body>
 
-<header class="topbar">
-  <div class="brand">
-    <div class="brand-mark">A</div>
-    <div>
-      <div class="brand-name">لوحة تحكم الإدارة</div>
-      <div class="brand-sub">إدارة البوت الأساسي · البوتات الفرعية · الأوامر</div>
+<div class="admin-shell">
+  <!-- Sidebar -->
+  <aside class="sidebar" aria-label="أقسام لوحة الإدارة">
+    <a class="wordmark" href="/admin">
+      <span class="wordmark-icon">Y</span>
+      <span>Yono الإدارة</span>
+    </a>
+
+    <nav class="side-nav" id="sideNav">
+      <button type="button" class="side-btn active" data-sec="all" onclick="showSection('all', this)"><span>نظرة شاملة</span><span class="side-count">الكل</span></button>
+      <button type="button" class="side-btn" data-sec="pairing" onclick="showSection('pairing', this)"><span>الربط والاتصال</span><span class="side-count" id="navConnBadge">-</span></button>
+      <button type="button" class="side-btn" data-sec="settings" onclick="showSection('settings', this)"><span>سلوك البوت</span><span class="side-count" id="navModeBadge">-</span></button>
+      <button type="button" class="side-btn" data-sec="subbots" onclick="showSection('subbots', this)"><span>البوتات الفرعية</span><span class="side-count" id="navSubCount">0</span></button>
+      <button type="button" class="side-btn" data-sec="send" onclick="showSection('send', this)"><span>استوديو الإرسال</span></button>
+      <button type="button" class="side-btn" data-sec="commands" onclick="showSection('commands', this)"><span>الأوامر والإحصائيات</span><span class="side-count" id="navCmdCount">0</span></button>
+      <button type="button" class="side-btn" data-sec="security" onclick="showSection('security', this)"><span>الصيانة والسجل</span></button>
+    </nav>
+
+    <div style="margin-top:auto;border-top:1px solid var(--line);padding-top:14px;display:flex;flex-direction:column;gap:8px">
+      <a class="btn sm ghost" href="/">البوابة العامة</a>
+      <button type="button" class="btn sm danger" onclick="logout()">تسجيل الخروج</button>
     </div>
-  </div>
-  <div class="topbar-right">
-    <div class="conn-indicator">
-      <span class="status-dot" id="statusDot"></span>
-      <span id="statusText">جاري الاتصال...</span>
+  </aside>
+
+  <div class="admin-main">
+    <header class="admin-topbar">
+      <div class="breadcrumb">
+        <span>لوحة الإدارة</span>
+        <span>/</span>
+        <b id="crumbSection">نظرة شاملة</b>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="meta-line" id="topConnLabel">جاري الفحص...</span>
+        <a class="btn sm ghost" href="/">البوابة العامة</a>
+      </div>
+    </header>
+
+    <div class="mobile-nav" id="mobileNav">
+      <button type="button" class="seg-btn active" data-sec="all" onclick="showSection('all', this)">الكل</button>
+      <button type="button" class="seg-btn" data-sec="pairing" onclick="showSection('pairing', this)">الربط</button>
+      <button type="button" class="seg-btn" data-sec="settings" onclick="showSection('settings', this)">الإعدادات</button>
+      <button type="button" class="seg-btn" data-sec="subbots" onclick="showSection('subbots', this)">الفرعية</button>
+      <button type="button" class="seg-btn" data-sec="send" onclick="showSection('send', this)">إرسال</button>
+      <button type="button" class="seg-btn" data-sec="commands" onclick="showSection('commands', this)">الأوامر</button>
+      <button type="button" class="seg-btn" data-sec="security" onclick="showSection('security', this)">السجل</button>
     </div>
-    <a class="btn sm ghost" href="/">البوابة العامة</a>
-    <button type="button" class="btn sm danger" onclick="logout()">تسجيل الخروج</button>
-  </div>
-</header>
 
-<main class="container">
-  <div id="maintBanner" class="maint-banner hidden">
-    <span>⚠</span><span>وضع الصيانة <b>مفعّل</b> — الزوار يرون شاشة الصيانة حالياً.</span>
-  </div>
-
-  <div class="grid">
-    <!-- Status -->
-    <section class="col-4">
-      <div class="card">
-        <div class="card-head"><div class="card-title"><span class="accent"></span>حالة البوت الأساسي</div></div>
-        <div class="data-row"><span class="data-key">الاتصال</span><span class="data-val" id="s-conn">-</span></div>
-        <div class="data-row"><span class="data-key">الجلسة</span><span class="data-val" id="s-reg">-</span></div>
-        <div class="data-row"><span class="data-key">طريقة الربط</span><span class="data-val" id="s-mode">-</span></div>
-        <div class="data-row"><span class="data-key">الرقم</span><span class="data-val ltr" id="s-phone">-</span></div>
-        <div class="data-row"><span class="data-key">الاسم</span><span class="data-val" id="s-name">-</span></div>
-        <div class="data-row"><span class="data-key">الإضافات (Plugins)</span><span class="data-val" id="s-plugins">-</span></div>
-        <div class="data-row"><span class="data-key">الذاكرة</span><span class="data-val ltr" id="s-mem">-</span></div>
-        <div class="data-row"><span class="data-key">مدة التشغيل</span><span class="data-val ltr" id="s-uptime">-</span></div>
-        <div class="data-row"><span class="data-key">الإصدار</span><span class="data-val ltr" id="s-commit">-</span></div>
+    <main class="admin-content">
+      <div id="maintBanner" class="maint-banner hidden">
+        <span>⚠</span><span>وضع الصيانة <b>مفعّل</b> — الزوار يرون شاشة الصيانة حالياً.</span>
       </div>
-    </section>
 
-    <!-- Main Pairing -->
-    <section class="col-8">
-      <div class="card">
-        <div class="card-head"><div class="card-title"><span class="accent"></span>ربط البوت الأساسي بواتساب</div></div>
-        <div id="installBody"></div>
-      </div>
-    </section>
-
-    <!-- Controls & Send -->
-    <section class="col-6">
-      <div class="card">
-        <div class="card-head"><div class="card-title"><span class="accent"></span>التحكم وإرسال رسالة تجريبية</div></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
-          <button type="button" class="btn" onclick="act('restart')">↻ إعادة تشغيل</button>
-          <button type="button" class="btn danger" onclick="act('reset-session')">⊘ إعادة ضبط الجلسة</button>
-          <button type="button" class="btn" onclick="act('stop')">■ إيقاف</button>
-          <button type="button" class="btn ok" onclick="act('start')">▶ تشغيل</button>
+      <!-- KPIs -->
+      <section class="kpi-strip reveal" style="margin-top:0;margin-bottom:20px" data-group="overview">
+        <div class="kpi">
+          <div class="kpi-label">حالة الاتصال</div>
+          <div class="kpi-val" id="k-admin-conn">-</div>
+          <div class="kpi-sub" id="s-phone">-</div>
         </div>
-        <div class="form-row">
-          <div class="field"><label>رقم المستلم</label><input id="sendNum" class="mono ltr" inputmode="numeric" placeholder="201xxxxxxxxx"/></div>
-          <div class="field"><label>نص الرسالة</label><input id="sendMsg" placeholder="مرحباً"/></div>
+        <div class="kpi">
+          <div class="kpi-label">المستخدمون المسجلون</div>
+          <div class="kpi-val" id="k-admin-users">0</div>
+          <div class="kpi-sub" id="k-admin-groups">0 مجموعة · 0 محادثة</div>
         </div>
-        <button type="button" class="primary" onclick="sendMsg()">إرسال رسالة اختبارية</button>
-        <p id="ctrlMsg" class="muted" style="margin-top:10px"></p>
-      </div>
-    </section>
-
-    <!-- Security & Maintenance & Updates -->
-    <section class="col-6">
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-head"><div class="card-title"><span class="accent"></span>وضع الصيانة وكلمة المرور</div></div>
-        <div class="data-row" style="margin-bottom:10px"><span class="data-key">وضع الصيانة</span><span class="data-val" id="maintState">-</span></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button type="button" class="btn danger sm" onclick="setMaint(true)">تفعيل الصيانة</button>
-          <button type="button" class="btn ok sm" onclick="setMaint(false)">إيقاف الصيانة</button>
-          <button type="button" class="btn sm" onclick="rotatePw()">توليد كلمة مرور جديدة</button>
+        <div class="kpi">
+          <div class="kpi-label">إجمالي تنفيذ الأوامر</div>
+          <div class="kpi-val" id="k-admin-hits">0</div>
+          <div class="kpi-sub" id="k-admin-cmds">0 أمر مفعّل</div>
         </div>
-        <p id="maintMsg" class="muted" style="margin-top:8px"></p>
-        <p id="pwMsg" class="muted" style="margin-top:4px"></p>
-      </div>
-
-      <div class="card">
-        <div class="card-head"><div class="card-title"><span class="accent"></span>التحديثات</div></div>
-        <p class="hint" style="margin-bottom:10px">تحديث تلقائي كل <span id="autoInt">60</span> دقيقة.</p>
-        <div style="display:flex;gap:8px">
-          <button type="button" class="btn sm" onclick="checkUpdate()">فحص التحديثات</button>
-          <button type="button" class="primary sm" onclick="applyUpdate()">تطبيق التحديث</button>
+        <div class="kpi">
+          <div class="kpi-label">الموارد والتشغيل</div>
+          <div class="kpi-val ltr" id="s-uptime">-</div>
+          <div class="kpi-sub" id="s-mem">- MB</div>
         </div>
-        <p id="updMsg" class="muted" style="margin-top:8px"></p>
-      </div>
-    </section>
+      </section>
 
-    <!-- Sub-Bots Monitor -->
-    <section class="col-12">
-      <div class="card">
-        <div class="card-head">
-          <div class="card-title"><span class="accent"></span>البوتات الفرعية المسجلة (Sub-Bots)</div>
-          <span class="muted" id="subCountMeta">0 مسجل</span>
+      <!-- Section: Pairing & Main Controls -->
+      <section class="grid-12 reveal-d1" data-section="pairing">
+        <div class="surface col-8">
+          <div class="surface-head">
+            <div>
+              <h2 class="surface-title">ربط البوت الأساسي بواتساب</h2>
+              <p class="surface-sub">إصدار كود الربط أو رمز QR والتحكم في الجلسة</p>
+            </div>
+            <span class="meta-line" id="s-reg">-</span>
+          </div>
+          <div id="installBody"></div>
+        </div>
+
+        <div class="surface col-4">
+          <div class="surface-head">
+            <div>
+              <h2 class="surface-title">معلومات وتشغيل البوت</h2>
+              <p class="surface-sub">أوامر الخادم المباشرة</p>
+            </div>
+          </div>
+          <div class="kv-row"><span class="kv-key">الاسم</span><span class="kv-val" id="s-name">-</span></div>
+          <div class="kv-row"><span class="kv-key">طريقة الربط</span><span class="kv-val" id="s-mode">-</span></div>
+          <div class="kv-row"><span class="kv-key">الإضافات</span><span class="kv-val" id="s-plugins">-</span></div>
+          <div class="kv-row"><span class="kv-key">الإصدار</span><span class="kv-val ltr" id="s-commit">-</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">
+            <button type="button" class="btn sm" onclick="act('restart')">↻ إعادة تشغيل</button>
+            <button type="button" class="btn sm danger" onclick="act('reset-session')">إعادة ضبط الجلسة</button>
+            <button type="button" class="btn sm" onclick="act('stop')">■ إيقاف</button>
+            <button type="button" class="btn sm primary" onclick="act('start')">▶ تشغيل</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Bot Settings & Send Studio -->
+      <section class="grid-12 section-gap reveal-d2" data-section="settings send">
+        <div class="surface col-6" data-section="settings">
+          <div class="surface-head">
+            <div>
+              <h2 class="surface-title">إعدادات سلوك البوت الأساسي</h2>
+              <p class="surface-sub">تطبيق فوري على قاعدة البيانات وإعدادات الاستقبال</p>
+            </div>
+          </div>
+
+          <label class="switch-row">
+            <div class="switch-info">
+              <div class="switch-title">الوضع العام (Public Mode)</div>
+              <div class="switch-desc">عند التفعيل يرد البوت على جميع المستخدمين وليس المالك فقط</div>
+            </div>
+            <span class="switch-ctl"><input type="checkbox" id="bsPublic"/><span class="switch-track"></span></span>
+          </label>
+          <label class="switch-row">
+            <div class="switch-info">
+              <div class="switch-title">قصر الرد على المجموعات فقط (gconly)</div>
+              <div class="switch-desc">أوقفه للسماح للبوت بالرد داخل المحادثات الخاصة (DM)</div>
+            </div>
+            <span class="switch-ctl"><input type="checkbox" id="bsGconly"/><span class="switch-track"></span></span>
+          </label>
+          <label class="switch-row">
+            <div class="switch-info">
+              <div class="switch-title">القراءة التلقائية (Auto-Read)</div>
+              <div class="switch-desc">تحديد الرسائل الواردة كمقروءة تلقائياً</div>
+            </div>
+            <span class="switch-ctl"><input type="checkbox" id="bsAutoread"/><span class="switch-track"></span></span>
+          </label>
+          <label class="switch-row">
+            <div class="switch-info">
+              <div class="switch-title">رفض المكالمات (Anti-Call)</div>
+              <div class="switch-desc">رفض المكالمات الصوتية والمرئية الواردة تلقائياً</div>
+            </div>
+            <span class="switch-ctl"><input type="checkbox" id="bsAnticall"/><span class="switch-track"></span></span>
+          </label>
+
+          <div style="margin-top:16px;display:flex;align-items:center;gap:12px">
+            <button type="button" class="primary" onclick="saveBotSettings()">حفظ وتطبيق الإعدادات</button>
+            <span id="bsMsg" class="muted"></span>
+          </div>
+        </div>
+
+        <div class="surface col-6" data-section="send">
+          <div class="surface-head">
+            <div>
+              <h2 class="surface-title">استوديو إرسال رسالة اختبارية</h2>
+              <p class="surface-sub">أرسل رسالة مباشرة من رقم البوت الأساسي</p>
+            </div>
+          </div>
+          <div class="field">
+            <label for="sendNum">رقم المستلم (مع رمز الدولة)</label>
+            <input id="sendNum" class="mono ltr" inputmode="numeric" placeholder="201xxxxxxxxx"/>
+          </div>
+          <div class="field">
+            <label for="sendMsg">نص الرسالة</label>
+            <textarea id="sendMsg" placeholder="اكتب رسالتك هنا..."></textarea>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+            <button type="button" class="cat-btn" onclick="$('sendMsg').value='أهلاً! البوت يعمل بشكل سليم الآن.'">قالب ترحيب</button>
+            <button type="button" class="cat-btn" onclick="$('sendMsg').value='.menu'">اختبار القائمة (.menu)</button>
+            <button type="button" class="cat-btn" onclick="$('sendMsg').value='تم تحديث البوت وإعادة تشغيله بنجاح.'">إشعار تحديث</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <button type="button" class="primary" onclick="sendMsg()">إرسال الرسالة الآن</button>
+            <span id="ctrlMsg" class="muted"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Sub-Bots Fleet -->
+      <section class="surface section-gap" data-section="subbots">
+        <div class="surface-head">
+          <div>
+            <h2 class="surface-title">إدارة البوتات الفرعية (Sub-Bots)</h2>
+            <p class="surface-sub">مراقبة، إيقاف مؤقت، أو إعادة ضبط جلسات البوتات الفرعية</p>
+          </div>
+          <span class="meta-line" id="subCountMeta">0 مسجل</span>
         </div>
         <div class="tbl-wrap">
           <table>
@@ -953,45 +1128,122 @@ export function renderAdminPanelHtml(installRenderJs) {
               <tr>
                 <th>الرقم</th>
                 <th>الاسم</th>
+                <th>البادئة</th>
                 <th>الحالة</th>
                 <th>الوضع</th>
-                <th>إجراء</th>
+                <th>إجراءات</th>
               </tr>
             </thead>
             <tbody id="subBotsTable">
-              <tr><td colspan="5" class="muted">لا توجد بوتات فرعية مسجلة</td></tr>
+              <tr><td colspan="6" class="muted">لا توجد بوتات فرعية مسجلة</td></tr>
             </tbody>
           </table>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- Commands -->
-    <section class="col-12">
-      <div class="card">
-        <div class="card-head"><div class="card-title"><span class="accent"></span>متصفح الأوامر</div></div>
-        <div class="form-row" style="margin-bottom:12px">
-          <div class="field" style="margin-bottom:0"><input id="cmdSearch" placeholder="ابحث عن أمر..." oninput="loadCommands()"/></div>
-          <div class="field" style="margin-bottom:0"><select id="cmdCat" onchange="loadCommands()"><option value="">كل التصنيفات</option></select></div>
+      <!-- Section: Commands & Stats -->
+      <section class="grid-12 section-gap" data-section="commands">
+        <div class="surface col-8">
+          <div class="surface-head">
+            <div>
+              <h2 class="surface-title">متصفح الأوامر</h2>
+              <p class="surface-sub">اضغط على أي أمر لنسخه فوراً</p>
+            </div>
+            <span class="meta-line" id="cmdMeta">-</span>
+          </div>
+          <div class="form-row" style="margin-bottom:12px">
+            <div class="field" style="margin-bottom:0"><input id="cmdSearch" placeholder="ابحث عن أمر..." oninput="loadCommands()"/></div>
+            <div class="field" style="margin-bottom:0"><select id="cmdCat" onchange="loadCommands()"><option value="">كل التصنيفات</option></select></div>
+          </div>
+          <div class="cmd-grid" id="cmdList"></div>
         </div>
-        <div class="cmd-list" id="cmdList"></div>
-        <p id="cmdMeta" class="muted" style="margin-top:8px"></p>
-      </div>
-    </section>
 
-    <!-- Log -->
-    <section class="col-12">
-      <div class="card">
-        <div class="card-head"><div class="card-title"><span class="accent"></span>سجل الأحداث</div></div>
-        <div class="log-box" id="log"></div>
-      </div>
-    </section>
+        <div class="surface col-4">
+          <div class="surface-head">
+            <div>
+              <h2 class="surface-title">الأكثر استخداماً</h2>
+              <p class="surface-sub">أكثر الأوامر تنفيذاً</p>
+            </div>
+          </div>
+          <div id="topCmdBars"><div class="muted">لا توجد إحصائيات استخدام مسجلة بعد</div></div>
+        </div>
+      </section>
+
+      <!-- Section: Security, Maintenance, Updates & Log -->
+      <section class="grid-12 section-gap" data-section="security">
+        <div class="surface col-5">
+          <div class="surface-head">
+            <div>
+              <h2 class="surface-title">الصيانة والأمان والتحديثات</h2>
+              <p class="surface-sub">فحص التحديثات التلقائية وتدوير كلمة المرور</p>
+            </div>
+          </div>
+          <div class="kv-row"><span class="kv-key">وضع الصيانة</span><span class="kv-val" id="maintState">-</span></div>
+          <div class="kv-row"><span class="kv-key">فترة التحديث التلقائي</span><span class="kv-val">كل <span id="autoInt">60</span> دقيقة</span></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+            <button type="button" class="btn danger sm" onclick="setMaint(true)">تفعيل الصيانة</button>
+            <button type="button" class="btn sm" onclick="setMaint(false)">إيقاف الصيانة</button>
+            <button type="button" class="btn sm" onclick="rotatePw()">تغيير كلمة المرور</button>
+            <button type="button" class="btn sm" onclick="checkUpdate()">فحص التحديثات</button>
+            <button type="button" class="btn primary sm" onclick="applyUpdate()">تطبيق التحديث</button>
+          </div>
+          <p id="maintMsg" class="muted" style="margin-top:10px"></p>
+          <p id="pwMsg" class="muted" style="margin-top:4px"></p>
+          <p id="updMsg" class="muted" style="margin-top:4px"></p>
+        </div>
+
+        <div class="surface col-7">
+          <div class="surface-head">
+            <div>
+              <h2 class="surface-title">سجل الأحداث المباشر</h2>
+              <p class="surface-sub">أحداث النظام والربط والإعدادات</p>
+            </div>
+          </div>
+          <div class="log-box" id="log"></div>
+        </div>
+      </section>
+    </main>
   </div>
-</main>
+</div>
+
+<div class="toast-wrap" id="toasts" aria-live="polite"></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
 let lastQR = null, qrObj = null, lastCmdSig = '';
+
+function toast(msg, kind = 'ok'){
+  const wrap = $('toasts');
+  if(!wrap) return;
+  const el = document.createElement('div');
+  el.className = 'toast ' + kind;
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(() => { el.remove(); }, 2800);
+}
+
+const SEC_LABELS = {
+  all: 'نظرة شاملة',
+  pairing: 'الربط والاتصال',
+  settings: 'سلوك البوت',
+  subbots: 'البوتات الفرعية',
+  send: 'استوديو الإرسال',
+  commands: 'الأوامر والإحصائيات',
+  security: 'الصيانة والسجل'
+};
+
+function showSection(sec, triggerBtn){
+  document.querySelectorAll('#sideNav .side-btn, #mobileNav .seg-btn').forEach((b) => {
+    b.classList.toggle('active', b.getAttribute('data-sec') === sec);
+  });
+  if($('crumbSection')) $('crumbSection').textContent = SEC_LABELS[sec] || 'نظرة شاملة';
+  document.querySelectorAll('[data-section]').forEach((el) => {
+    const tags = (el.getAttribute('data-section') || '').split(/\\s+/);
+    const visible = sec === 'all' || tags.includes(sec);
+    el.classList.toggle('hidden', !visible);
+  });
+  if(triggerBtn && sec !== 'all') window.scrollTo({ top: 0, behavior: 'smooth' });
+}
 
 async function api(path, opts){
   const r = await fetch(path, opts);
@@ -1001,15 +1253,17 @@ async function api(path, opts){
 }
 function esc(s){
   return String(s == null ? '' : s)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
-function copyText(text, btn){
-  if(!text) return;
-  navigator.clipboard?.writeText(String(text).trim()).then(() => {
+function copyCodeValue(text, btn){
+  const clean = String(text || '').trim();
+  if(!clean || clean === '-') return;
+  navigator.clipboard?.writeText(clean).then(() => {
+    toast('تم نسخ: ' + clean, 'ok');
     if(btn){
       const old = btn.textContent;
       btn.textContent = 'تم النسخ ✓';
-      setTimeout(() => { btn.textContent = old; }, 1500);
+      setTimeout(() => { btn.textContent = old; }, 1400);
     }
   }).catch(() => {});
 }
@@ -1032,8 +1286,8 @@ function pairMainNow(){
   api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({action:'pair-main',phone,loginMode:mode})})
     .then(r => {
-      if(r.error){ if(el) el.textContent = '⚠ ' + r.error; }
-      else { if(el) el.textContent = r.pairingCode ? ('كود الربط: ' + r.pairingCode) : (r.message || 'تم'); }
+      if(r.error){ if(el) el.textContent = '⚠ ' + r.error; toast(r.error, 'err'); }
+      else { const txt = r.pairingCode ? ('كود الربط: ' + r.pairingCode) : (r.message || 'تم'); if(el) el.textContent = txt; toast(txt, 'ok'); }
       refresh();
     })
     .catch(e => { if(el) el.textContent = '⚠ ' + e.message; refresh(); });
@@ -1043,8 +1297,26 @@ function applyLogin(){
   const mode = ($('lm') && $('lm').value) || 'code';
   api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({action:'set-login',phone,loginMode:mode})})
-    .then(r => { const el=$('ctrlMsg'); if(el) el.textContent = r.message || 'تم الحفظ'; })
+    .then(r => { const el=$('ctrlMsg'); const msg=r.message||'تم الحفظ'; if(el) el.textContent = msg; toast(msg, 'ok'); })
     .catch(e => { const el=$('ctrlMsg'); if(el) el.textContent = '⚠ ' + e.message; });
+}
+
+async function saveBotSettings(){
+  const msgEl = $('bsMsg');
+  try{
+    const r = await api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        action:'save-bot-settings',
+        public: $('bsPublic').checked,
+        gconly: $('bsGconly').checked,
+        autoread: $('bsAutoread').checked,
+        anticall: $('bsAnticall').checked
+      })});
+    const m = r.message || (r.ok ? 'تم الحفظ' : 'فشل الحفظ');
+    if(msgEl) msgEl.textContent = m;
+    toast(m, r.ok ? 'ok' : 'err');
+    refresh();
+  } catch(e){ if(msgEl) msgEl.textContent = '⚠ ' + e.message; }
 }
 
 async function act(action, extra){
@@ -1053,16 +1325,20 @@ async function act(action, extra){
   const el=$('ctrlMsg'); if(el) el.textContent='جاري التنفيذ...';
   try{
     const r = await api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action, ...(extra||{})})});
-    if(el) el.textContent = r.message || (r.ok ? 'تم' : 'فشل');
+    const m = r.message || (r.ok ? 'تم' : 'فشل');
+    if(el) el.textContent = m;
+    toast(m, r.ok ? 'ok' : 'err');
     refresh();
-  }catch(e){ if(el) el.textContent='⚠ '+e.message; }
+  }catch(e){ if(el) el.textContent='⚠ '+e.message; toast(e.message, 'err'); }
 }
 async function sendMsg(){
   const el=$('ctrlMsg');
   try{
     const r = await api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action:'send',to:$('sendNum').value,text:$('sendMsg').value})});
-    if(el) el.textContent = r.ok ? ('✓ ' + (r.message||'تم الإرسال')) : ('⚠ '+(r.message||'فشل الإرسال'));
+    const m = r.ok ? ('✓ ' + (r.message||'تم الإرسال')) : ('⚠ '+(r.message||'فشل الإرسال'));
+    if(el) el.textContent = m;
+    toast(m, r.ok ? 'ok' : 'err');
   }catch(e){ if(el) el.textContent='⚠ '+e.message; }
 }
 
@@ -1080,6 +1356,7 @@ async function applyUpdate(){
 async function setMaint(on){
   const r = await api('/api/maintenance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:!!on})});
   const el=$('maintMsg'); if(el) el.textContent = r.message || 'تم';
+  toast(r.message || 'تم', 'ok');
   refresh();
 }
 async function rotatePw(){
@@ -1087,6 +1364,7 @@ async function rotatePw(){
   const r = await api('/api/rotate-password',{method:'POST'});
   const el=$('pwMsg');
   if(el) el.textContent = r.password ? ('كلمة المرور الجديدة: ' + r.password) : 'فشل التوليد';
+  if(r.password) toast('تم توليد كلمة مرور جديدة', 'ok');
 }
 
 async function loadCommands(){
@@ -1102,10 +1380,11 @@ async function loadCommands(){
   if(sig === lastCmdSig) return; lastCmdSig = sig;
   const list = $('cmdList');
   if(list) list.innerHTML = r.commands.map(c =>
-    '<div class="cmd-item"><span class="cmd-name">'+esc(c.primary)+'</span>'+
-    '<span class="cmd-cat">'+esc(c.categoryLabel)+'</span>'+
-    '<span class="cmd-desc">'+esc(c.description||'')+'</span></div>'
-  ).join('') || '<div class="cmd-item muted">لا توجد أوامر مطابقة</div>';
+    '<button type="button" class="cmd-card" data-cmd="' + esc('.' + c.primary) + '" onclick="copyCodeValue(this.dataset.cmd)">'
+    + '<div class="cmd-card-top"><span class="cmd-code">.' + esc(c.primary) + '</span><span class="cmd-meta">' + esc(c.categoryLabel) + '</span></div>'
+    + '<div class="cmd-desc">' + esc(c.description || c.primary) + '</div>'
+    + '</button>'
+  ).join('') || '<div class="muted">لا توجد أوامر مطابقة</div>';
   const meta=$('cmdMeta'); if(meta) meta.textContent = r.filtered+' من '+r.total+' أمر'+(r.truncated?' (مقتطع)':'');
 }
 
@@ -1124,19 +1403,61 @@ function renderQR(qr){
 async function refresh(){
   let s;
   try{ s = await api('/api/status'); }catch(e){ return; }
-  const dot=$('statusDot'), txt=$('statusText');
-  if(s.connected){ if(dot) dot.className='status-dot on'; if(txt) txt.textContent='متصل'; }
-  else { if(dot) dot.className='status-dot off'; if(txt) txt.textContent='غير متصل'; }
-  if($('s-conn')) $('s-conn').textContent = s.connection || '-';
-  if($('s-reg')) $('s-reg').textContent = s.sessionRegistered ? 'مسجلة' : 'غير مسجلة';
-  if($('s-mode')) $('s-mode').textContent = s.loginMode === 'qr' ? 'QR' : 'Code';
+
+  const connEl = $('k-admin-conn');
+  if(s.connected){
+    if(connEl){ connEl.textContent = 'متصل ✓'; connEl.className = 'kpi-val ok'; }
+    if($('topConnLabel')) $('topConnLabel').textContent = 'متصل بواتساب ✓';
+    if($('navConnBadge')) $('navConnBadge').textContent = 'متصل';
+  } else {
+    const isWait = s.connection === 'connecting' || s.connection === 'starting';
+    if(connEl){ connEl.textContent = isWait ? 'جاري الاتصال' : 'غير متصل'; connEl.className = isWait ? 'kpi-val warn' : 'kpi-val err'; }
+    if($('topConnLabel')) $('topConnLabel').textContent = isWait ? 'جاري الاتصال...' : 'غير متصل';
+    if($('navConnBadge')) $('navConnBadge').textContent = isWait ? 'انتظار' : 'متوقف';
+  }
+
+  if($('s-reg')) $('s-reg').textContent = s.sessionRegistered ? 'جلسة مسجلة' : 'غير مسجلة';
+  if($('s-mode')) $('s-mode').textContent = s.loginMode === 'qr' ? 'QR' : 'Pairing Code';
   if($('s-phone')) $('s-phone').textContent = s.configuredPhone || s.phone || '-';
   if($('s-name')) $('s-name').textContent = s.name || '-';
   if($('s-plugins')) $('s-plugins').textContent = s.commands || 0;
-  if($('s-mem')) $('s-mem').textContent = (s.memoryMB || 0) + ' MB';
+  if($('s-mem')) $('s-mem').textContent = (s.memoryMB || 0) + ' MB ذاكرة';
   if($('s-uptime')) $('s-uptime').textContent = fmtUptime(s.uptimeSec || 0);
-  if($('s-commit')) $('s-commit').textContent = s.commit || '-';
+  if($('s-commit')) $('s-commit').textContent = s.commit || 'v2.0.0';
   if($('autoInt') && s.autoUpdateIntervalMin) $('autoInt').textContent = s.autoUpdateIntervalMin;
+  if($('navCmdCount')) $('navCmdCount').textContent = s.commands || 0;
+
+  if(s.stats){
+    if($('k-admin-users')) $('k-admin-users').textContent = s.stats.usersCount || 0;
+    if($('k-admin-groups')) $('k-admin-groups').textContent = (s.stats.groupsCount || 0) + ' مجموعة · ' + (s.stats.chatsCount || 0) + ' محادثة';
+    if($('k-admin-hits')) $('k-admin-hits').textContent = s.stats.totalCommandsRun || 0;
+    if($('k-admin-cmds')) $('k-admin-cmds').textContent = (s.commands || 0) + ' أمر مفعّل';
+
+    const topWrap = $('topCmdBars');
+    const top = s.stats.topCommands || [];
+    if(topWrap && top.length){
+      const maxH = Math.max(1, ...top.map((t) => t.hits));
+      topWrap.innerHTML = top.map((t) => {
+        const pct = Math.max(8, Math.round((t.hits / maxH) * 100));
+        return '<div class="bar-row">'
+          + '<div class="bar-head"><span class="mono ltr">.' + esc(t.name) + '</span><span class="mono">' + t.hits + '</span></div>'
+          + '<div class="bar-track"><div class="bar-fill" style="transform:scaleX(' + (pct / 100) + ')"></div></div>'
+          + '</div>';
+      }).join('');
+    }
+  }
+
+  if(s.botSettings){
+    if($('navModeBadge')) $('navModeBadge').textContent = s.botSettings.public ? 'عام' : 'خاص';
+    const actId = document.activeElement ? document.activeElement.id : '';
+    if(!['bsPublic','bsGconly','bsAutoread','bsAnticall'].includes(actId)){
+      if($('bsPublic')) $('bsPublic').checked = !!s.botSettings.public;
+      if($('bsGconly')) $('bsGconly').checked = !!s.botSettings.gconly;
+      if($('bsAutoread')) $('bsAutoread').checked = !!s.botSettings.autoread;
+      if($('bsAnticall')) $('bsAnticall').checked = !!s.botSettings.anticall;
+    }
+  }
+
   const mb=$('maintBanner'); if(mb) mb.className = s.maintenance ? 'maint-banner' : 'maint-banner hidden';
   if($('maintState')) $('maintState').textContent = s.maintenance ? 'مفعّل' : 'متوقف';
 
@@ -1144,19 +1465,22 @@ async function refresh(){
 
   const subs = s.subBots || [];
   if($('subCountMeta')) $('subCountMeta').textContent = subs.length + ' مسجل';
+  if($('navSubCount')) $('navSubCount').textContent = subs.length;
   const tb = $('subBotsTable');
   if(tb){
     tb.innerHTML = subs.length ? subs.map(sb =>
       '<tr>'
       + '<td class="ltr mono">+'+esc(sb.phone)+'</td>'
-      + '<td>'+esc(sb.waName || '-')+'</td>'
+      + '<td>'+esc(sb.customName || sb.waName || '-')+'</td>'
+      + '<td class="mono ltr">'+esc(sb.prefix || '.')+'</td>'
       + '<td class="mono">'+esc(sb.pairStatus)+'</td>'
-      + '<td class="mono">'+(sb.paused ? 'متوقف' : esc(sb.mode))+'</td>'
+      + '<td>'+(sb.paused ? 'متوقف مؤقتاً' : (sb.mode === 'self' ? 'خاص' : 'عام'))+'</td>'
       + '<td><div style="display:flex;gap:6px;flex-wrap:wrap">'
-      + '<button type="button" class="btn sm" onclick="act(\\'sub-stop\\',{phone:\\''+esc(sb.phone)+'\\'})">إيقاف</button>'
+      + '<button type="button" class="btn sm" onclick="act(\\'sub-toggle-pause\\',{phone:\\''+esc(sb.phone)+'\\'})">'+(sb.paused ? 'تفعيل' : 'إيقاف مؤقت')+'</button>'
+      + '<button type="button" class="btn sm" onclick="act(\\'sub-stop\\',{phone:\\''+esc(sb.phone)+'\\'})">فصل</button>'
       + '<button type="button" class="btn sm danger" onclick="act(\\'sub-reset\\',{phone:\\''+esc(sb.phone)+'\\'})">حذف الجلسة</button>'
       + '</div></td></tr>'
-    ).join('') : '<tr><td colspan="5" class="muted">لا توجد بوتات فرعية مسجلة</td></tr>';
+    ).join('') : '<tr><td colspan="6" class="muted">لا توجد بوتات فرعية مسجلة</td></tr>';
   }
 
   const log=$('log');
@@ -1188,13 +1512,13 @@ export function renderMaintenanceHtml(msg) {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>الموقع في وضع الصيانة — Yono</title>
-<style>${SHARED_CSS}</style>
+<style>${PANEL_CSS}</style>
 </head>
 <body>
 <div class="login-wrap">
   <div class="login-card" style="text-align:center">
-    <div class="brand-mark" style="margin:0 auto 16px">M</div>
-    <div class="login-title">الموقع تحت الصيانة</div>
+    <div class="wordmark-icon" style="width:44px;height:44px;font-size:18px;margin:0 auto 16px">M</div>
+    <h1 class="login-title">الموقع تحت الصيانة</h1>
     <div class="login-sub">يتم تحديث البوت وصيانته حالياً. يرجى المحاولة بعد قليل.</div>
     ${msg ? `<div class="err-banner" style="margin-top:12px">${esc(msg)}</div>` : ''}
     <div style="margin-top:20px">

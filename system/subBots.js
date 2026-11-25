@@ -88,6 +88,8 @@ export function listAllSubBots() {
 			pairStatus: live?.pairStatus || rec.pairStatus || 'idle',
 			connection: live?.connection || 'offline',
 			waName: rec.waName || '',
+			customName: rec.settings?.customName || '',
+			prefix: rec.settings?.prefix || '.',
 			pairedAt: rec.pairedAt || 0,
 			lastSeenAt: rec.lastSeenAt || 0,
 			paused: Boolean(rec.settings?.paused),
