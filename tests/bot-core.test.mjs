@@ -14,6 +14,7 @@ import initDatabase from '../lib/database.js';
 import { handler } from '../handler.js';
 import mainMenuPlugin from '../plugins/main-menu.js';
 import readViewOncePlugin from '../plugins/media-readviewonce.js';
+import msgInfoPlugin from '../plugins/tools-msginfo.js';
 import { handleWebRequest, pushPanelEvent } from '../system/webPanel.js';
 
 protoType();
@@ -368,6 +369,57 @@ test('plugins/media-readviewonce.js and smsg handle viewOnce replies (.فضح / 
 	assert.deepEqual(sent[0].content.image, fakeBuf);
 	assert.ok(sent[0].content.caption.includes('secret'));
 	assert.ok(sent[0].content.caption.includes('لا يسمح لك بإخفاء شيء هنا'));
+
+	// pushMessage stores even fromMe ViewOnce messages immediately so loadMessage finds them
+	await sock.pushMessage([
+		{
+			key: { remoteJid: '201099887766@s.whatsapp.net', fromMe: true, id: 'FROMME_VO_999' },
+			message: {
+				viewOnceMessageV2: {
+					message: {
+						imageMessage: {
+							url: 'https://mmg.whatsapp.net/v/vo999',
+							directPath: '/v/vo999',
+							mimetype: 'image/jpeg',
+							mediaKey: Buffer.alloc(32, 9),
+							fileLength: 4321,
+							viewOnce: true,
+							caption: 'peek',
+						},
+					},
+				},
+			},
+		},
+	]);
+	const loadedVo = sock.loadMessage('FROMME_VO_999');
+	assert.ok(loadedVo);
+	assert.equal(loadedVo.message?.viewOnceMessageV2?.message?.imageMessage?.url, 'https://mmg.whatsapp.net/v/vo999');
+
+	// .معلومات / .msginfo inspects quoted message metadata, CDN URL, mediaKey, and JSON
+	const mInspect = smsg(sock, {
+		key: { remoteJid: '201099887766@s.whatsapp.net', fromMe: false, id: 'USER_MSGINFO_1' },
+		message: {
+			extendedTextMessage: {
+				text: '.معلومات',
+				contextInfo: {
+					stanzaId: 'FROMME_VO_999',
+					participant: '201099887766@s.whatsapp.net',
+					quotedMessage: {
+						viewOnceMessageV2: {
+							message: { imageMessage: { mimetype: 'image/jpeg', viewOnce: true } },
+						},
+					},
+				},
+			},
+		},
+	});
+	await msgInfoPlugin.call(sock, mInspect, { conn: sock });
+	const infoText = sent[sent.length - 1]?.content?.text || '';
+	assert.ok(infoText.includes('FROMME_VO_999'));
+	assert.ok(infoText.includes('https://mmg.whatsapp.net/v/vo999'));
+	assert.ok(infoText.includes('/v/vo999'));
+	assert.ok(infoText.includes('MediaKey'));
+	assert.ok(infoText.includes('peek'));
 });
 
 test('plugins/main-menu.js runs cleanly for list, category, and unknown menu without protobuf or TypeError', async () => {
