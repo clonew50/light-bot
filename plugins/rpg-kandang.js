@@ -12,20 +12,20 @@ let handler = async (m, { conn }) => {
 	let babi = global.db.data.users[m.sender].babi;
 	let ayam = global.db.data.users[m.sender].ayam;
 
-	let ndy = `List Hewan Di Kandang
+	let ndy = `Farm Animal Inventory
     
-• Banteng: ${banteng} Ekor
-• Harimau: ${harimau} Ekor
-• Gajah: ${gajah} Ekor
-• Kambing: ${kambing} Ekor
-• Panda: ${panda} Ekor
-• Buaya: ${buaya} Ekor
-• Kerbau: ${kerbau} Ekor
-• Sapi: ${sapi} Ekor
-• Monyet: ${monyet} Ekor
-• Babi Hutan: ${babihutan} Ekor
-• Babi: ${babi} Ekor
-• Ayam: ${ayam} Ekor
+• Bull: ${banteng}
+• Tiger: ${harimau}
+• Elephant: ${gajah}
+• Goat: ${kambing}
+• Panda: ${panda}
+• Crocodile: ${buaya}
+• Buffalo: ${kerbau}
+• Cow: ${sapi}
+• Monkey: ${monyet}
+• Wild Boar: ${babihutan}
+• Pig: ${babi}
+• Chicken: ${ayam}
  
  `.trim();
 	conn.reply(m.chat, ndy, m);

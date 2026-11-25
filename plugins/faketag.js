@@ -71,13 +71,13 @@ let handler = async (m, { conn, text, usedPrefix, command, isOwner }) => {
     if (!input) {
         return m.reply(
 `*Multi format:*
-${usedPrefix}faketag join ada @Mark Zuckerberg|@Meta Ai| text
+${usedPrefix}faketag join @Mark Zuckerberg|@Meta Ai| text
 ${usedPrefix}faketag https://link.com
-join @A|@B| jir
+join @A|@B| cool
 
 *Legacy format:*
 ${usedPrefix}faketag Mark Zuckerberg
-${usedPrefix}faketag Mark Zuckerberg | halo semua`)
+${usedPrefix}faketag Mark Zuckerberg | hello everyone`)
     }
 
     let groupMentions = []

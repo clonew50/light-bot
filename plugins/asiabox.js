@@ -126,7 +126,7 @@ function findEpisodes(text) {
 async function detail(slug) {
   const text = flight(await get(BASE + '/' + LANG + '/movie/' + slug));
   const film = findFilm(text, slug);
-  if (!film) throw new Error('Film tidak ketemu: ' + slug);
+  if (!film) throw new Error('Drama not found: ' + slug);
   let eps = findEpisodes(text);
   if (!eps.length) {
     const t2 = flight(await get(BASE + '/' + LANG + '/episode-list/' + slug));

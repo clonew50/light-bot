@@ -29,7 +29,7 @@ let handler = async (m, { command, args }) => {
 					if (user.ayamgoreng >= count * 1) {
 						user.ayamgoreng -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Ayam goreng`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;
@@ -38,7 +38,7 @@ let handler = async (m, { command, args }) => {
 					if (user.ayambakar >= count * 1) {
 						user.ayambakar -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Ayam bakar`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;
@@ -47,7 +47,7 @@ let handler = async (m, { command, args }) => {
 					if (user.oporayam >= count * 1) {
 						user.oporayam -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Opor ayam`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;
@@ -56,7 +56,7 @@ let handler = async (m, { command, args }) => {
 					if (user.rendang >= count * 1) {
 						user.rendang -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Rendang`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;
@@ -65,7 +65,7 @@ let handler = async (m, { command, args }) => {
 					if (user.steak >= count * 1) {
 						user.steak -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Steak`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;
@@ -74,7 +74,7 @@ let handler = async (m, { command, args }) => {
 					if (user.gulaiayam >= count * 1) {
 						user.gulaiayam -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Gulai ayam`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;
@@ -83,7 +83,7 @@ let handler = async (m, { command, args }) => {
 					if (user.babipanggang >= count * 1) {
 						user.babipanggang -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Babi panggang`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;
@@ -92,7 +92,7 @@ let handler = async (m, { command, args }) => {
 					if (user.ikanbakar >= count * 1) {
 						user.ikanbakar -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Ikan bakar`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;
@@ -101,7 +101,7 @@ let handler = async (m, { command, args }) => {
 					if (user.lelebakar >= count * 1) {
 						user.lelebakar -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Lele bakar`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;
@@ -110,7 +110,7 @@ let handler = async (m, { command, args }) => {
 					if (user.nilabakar >= count * 1) {
 						user.nilabakar -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Nila bakar`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;
@@ -119,7 +119,7 @@ let handler = async (m, { command, args }) => {
 					if (user.bawalbakar >= count * 1) {
 						user.bawalbakar -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Bawal bakar`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;
@@ -128,7 +128,7 @@ let handler = async (m, { command, args }) => {
 					if (user.udangbakar >= count * 1) {
 						user.udangbakar -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Udang bakar`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;
@@ -137,7 +137,7 @@ let handler = async (m, { command, args }) => {
 					if (user.pausbakar >= count * 1) {
 						user.pausbakar -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Paus bakar`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;
@@ -146,7 +146,7 @@ let handler = async (m, { command, args }) => {
 					if (user.kepitingbakar >= count * 1) {
 						user.kepitingbakar -= count * 1;
 						user.stamina += 20 * count;
-						conn.reply(m.chat, `Nyam nyam`, m);
+						conn.reply(m.chat, `Yum yum`, m);
 					} else conn.reply(m.chat, ` You don't have enough Kepiting bakar`, m);
 				} else conn.reply(m.chat, `Your stamina is already full`, m);
 				break;

@@ -16,11 +16,11 @@ const devLink = `https://wa.me/${devNumber}`
 
 function buildNativeButtons(totalCommands, usedPrefix, countTag, valid) {
   const catRows = valid.filter(v => v !== 'all').map(c => ({ title: c.toUpperCase(), description: `${countTag(c)} command`, id: c === 'owner' ? '.o' : `${usedPrefix}menu ${c}` }))
-  const btn1 = { title: "\u0000", sections: [{ title: "YONO", highlight_label: "MENU UTAMA", rows: [{ title: "All Menu", description: `${totalCommands} commands`, id: `${usedPrefix}menu all` }] }, { title: "Kategori", rows: catRows }], icon: "DEFAULT" }
-  const btn2 = { title: "\u0000", sections: [{ title: "YONO", highlight_label: "INFORMASI", rows: [
-    { title: "Menu", description: "Kembali ke menu utama", id: `${usedPrefix}menu` },
-    { title: "Owner", description: "Hubungi owner bot", id: ".o" },
-    { title: "ping", description: "Cek kecepatan bot", id: ".ping" }
+  const btn1 = { title: "\u0000", sections: [{ title: "YONO", highlight_label: "MAIN MENU", rows: [{ title: "All Menu", description: `${totalCommands} commands`, id: `${usedPrefix}menu all` }] }, { title: "Category", rows: catRows }], icon: "DEFAULT" }
+  const btn2 = { title: "\u0000", sections: [{ title: "YONO", highlight_label: "INFORMATION", rows: [
+    { title: "Menu", description: "Back to main menu", id: `${usedPrefix}menu` },
+    { title: "Owner", description: "Contact bot owner", id: ".o" },
+    { title: "ping", description: "Check bot speed", id: ".ping" }
   ] }], icon: "REVIEW" }
   const btn3 = { display_text: "\u0000", url: devLink, merchant_url: devLink, icon: "PROMOTION" }
   return [
@@ -44,13 +44,13 @@ function buildMetaCards(menuText, devNumber, menuTitle, userInfo) {
           { id: 'root', component: 'Column', children: ['card_4', 'card_a', 'card_polling', 'card_e'] },
           { id: 'image_0', component: 'Image', url: 'https://raw.githubusercontent.com/vinikjkkj/zapo/master/.github/assets/logo-light.png', variant: 'smallFeature', fit: 'contain' },
           { id: 'text_1', component: 'Text', text: '🤖 Yono BOT', variant: 'h1' },
-          { id: 'text_2', component: 'Text', text: `⚡ Bot WhatsApp cepat, ringan & stabil.\n\n${userInfo.user}\n${userInfo.status}`, variant: 'body' },
+          { id: 'text_2', component: 'Text', text: `⚡ Fast, lightweight & stable WhatsApp bot.\n\n${userInfo.user}\n${userInfo.status}`, variant: 'body' },
           { id: 'column_3', component: 'Column', children: ['image_0', 'text_1', 'text_2'] },
           { id: 'card_4', component: 'Card', child: 'column_3' },
-          { id: 'text_5', component: 'Text', text: '✨ Fitur Utama', variant: 'h2' },
+          { id: 'text_5', component: 'Text', text: '✨ Main Features', variant: 'h2' },
           { id: 'checkbox_6', component: 'CheckBox', label: 'Plugin system (command + alias)', value: true },
-          { id: 'checkbox_7', component: 'CheckBox', label: 'Reload plugin tanpa restart penuh', value: true },
-          { id: 'checkbox_8', component: 'CheckBox', label: 'Session tersimpan di SQLite', value: true },
+          { id: 'checkbox_7', component: 'CheckBox', label: 'Reload plugins without full restart', value: true },
+          { id: 'checkbox_8', component: 'CheckBox', label: 'Session stored in SQLite', value: true },
           { id: 'column_9', component: 'Column', children: ['text_5', 'checkbox_6', 'checkbox_7', 'checkbox_8'] },
           { id: 'card_a', component: 'Card', child: 'column_9' },
           { id: 'text_poll', component: 'Text', text: menuTitle, variant: 'h2' },
@@ -59,8 +59,8 @@ function buildMetaCards(menuText, devNumber, menuTitle, userInfo) {
           { id: 'text_user', component: 'Text', text: userInfo.user, variant: 'body' },
           { id: 'column_poll', component: 'Column', children: ['text_poll', 'text_poll2', 'text_status', 'text_user'] },
           { id: 'card_polling', component: 'Card', child: 'column_poll' },
-          { id: 'text_b', component: 'Text', text: '📞 Hubungi Developer', variant: 'h2' },
-          { id: 'text_c', component: 'Text', text: `Ketuk tombol di bawah untuk menghubungi developer ${devNumber}.`, variant: 'caption' },
+          { id: 'text_b', component: 'Text', text: '📞 Contact Developer', variant: 'h2' },
+          { id: 'text_c', component: 'Text', text: `Tap the button below to contact developer ${devNumber}.`, variant: 'caption' },
           { id: 'column_d', component: 'Column', children: ['text_b', 'text_c'] },
           { id: 'card_e', component: 'Card', child: 'column_d' }
         ]
@@ -78,7 +78,7 @@ let handler = async (m, { conn, usedPrefix, args }) => {
   await conn.relayMessage(m.chat, {
     interactiveMessage: {
       header: { title: "Yono BOT" },
-      body: { text: "Mohon tunggu sebentar, Yono BOT sedang menyiapkan daftar perintah..." },
+      body: { text: "Please wait a moment, Yono BOT is preparing the command list..." },
       footer: { text: "\u0000" },
       nativeFlowMessage: { buttons: [{ name: "inapp_signup", buttonParamsJson: "{}" }] },
       contextInfo: {
@@ -104,7 +104,7 @@ let handler = async (m, { conn, usedPrefix, args }) => {
 
   await new Promise(r => setTimeout(r, 500))
 
-  const now = moment().tz('Africa/Casablanca')
+  const now = moment().tz('Africa/Casablanca').locale('en')
   const cmd = (args[0] || 'list').toLowerCase()
   let tag = '@' + m.sender.split('@')[0]
   let uptime = clockString(process.uptime() * 1000)
@@ -137,14 +137,14 @@ let handler = async (m, { conn, usedPrefix, args }) => {
   const countTag = (t) => tagCount[t] || 0
   const ping = `${Math.floor(Math.random() * 80 + 50)} ms`
   const date = now.format('DD MMMM YYYY')
-  const name = m.pushName || 'woli'
+  const name = m.pushName || 'User'
 
-  let menuTitle = 'MENU UTAMA'
+  let menuTitle = 'MAIN MENU'
   let menuText = ''
 
   if (cmd === 'list') {
-    menuTitle = '📋 MENU UTAMA'
-    menuText = `👋 Halo ${tag}\n\n👤 USER INFO\n├ Nama : ${name}\n└ Nomor : ${m.sender.split('@')[0]}\n\n🤖 BOT INFO\n├ Bot : Yono BOT\n├ Menu : ${totalCommands} Command\n├ User : ${totalUser} User\n├ Ping : ${ping}\n├ Uptime : ${uptime}\n└ Tanggal : ${date}\n\n📌 Pilih kategori di bawah`
+    menuTitle = '📋 MAIN MENU'
+    menuText = `👋 Hello ${tag}\n\n👤 USER INFO\n├ Name : ${name}\n└ Number : ${m.sender.split('@')[0]}\n\n🤖 BOT INFO\n├ Bot : Yono BOT\n├ Menu : ${totalCommands} Commands\n├ Users : ${totalUser} Users\n├ Ping : ${ping}\n├ Uptime : ${uptime}\n└ Date : ${date}\n\n📌 Select a category below`
   } else if (cmd === 'all') {
     menuTitle = '📋 ALL MENU'
     let txt = ''
@@ -161,7 +161,7 @@ let handler = async (m, { conn, usedPrefix, args }) => {
       return `- ${usedPrefix}${h}${p.premium ? ' P' : ''}${p.limit ? ' L' : ''}`
     }).join('\n')
   } else {
-    await conn.reply(m.chat, `Tidak ditemukan [ ${cmd} ] gunakan [ ${usedPrefix}menu list ] atau [ ${usedPrefix}menu all ] untuk melihat daftar yang tersedia`, m)
+    await conn.reply(m.chat, `Not found [ ${cmd} ], use [ ${usedPrefix}menu list ] or [ ${usedPrefix}menu all ] to view the available list`, m)
     return
   }
 
@@ -175,11 +175,11 @@ let handler = async (m, { conn, usedPrefix, args }) => {
       if (found && found[0]) {
         let r2 = await axios.get(found[0], { responseType: 'arraybuffer', maxRedirects: 5, timeout: 30000 })
         buffer = Buffer.from(r2.data)
-      } else throw new Error('Link tmpfiles mati')
+      } else throw new Error('Video link unavailable')
     }
     media = await prepareWAMessageMedia({ video: buffer, gifPlayback: true, mimetype: 'video/mp4' }, { upload: conn.waUploadToServer })
   } catch (e) {
-    console.log('Video gagal:', e.message)
+    console.log('Video failed:', e.message)
     try {
       media = await prepareWAMessageMedia({ video: { url: videoUrl }, gifPlayback: true }, { upload: conn.waUploadToServer })
     } catch {}

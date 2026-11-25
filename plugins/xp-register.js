@@ -37,7 +37,7 @@ let handler = async function (m, { text, usedPrefix }) {
 		body: 'You Are User Number ' + Object.values(db.data.users).filter((v) => v.registered == true).length,
 	});
 };
-handler.help = ['daftar <nama>.<umur>'];
+handler.help = ['daftar <name>.<age>'];
 handler.tags = ['xp'];
 handler.command = /^(daftar|verify|reg(ister)?)$/i;
 

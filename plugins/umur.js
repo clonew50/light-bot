@@ -28,7 +28,7 @@ let handler = async (m, { conn, args }) => {
     const IMAGE_URL = 'https://files.catbox.moe/qnof82.jpg'
 
     // This is the info that appears when you click the button
-    const detailFullName = `🎂 Age: ${tahun}th ${bulan}mo ${hari}hr | 📅 Born: ${d}/${mo}/${y} | ⏳ Lived: ${totalHari} days | 🎉 Next birthday: ${sisaHari} days left (${sisaBulan} months) | Next year: ${tahun+1} Years | © Alya - Dev yono`
+    const detailFullName = `🎂 Age: ${tahun}y ${bulan}mo ${hari}d | 📅 Born: ${d}/${mo}/${y} | ⏳ Lived: ${totalHari} days | 🎉 Next birthday: ${sisaHari} days left (${sisaBulan} months) | Next year: ${tahun+1} Years | © Alya - Dev yono`
 
     const richMsg = {
         messageType: 1,

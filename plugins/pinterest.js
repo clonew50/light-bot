@@ -85,7 +85,7 @@ async function downloadPin(m, conn, text, usedPrefix) {
     return conn.sendMessage(m.chat, { text: `❌ Search first using ${usedPrefix}pinterest <keyword>, then type the image number.\nExample: ${usedPrefix}pinterest anime` }, { quoted: m })
   }
   if (!n || n < 1 || n > entry.items.length) {
-    return conn.sendMessage(m.chat, { text: `❌ Enter a number from 1 to ${entry.items.length}.\nExample: ${usedPrefix}unduh 2` }, { quoted: m })
+    return conn.sendMessage(m.chat, { text: `❌ Enter a number from 1 to ${entry.items.length}.\nExample: ${usedPrefix}download 2` }, { quoted: m })
   }
   const it = entry.items[n - 1]
   await conn.sendMessage(m.chat, { react: { text: '⌛', key: m.key } })
@@ -144,7 +144,7 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
       sections: [
         { __typename: 'GenAIUnifiedResponseSection', view_model: { primitives: [`Query: ${query}`, `Results: ${found.length}`, `Displayed: ${items.length}`, `Bot: YONO`].map(t => ({ prompt_text: t, prompt_type: 'SUGGESTED_PROMPT', __typename: 'GenAIFollowUpSuggestionPillPrimitive' })), __typename: 'GenAIHScrollLayoutViewModel' } },
         { view_model: { primitive: { sources: items.map((x, i) => ({ source_type: 'THIRD_PARTY', source_display_name: `${i + 1} • ${x.title}`.slice(0, 90), source_subtitle: 'YONO', source_url: x.pin, favicon: { url: 'https://www.pinterest.com/favicon.ico', mime_type: 'image/jpeg', width: 16, height: 16 } })) , __typename: 'GenAISearchResultPrimitive' }, __typename: 'GenAISingleLayoutViewModel' } },
-        { view_model: { primitive: { payload: buildHtml(query, items.map(x => ({ img: x.uri })), `Type: ${usedPrefix}unduh number | YONO`), url: 'https://www.pinterest.com', trusted_sources: ['pinterest.com'], __typename: 'GenAIaeacdsnwHtmlPrimitive' }, __typename: 'GenAISingleLayoutViewModel' } }
+        { view_model: { primitive: { payload: buildHtml(query, items.map(x => ({ img: x.uri })), `Type: ${usedPrefix}download number | YONO`), url: 'https://www.pinterest.com', trusted_sources: ['pinterest.com'], __typename: 'GenAIaeacdsnwHtmlPrimitive' }, __typename: 'GenAISingleLayoutViewModel' } }
       ]
     }
     await conn.relayMessage(m.chat, {

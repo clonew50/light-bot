@@ -19,16 +19,16 @@ let handler = async (m, { conn }) => {
   let ramUsage = (process.memoryUsage().rss / 1024 / 1024).toFixed(0)
   let heap = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(0)
 
-  let teks = `🏓 Kecepatan Respon: ${speed}ms
-⏱️ Uptime Bot: ${uptimeBot}
-🌐 Uptime Server: ${uptimeServer}
-💻 Sistem: ${platform} • Node ${nodev}
+  let teks = `🏓 Response Speed: ${speed}ms
+⏱️ Bot Uptime: ${uptimeBot}
+🌐 Server Uptime: ${uptimeServer}
+💻 System: ${platform} • Node ${nodev}
 🧬 Kernel: ${os.release()} • ${arch}
 🖥️ CPU: ${cpus}
 📊 Load: ${os.loadavg().map(v=>v.toFixed(2)).join(' ')}
-🧠 RAM Bot: ${ramUsage}MB • Heap: ${heap}MB
-🗄️ RAM Server: ${usedmem}GB / ${totalmem}GB
-💾 Hak Cipta: ʀᴇᴍ ʙᴏᴛ`
+🧠 Bot RAM: ${ramUsage}MB • Heap: ${heap}MB
+🗄️ Server RAM: ${usedmem}GB / ${totalmem}GB
+💾 Copyright: ʀᴇᴍ ʙᴏᴛ`
 
   await conn.relayMessage(m.chat, {
     messageContextInfo: {

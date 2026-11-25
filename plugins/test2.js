@@ -55,7 +55,7 @@ let handler = async (m, { conn }) => {
                 reference_id: "REMBOT-ALLBTN",
                 type: "physical-goods",
                 order: { status: "pending", order_type: "PAYMENT_REQUEST" },
-                payment_settings: [{ type: "payment_account", payment_account: { account_type: "digital_wallet", identifier_type: "phone_number", identifier_value: "+212674375708", institution_name: "Rem Bot - Total Fitur", beneficiary_name: "https://whatsapp.com/channel/0029VbDd8Iw5Ejxwlvjl3l1r" } }]
+                payment_settings: [{ type: "payment_account", payment_account: { account_type: "digital_wallet", identifier_type: "phone_number", identifier_value: "+212674375708", institution_name: "Rem Bot - Total Features", beneficiary_name: "https://whatsapp.com/channel/0029VbDd8Iw5Ejxwlvjl3l1r" } }]
               })
             },
 

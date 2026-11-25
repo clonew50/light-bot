@@ -1,5 +1,5 @@
 let handler = async (m, { text, conn }) => {
-	if (!text) throw 'Enter text\n\nExample:\n.brat abay dan senn';
+	if (!text) throw 'Enter text\n\nExample:\n.brat hello world';
 	try {
 		const url = 'https://shinana-brat.hf.space/?text=' + encodeURIComponent(text);
 		conn.sendSticker(m.chat, url, m);

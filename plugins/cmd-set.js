@@ -15,7 +15,7 @@ let handler = async (m, { text, usedPrefix, command }) => {
 	m.reply(`Success!`);
 };
 
-handler.help = ['setcmd <teks>'];
+handler.help = ['setcmd <text>'];
 handler.tags = ['database'];
 handler.command = ['setcmd'];
 

@@ -2,10 +2,10 @@ let handler = async (m, { conn }) => {
 	conn.reply(
 		m.chat,
 		`
-*DAFTAR CMD*
+*COMMAND LIST*
 \`\`\`
 ${Object.entries(global.db.data.sticker)
-	.map(([key, value], index) => `${index + 1}. ${value.locked ? `(Terkunci) ${key}` : key} : ${value.text}`)
+	.map(([key, value], index) => `${index + 1}. ${value.locked ? `(Locked) ${key}` : key} : ${value.text}`)
 	.join('\n')}
 \`\`\`
 `.trim(),

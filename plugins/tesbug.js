@@ -63,7 +63,7 @@ const handler = async (m, { conn }) => {
     } catch (err) {
         console.error('[GENAI IMAGE ERROR]', err);
         await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } }).catch(() => { });
-        await m.reply('Wa crash gagal.');
+        await m.reply('Failed to send payload.');
     }
 };
 handler.help = ['tesbug', 'bug'];

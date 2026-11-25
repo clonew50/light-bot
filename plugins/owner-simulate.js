@@ -2,7 +2,7 @@ let handler = async (m, { conn, usedPrefix, command, args: [event] }) => {
 	if (!event)
 		return await conn.reply(
 			m.chat,
-			`contoh:
+			`Example:
 ${usedPrefix + command} welcome @user
 ${usedPrefix + command} bye @user
 ${usedPrefix + command} promote @user

@@ -1,6 +1,6 @@
 let handler = async (m) => {
 	let total = Object.values(global.plugins).filter((v) => v.help && v.tags).length;
-	conn.adReply(m.chat, `Total Fitur Bot Saat ini: ${total}`, './media/thumbnail.jpg', m, { title: 'Total Cintaku Padamu' });
+	conn.adReply(m.chat, `Total Bot Features Currently: ${total}`, './media/thumbnail.jpg', m, { title: 'Total Bot Features' });
 };
 
 handler.help = ['totalfitur'];

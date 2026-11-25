@@ -12,7 +12,7 @@ return m.reply('🎯 The Akinator game is already running in this chat.\nPress t
 }
 try {
 const api = new Akinator({
-region: 'id',
+region: 'en',
 childMode: true
 })
 await api.start()
@@ -63,6 +63,11 @@ const answerMap = {
 '3': 2,
 '4': 3,
 '5': 4,
+'yes': 0,
+'no': 1,
+"don't know": 2,
+'maybe': 3,
+'maybe not': 4,
 'ya': 0,
 'tidak': 1,
 'tidak tahu': 2,

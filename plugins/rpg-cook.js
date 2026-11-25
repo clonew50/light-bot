@@ -5,23 +5,23 @@ let handler = async (m, { conn, args }) => {
 		let count = args[1] ? Math.min(5, Math.max(1, parseInt(args[1]))) : 1;
 
 		const menu = `
-▧ Ayambakar → 2 Ayam + 1 Coal
-▧ Ayamgoreng → 2 Ayam + 1 Coal
-▧ Oporayam → 2 Ayam + 1 Coal
-▧ Gulaiayam → 2 Ayam + 1 Coal
+▧ Ayambakar → 2 Chicken + 1 Coal
+▧ Ayamgoreng → 2 Chicken + 1 Coal
+▧ Oporayam → 2 Chicken + 1 Coal
+▧ Gulaiayam → 2 Chicken + 1 Coal
 
-▧ Steak → 2 Sapi + 1 Coal
-▧ Rendang → 2 Sapi + 1 Coal
+▧ Steak → 2 Cow + 1 Coal
+▧ Rendang → 2 Cow + 1 Coal
 
-▧ Babipanggang → 2 Babi + 1 Coal
+▧ Babipanggang → 2 Pig + 1 Coal
 
-▧ Ikanbakar → 2 Ikan + 1 Coal
-▧ Lelebakar → 2 Lele + 1 Coal
-▧ Nilabakar → 2 Nila + 1 Coal
-▧ Bawalbakar → 2 Bawal + 1 Coal
-▧ Udangbakar → 2 Udang + 1 Coal
-▧ Pausbakar → 2 Paus + 1 Coal
-▧ Kepitingbakar → 2 Kepiting + 1 Coal
+▧ Ikanbakar → 2 Fish + 1 Coal
+▧ Lelebakar → 2 Catfish + 1 Coal
+▧ Nilabakar → 2 Tilapia + 1 Coal
+▧ Bawalbakar → 2 Pomfret + 1 Coal
+▧ Udangbakar → 2 Shrimp + 1 Coal
+▧ Pausbakar → 2 Whale + 1 Coal
+▧ Kepitingbakar → 2 Crab + 1 Coal
         `;
 
 		let bahan, result;
@@ -99,7 +99,7 @@ let handler = async (m, { conn, args }) => {
 	}
 };
 
-handler.help = ['masak <makanan> <jumlah>'];
+handler.help = ['cook <food> <amount>'];
 handler.tags = ['rpg'];
 handler.command = /^(masak|cook)$/i;
 handler.group = true;

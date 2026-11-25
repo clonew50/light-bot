@@ -318,7 +318,10 @@ test('plugins/main-menu.js runs cleanly for list, category, and unknown menu wit
 		assert.equal(relayed.length, 2);
 		assert.doesNotThrow(() => proto.Message.encode(proto.Message.fromObject(relayed[0].message)).finish());
 		assert.doesNotThrow(() => proto.Message.encode(proto.Message.fromObject(relayed[1].message)).finish());
-		assert.ok(relayed[1].message.interactiveMessage.bloksWidget.data.includes('MENU UTAMA'));
+		assert.ok(relayed[1].message.interactiveMessage.bloksWidget.data.includes('MAIN MENU'));
+		assert.ok(!relayed[1].message.interactiveMessage.bloksWidget.data.includes('MENU UTAMA'));
+		assert.ok(!relayed[1].message.interactiveMessage.bloksWidget.data.includes('Fitur Utama'));
+		assert.ok(!relayed[1].message.interactiveMessage.bloksWidget.data.includes('Hubungi Developer'));
 
 		// Unknown category replies via conn.reply
 		const mBad = smsg(sock, {
@@ -334,7 +337,7 @@ test('plugins/main-menu.js runs cleanly for list, category, and unknown menu wit
 			isOwner: false,
 			command: 'menu',
 		});
-		assert.ok(sent.some((s) => s.content?.text?.includes('Tidak ditemukan')));
+		assert.ok(sent.some((s) => s.content?.text?.includes('Not found')));
 	} finally {
 		axios.defaults.adapter = origAdapter;
 	}

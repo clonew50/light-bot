@@ -82,7 +82,7 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
             else if (name === 'IEND') break;
             pos += 12 + len;
         }
-        if (interlace) throw new Error('Tile PNG interlaced tidak didukung');
+        if (interlace) throw new Error('Interlaced PNG tiles are not supported');
         const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[type];
         const bits = channels * depth;
         const bpp = Math.max(1, bits >> 3);
@@ -242,7 +242,7 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
         form.append('submitr', '[ رفع الملفات ]');
         const r = await axios.post('https://top4top.io/index.php', form, { headers: {...form.getHeaders(), 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
         const match = String(r.data).match(/(https?:\/\/[a-zA-Z0-9.-]+\.top4top\.io\/[a-z]_[^"'\s<>]+)/);
-        if (!match) throw new Error('Upload gagal');
+        if (!match) throw new Error('Upload failed');
         return match[1];
     };
 
@@ -262,7 +262,7 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
             } catch (e) { if (e.response?.data?.code === 'NoRoute') return null; throw e; }
         };
         const rute = mode === 'udara'? null : await ambilDarat();
-        if (!rute && mode === 'darat') throw new Error('Rute darat tidak ditemukan');
+        if (!rute && mode === 'darat') throw new Error('Land route not found');
         const darat = Boolean(rute);
         const jarakUdara = haversine(a, b);
         const jarakKm = darat? rute.distance / 1000 : jarakUdara;
@@ -292,7 +292,7 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
     }
 };
 
-handler.help = ['cekjarak <asal | tujuan>'];
+handler.help = ['cekjarak <origin | destination>'];
 handler.tags = ['search'];
 handler.command = ['cekjarak', 'jarak', 'rute', 'maps'];
 
