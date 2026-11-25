@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 
 global.pairingNumber = 201505362172;
 global.owner = [
-	['79006443503783', 'clonew50', true]
+	['201212446299', 'clonew50', true]
 ];
 
 global.namebot = 'Yono';
@@ -13,7 +13,18 @@ global.source = 'https://chat.whatsapp.com/Drghgt4BkXj8HJCLNHwx6o?s=cl&p=a&mlu=4
 global.repo = 'https://github.com/rexxzyid/Elaina-Multidevice';
 
 global.wait = 'Loading...';
-global.eror = 'Terjadi Kesalahan...';
+global.eror = 'An error occurred...';
+
+// Global bot options (used by menu/status plugins). Some settings also live in
+// global.db.data.settings[botJid]; these are the process-wide defaults.
+global.opts = {
+	self: false,
+	public: true,
+	restrict: true,
+	autoread: false,
+	anticall: false,
+	gconly: false,
+};
 
 global.pakasir = {
 	slug: '',

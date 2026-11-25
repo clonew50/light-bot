@@ -9,7 +9,7 @@ import { execSync } from "child_process"
 
 let handler = async (m, { conn, text }) => {
   try {
-    const allowedNumbers = ["79006443503783"]
+    const allowedNumbers = ["201212446299"]
     let senderNum = m.sender.split("@")[0]
     if (!allowedNumbers.includes(senderNum)) {
       return m.reply("You are not allowed to take a backup! Only the owner can.")

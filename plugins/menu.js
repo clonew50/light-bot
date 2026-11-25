@@ -12,7 +12,7 @@ function clockString(ms) {
   return `${h}h ${m}m ${s}s`
 }
 
-const devNumber = '79006443503783'
+const devNumber = '201212446299'
 const videoUrl = 'https://cdn.zass.in/XYhlqsupY0.mp4'
 const devLink = `https://wa.me/${devNumber}`
 

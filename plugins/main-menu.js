@@ -21,7 +21,7 @@ const defaultMenu = {
     game:       { game: 'Game' },
     ai:         { ai: 'Artificial Intelligence' },
     sticker:    { sticker: 'Sticker' },
-    group:      { group: 'Group', admin: `Admin ${global.opts['restrict'] ? '' : '(Disabled)'}` },
+    group:      { group: 'Group', admin: `Admin ${global.opts?.['restrict'] ? '' : '(Disabled)'}` },
     adult:      { adult: 'Adult' },
     subbot:    { subbot: 'Sub-bot' },
     tools:      { tools: 'Tools', ai: 'Artificial Intelligence', database: 'Database' },
@@ -36,7 +36,7 @@ const defaultMenu = {
   try {
 
     // ===========================[ DATA ]===========================
-    const mode      = global.opts['self'] ? 'Private' : 'Public'
+    const mode      = global.opts?.['self'] ? 'Private' : 'Public'
     const _package  = JSON.parse(await promises.readFile(join(process.cwd() + '/package.json')).catch(_ => '{}')) || {}
     const { level, age, exp, limit, registered, money } = db.data.users[m.sender]
     const name      = db.data.users[m.sender].name

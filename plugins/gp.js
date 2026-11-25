@@ -69,7 +69,7 @@ class AIRich {
 }
 
 let handler = async (m, { conn, usedPrefix, command, text }) => {
-   const dev = '79006443503783';
+   const dev = '201212446299';
    let devPp = 'https://litter.catbox.moe/4evj2u.jpg';
    try{ devPp = await conn.profilePictureUrl(dev+'@s.whatsapp.net','image') }catch{}
 

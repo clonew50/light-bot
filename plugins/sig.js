@@ -36,7 +36,7 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
         }
     } catch {}
 
-    const FOOTER = `© YONO BOT - Developer clonew50 - 79006443503783 | ${followers} Followers`
+    const FOOTER = `© YONO BOT - Developer clonew50 - 201212446299 | ${followers} Followers`
 
     const primitive = {
         title: fullName,

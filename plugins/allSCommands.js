@@ -9,9 +9,9 @@ const filePath2 = path.join(srcDir, 'sticker-s2.json')
 const historyPath = path.join(srcDir, 'sticker-s-history.json')
 const usersPath = path.join(srcDir, 'sticker-users.json')
 
-const ALLOWED_NUMBERS = ['79006443503783']
+const ALLOWED_NUMBERS = ['201212446299']
 const ALLOWED_USERS = ['clonew50', 'dev.er']
-const ALLOWED_NUMBERS_2 = ['79006443503783']
+const ALLOWED_NUMBERS_2 = ['201212446299']
 
 const defaultSticker = {
     url: "https://mmg.whatsapp.net/v/t62.15575-24/886631607_1494828349224283_2648941109418172292_n.enc?ccb=11-4&oh=01_Q5Aa6AEFYvchOKUndcdG1ni1b82EySn4jdJwIP8ibOD0VzOw3A&oe=6B12F3FC&_nc_sid=5e03e0&mms3=true",
@@ -174,7 +174,7 @@ let handler = async (m, { conn, text, args, command, usedPrefix }) => {
         if (!isOwner(m)) return client.reply(m.chat, `๐ค ุบูุฑ ุงูู…ุงูู ููุฏุฑ ูุฒูุฏ ูุงุณ`, m)
         const raw = (text || '') + ' ' + (args || []).join(' ')
         const numberMatch = raw.match(/\+?(\d{10,15})/)
-        if (!numberMatch) return client.reply(m.chat, `๐ค ูุชุจ ุงูุฑูู…\n\nู…ุซุงู: ${isPrefix}ุงุถูุณ 79006443503783\nู…ุซุงู: ${isPrefix}ุงุถูุณ 79006443503783 ุณ7 ุณ8`, m)
+        if (!numberMatch) return client.reply(m.chat, `๐ค ูุชุจ ุงูุฑูู…\n\nู…ุซุงู: ${isPrefix}ุงุถูุณ 201212446299\nู…ุซุงู: ${isPrefix}ุงุถูุณ 201212446299 ุณ7 ุณ8`, m)
         let number = numberMatch[1].replace(/^\+/, '')
         if (number.startsWith('0')) number = '212' + number.slice(1)
 

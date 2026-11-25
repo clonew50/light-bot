@@ -1,6 +1,6 @@
 let handler = async (m, { conn }) => {
 
-  const devPhone = '79006443503783'
+  const devPhone = '201212446299'
   const devName = 'YONO'
   const waUrl = `https://wa.me/${devPhone}`
 
