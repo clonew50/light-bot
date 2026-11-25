@@ -29,22 +29,29 @@ let handler = async (m, { conn, usedPrefix, command, args, isOwner, isAdmin }) =
 			isAll = true;
 			if (!isOwner) return global.dfail('owner', m, conn);
 			settings.autoread = isEnable;
+			if (global.opts) global.opts.autoread = isEnable;
 			break;
 		case 'public':
 			isAll = true;
 			if (!isOwner) return global.dfail('owner', m, conn);
 			settings.public = isEnable;
+			if (global.opts) {
+				global.opts.public = isEnable;
+				global.opts.self = !isEnable;
+			}
 			break;
 		case 'gconly':
 		case 'grouponly':
 			isAll = true;
 			if (!isOwner) return global.dfail('owner', m, conn);
 			settings.gconly = isEnable;
+			if (global.opts) global.opts.gconly = isEnable;
 			break;
 		case 'anticall':
 			isAll = true;
 			if (!isOwner) return global.dfail('owner', m, conn);
 			settings.anticall = isEnable;
+			if (global.opts) global.opts.anticall = isEnable;
 			break;
 		default:
 			if (!/[01]/.test(command))

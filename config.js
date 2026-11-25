@@ -26,6 +26,30 @@ global.opts = {
 	gconly: false,
 };
 
+global.settings = {
+	owner: global.owner,
+	botname: global.namebot,
+};
+
+global.config = {
+	botname: global.namebot,
+	owner: global.owner,
+	saluran: { id: '120363404849776664@newsletter' },
+};
+
+global.img = {
+	profile: {
+		bot: 'https://files.catbox.moe/96cm7n.jpeg',
+		sender: 'https://files.catbox.moe/96cm7n.jpeg',
+	},
+};
+
+global.getServerUrl = () => {
+	if (process.env.APP_URL) return process.env.APP_URL;
+	const port = process.env.PORT || process.env.WEB_PORT || 3000;
+	return `http://localhost:${port}`;
+};
+
 global.pakasir = {
 	slug: '',
 	apikey: '',

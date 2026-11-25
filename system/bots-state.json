@@ -1,0 +1,25 @@
+{
+  "subBots": {
+    "201099887766": {
+      "phone": "201099887766",
+      "controlCode": "LB-KJUN-VHLF",
+      "pairStatus": "pairing",
+      "pairError": null,
+      "lastPairCode": "",
+      "createdAt": 1795591165903,
+      "pairedAt": 0,
+      "lastSeenAt": 0,
+      "waName": "",
+      "settings": {
+        "mode": "public",
+        "customName": "",
+        "prefix": ".",
+        "welcome": true,
+        "autoReply": true,
+        "paused": false,
+        "notes": ""
+      }
+    }
+  },
+  "mainBot": {}
+}

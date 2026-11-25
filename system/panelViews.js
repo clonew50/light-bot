@@ -1,378 +1,733 @@
 /**
- * panelViews.js — HTML views for the web control panel
- * ---------------------------------------------------
- * Two views:
- *   - Public Portal (no login): bot status, pairing, send message, event log.
- *   - Admin Panel (login): everything in public + control, maintenance,
- *     password rotation, command browser, auto-update.
- * Plus a maintenance screen.
- *
- * Design: dark ops/terminal aesthetic — deep black, electric cyan accent,
- * monospace data, subtle grid, no AI-template look.
+ * panelViews.js — Arabic-first dark ops UI for Elaina-Multidevice
+ * ----------------------------------------------------------------
+ * Views:
+ *   - Public Portal (/): live public status, real WhatsApp sub-bot pairing
+ *     (Pairing Code + QR), existing sub-bot control-code login, settings & actions.
+ *   - Admin Login (/admin unauthenticated): clean password form -> /login.
+ *   - Admin Panel (/admin authenticated): main bot pairing, controls, send test,
+ *     sub-bots monitor, commands browser, maintenance toggle, password rotation, updates.
+ *   - Maintenance Screen (503).
  */
 
 const SHARED_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap');
 
   :root{
-    --bg:#06060a;--bg2:#0a0a12;--panel:#0e0e18;--card:#12121e;
-    --line:#1f1f33;--line2:#2a2a44;--txt:#e4e4f0;--mut:#6b6b8a;
-    --dim:#3a3a55;--acc:#00e5ff;--acc2:#00ff88;--warn:#ffb020;
-    --err:#ff4d6a;--ok:#00ff88;--pink:#ff3d8b;
+    --bg:#0b0d12;
+    --bg2:#10141d;
+    --card:#121620;
+    --card2:#171c29;
+    --line:#232a3b;
+    --line2:#313b52;
+    --txt:#eef2f7;
+    --mut:#94a3b8;
+    --dim:#64748b;
+    --acc:#22d3ee;
+    --acc-bg:rgba(34,211,238,.12);
+    --ok:#10b981;
+    --ok-bg:rgba(16,185,129,.12);
+    --warn:#f59e0b;
+    --warn-bg:rgba(245,158,11,.12);
+    --err:#ef4444;
+    --err-bg:rgba(239,68,68,.12);
+    --radius:8px;
   }
+
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%}
+  html,body{min-height:100%}
   body{
-    font-family:'Space Grotesk',system-ui,sans-serif;
-    background:var(--bg);color:var(--txt);min-height:100vh;
-    background-image:
-      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,229,255,.08), transparent),
-      linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
-    background-size:100% 100%, 48px 48px, 48px 48px;
-    background-attachment:fixed;
+    font-family:'IBM Plex Sans Arabic','Plus Jakarta Sans',system-ui,-apple-system,sans-serif;
+    background:var(--bg);
+    color:var(--txt);
+    line-height:1.6;
     -webkit-font-smoothing:antialiased;
+    font-feature-settings:"tnum" 1;
+    font-variant-numeric:tabular-nums;
   }
-  ::selection{background:var(--acc);color:#000}
   a{color:var(--acc);text-decoration:none}
   a:hover{text-decoration:underline}
 
-  /* ---------- header ---------- */
+  /* ---------- Topbar ---------- */
   .topbar{
-    position:sticky;top:0;z-index:50;
-    display:flex;align-items:center;justify-content:space-between;
-    padding:14px 24px;
-    background:rgba(6,6,10,.75);backdrop-filter:blur(14px);
+    position:sticky;top:0;z-index:40;
+    background:rgba(11,13,18,.92);
+    backdrop-filter:blur(10px);
     border-bottom:1px solid var(--line);
+    padding:12px 24px;
+    display:flex;align-items:center;justify-content:space-between;gap:16px;
   }
   .brand{display:flex;align-items:center;gap:12px}
   .brand-mark{
-    width:34px;height:34px;border-radius:8px;
-    background:linear-gradient(135deg,var(--acc),var(--acc2));
-    display:grid;place-items:center;color:#000;font-weight:800;font-size:16px;
-    box-shadow:0 0 24px rgba(0,229,255,.35);
+    width:36px;height:36px;border-radius:8px;
+    background:var(--acc-bg);border:1px solid rgba(34,211,238,.35);
+    color:var(--acc);display:grid;place-items:center;
+    font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:16px;
   }
-  .brand-name{font-weight:700;font-size:15px;letter-spacing:.3px}
-  .brand-sub{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mut);letter-spacing:.5px}
-  .topbar-right{display:flex;align-items:center;gap:10px}
-  .status-dot{width:8px;height:8px;border-radius:50%;background:var(--dim);box-shadow:0 0 12px currentColor}
-  .status-dot.on{background:var(--ok);color:var(--ok)}
-  .status-dot.off{background:var(--err);color:var(--err)}
-  .status-text{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--mut)}
-  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;
-    border-radius:6px;border:1px solid var(--line2);background:var(--card);
-    color:var(--txt);font-size:13px;font-weight:500;cursor:pointer;
-    transition:all .15s;font-family:inherit}
-  .btn:hover{border-color:var(--acc);color:var(--acc)}
-  .btn.primary{background:var(--acc);color:#000;border-color:var(--acc);font-weight:600}
-  .btn.primary:hover{filter:brightness(1.1);box-shadow:0 0 20px rgba(0,229,255,.4)}
-  .btn.danger{border-color:var(--err);color:var(--err)}
-  .btn.danger:hover{background:var(--err);color:#000}
-  .btn.ghost{background:transparent}
-  .btn:disabled{opacity:.4;cursor:not-allowed}
-  .btn.sm{padding:5px 10px;font-size:12px}
+  .brand-name{font-weight:700;font-size:15px;color:var(--txt)}
+  .brand-sub{font-size:12px;color:var(--mut)}
+  .topbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
-  /* ---------- layout ---------- */
-  .container{max-width:1200px;margin:0 auto;padding:28px 24px}
+  .conn-indicator{
+    display:inline-flex;align-items:center;gap:7px;
+    padding:5px 10px;border-radius:6px;
+    border:1px solid var(--line);background:var(--bg2);
+    font-size:12px;color:var(--mut);
+  }
+  .status-dot{width:8px;height:8px;border-radius:2px;background:var(--dim)}
+  .status-dot.on{background:var(--ok)}
+  .status-dot.off{background:var(--err)}
+  .status-dot.warn{background:var(--warn)}
+
+  /* ---------- Buttons ---------- */
+  .btn, button.primary{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    padding:9px 15px;border-radius:6px;border:1px solid var(--line2);
+    background:var(--card2);color:var(--txt);
+    font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;
+    transition:border-color .15s,background .15s,color .15s;
+  }
+  .btn:hover{border-color:var(--acc);color:var(--acc)}
+  .btn.primary, button.primary{
+    background:var(--acc);color:#061218;border-color:var(--acc);font-weight:700;
+  }
+  .btn.primary:hover, button.primary:hover{filter:brightness(1.08)}
+  .btn.danger{border-color:rgba(239,68,68,.45);color:#fca5a5;background:var(--err-bg)}
+  .btn.danger:hover{border-color:var(--err);background:var(--err);color:#fff}
+  .btn.ok{border-color:rgba(16,185,129,.45);color:#6ee7b7;background:var(--ok-bg)}
+  .btn.ok:hover{border-color:var(--ok);background:var(--ok);color:#052e16}
+  .btn.ghost{background:transparent;border-color:var(--line)}
+  .btn.sm{padding:6px 11px;font-size:12px}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+
+  /* ---------- Layout & Grid ---------- */
+  .container{max-width:1240px;margin:0 auto;padding:24px}
+  .kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+  .kpi{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px 16px;
+  }
+  .kpi-label{font-size:12px;color:var(--mut);margin-bottom:4px}
+  .kpi-val{font-size:20px;font-weight:700;color:var(--txt);font-family:'IBM Plex Mono',monospace}
+  .kpi-val.ok{color:var(--ok)}
+  .kpi-val.err{color:var(--err)}
+
   .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
   .col-4{grid-column:span 4}
+  .col-5{grid-column:span 5}
   .col-6{grid-column:span 6}
+  .col-7{grid-column:span 7}
   .col-8{grid-column:span 8}
   .col-12{grid-column:span 12}
-  @media(max-width:900px){.col-4,.col-6,.col-8{grid-column:span 12}}
-
-  /* ---------- card ---------- */
-  .card{
-    background:var(--card);border:1px solid var(--line);border-radius:10px;
-    padding:20px;position:relative;overflow:hidden;
-    transition:border-color .2s;
+  @media(max-width:960px){
+    .kpi-strip{grid-template-columns:repeat(2,1fr)}
+    .col-4,.col-5,.col-6,.col-7,.col-8{grid-column:span 12}
   }
-  .card:hover{border-color:var(--line2)}
-  .card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
-  .card-title{font-size:13px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--mut);
-    display:flex;align-items:center;gap:8px}
-  .card-title .dot{width:6px;height:6px;border-radius:2px;background:var(--acc)}
-  .card-body{font-size:14px}
+  @media(max-width:560px){
+    .container{padding:14px}
+    .topbar{padding:10px 14px}
+    .kpi-strip{grid-template-columns:1fr 1fr;gap:10px}
+  }
 
-  /* ---------- rows / data ---------- */
-  .data-row{display:flex;justify-content:space-between;align-items:center;
-    padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+  /* ---------- Card ---------- */
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:20px;
+  }
+  .card-head{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding-bottom:12px;margin-bottom:14px;border-bottom:1px solid var(--line);
+  }
+  .card-title{font-size:14px;font-weight:700;color:var(--txt);display:flex;align-items:center;gap:8px}
+  .card-title .accent{width:4px;height:14px;border-radius:2px;background:var(--acc)}
+
+  /* ---------- Tabs ---------- */
+  .tabs{display:flex;gap:6px;margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:10px}
+  .tab{
+    padding:7px 14px;border-radius:6px;border:1px solid transparent;
+    background:transparent;color:var(--mut);font-size:13px;font-weight:600;
+    cursor:pointer;font-family:inherit;
+  }
+  .tab:hover{color:var(--txt);background:var(--bg2)}
+  .tab.active{background:var(--acc-bg);color:var(--acc);border-color:rgba(34,211,238,.35)}
+
+  /* ---------- Forms ---------- */
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--mut);margin-bottom:6px}
+  .field input,.field select,.field textarea{
+    width:100%;padding:10px 12px;border-radius:6px;
+    background:var(--bg);border:1px solid var(--line2);color:var(--txt);
+    font-family:inherit;font-size:13px;transition:border-color .15s;
+  }
+  .field input.mono,.field select.mono{font-family:'IBM Plex Mono',monospace}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--acc)}
+  .field input::placeholder{color:var(--dim)}
+  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:600px){.form-row{grid-template-columns:1fr}}
+  .check-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;color:var(--txt);cursor:pointer}
+  .check-row input{width:16px;height:16px;accent-color:var(--acc)}
+
+  /* ---------- Data rows & tables ---------- */
+  .data-row{
+    display:flex;justify-content:space-between;align-items:center;gap:12px;
+    padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;
+  }
   .data-row:last-child{border-bottom:0}
-  .data-key{color:var(--mut);font-family:'JetBrains Mono',monospace;font-size:12px}
-  .data-val{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--txt);text-align:right}
+  .data-key{color:var(--mut);font-size:12px}
+  .data-val{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--txt)}
   .data-val.ok{color:var(--ok)} .data-val.err{color:var(--err)} .data-val.warn{color:var(--warn)}
 
-  /* ---------- form ---------- */
-  .field{margin-bottom:12px}
-  .field label{display:block;font-size:11px;color:var(--mut);margin-bottom:5px;
-    font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:1px}
-  .field input,.field select{
-    width:100%;padding:9px 12px;border-radius:6px;
-    background:var(--bg);border:1px solid var(--line2);color:var(--txt);
-    font-family:'JetBrains Mono',monospace;font-size:13px;
-    transition:border-color .15s;
-  }
-  .field input:focus,.field select:focus{outline:none;border-color:var(--acc)}
-  .field input::placeholder{color:var(--dim)}
+  .tbl-wrap{overflow:auto;border:1px solid var(--line);border-radius:6px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:10px 12px;text-align:right;border-bottom:1px solid var(--line)}
+  th{background:var(--bg2);color:var(--mut);font-size:12px;font-weight:600}
+  tr:last-child td{border-bottom:0}
 
-  /* ---------- code block ---------- */
-  .code-block{
-    font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:600;
-    letter-spacing:4px;text-align:center;padding:16px;
+  /* ---------- Pairing Code & QR ---------- */
+  .code-panel{
     background:var(--bg);border:1px solid var(--line2);border-radius:8px;
-    color:var(--acc);text-shadow:0 0 20px rgba(0,229,255,.4);
-    margin:12px 0;
+    padding:16px;margin:12px 0;
+  }
+  .code-block{
+    font-family:'IBM Plex Mono',monospace;font-size:26px;font-weight:700;
+    letter-spacing:4px;text-align:center;padding:12px;direction:ltr;
+    color:var(--acc);user-select:all;
+  }
+  .code-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .qr-box{display:flex;justify-content:center;padding:14px;background:#fff;border-radius:6px;margin:10px auto;width:fit-content}
+  .steps-list{
+    margin-top:12px;padding-right:18px;font-size:12px;color:var(--mut);line-height:1.8;
   }
 
-  /* ---------- qr ---------- */
-  .qr-box{display:flex;justify-content:center;padding:16px;
-    background:#fff;border-radius:8px;margin:12px 0}
-  .qr-box img,.qr-box canvas{border-radius:4px}
-
-  /* ---------- log ---------- */
+  /* ---------- Logs & Commands ---------- */
   .log-box{
-    height:220px;overflow:auto;background:var(--bg);border:1px solid var(--line);
-    border-radius:6px;padding:10px;font-family:'JetBrains Mono',monospace;
-    font-size:12px;line-height:1.6;
+    height:250px;overflow:auto;background:var(--bg);border:1px solid var(--line);
+    border-radius:6px;padding:10px 12px;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.6;
   }
-  .log-line{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
-  .log-time{color:var(--dim);margin-right:8px}
-  .log-msg{color:var(--txt)}
+  .log-line{padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);display:flex;gap:10px}
+  .log-line:last-child{border-bottom:0}
+  .log-time{color:var(--dim);flex-shrink:0;direction:ltr}
+  .log-msg{color:var(--txt);word-break:break-word}
 
-  /* ---------- command list ---------- */
-  .cmd-list{max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:6px}
-  .cmd-item{padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px;
-    display:flex;align-items:center;gap:10px}
-  .cmd-item:last-child{border-bottom:0}
-  .cmd-name{font-family:'JetBrains Mono',monospace;color:var(--acc);font-weight:600;min-width:120px}
-  .cmd-cat{font-size:10px;color:var(--mut);background:var(--bg);border:1px solid var(--line2);
-    border-radius:4px;padding:2px 7px;text-transform:uppercase;letter-spacing:.5px}
-  .cmd-desc{color:var(--mut);font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-  /* ---------- maintenance banner ---------- */
-  .maint-banner{
-    background:linear-gradient(90deg,rgba(255,176,32,.1),rgba(255,176,32,.05));
-    border:1px solid rgba(255,176,32,.4);border-radius:8px;padding:12px 16px;
-    margin-bottom:16px;font-size:13px;color:var(--warn);
+  .cmd-list{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+  .cmd-item{
+    padding:9px 12px;border-bottom:1px solid var(--line);font-size:13px;
     display:flex;align-items:center;gap:10px;
   }
+  .cmd-item:last-child{border-bottom:0}
+  .cmd-name{font-family:'IBM Plex Mono',monospace;color:var(--acc);font-weight:600;min-width:130px;direction:ltr;text-align:left}
+  .cmd-cat{font-size:11px;color:var(--mut);background:var(--card2);border:1px solid var(--line);border-radius:4px;padding:2px 8px}
+  .cmd-desc{color:var(--mut);font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-  /* ---------- login ---------- */
+  /* ---------- Banners ---------- */
+  .banner{padding:10px 14px;border-radius:6px;font-size:13px;margin:10px 0;border:1px solid}
+  .banner.err,.err-banner{background:var(--err-bg);border-color:rgba(239,68,68,.4);color:#fca5a5;padding:10px 12px;border-radius:6px;font-size:13px}
+  .banner.ok,.ok-banner{background:var(--ok-bg);border-color:rgba(16,185,129,.4);color:#6ee7b7;padding:10px 12px;border-radius:6px;font-size:13px}
+  .banner.warn,.maint-banner{background:var(--warn-bg);border-color:rgba(245,158,11,.4);color:#fcd34d;padding:11px 14px;border-radius:6px;font-size:13px;display:flex;align-items:center;gap:10px;margin-bottom:16px}
+
   .login-wrap{min-height:100vh;display:grid;place-items:center;padding:24px}
-  .login-card{width:100%;max-width:400px;background:var(--card);border:1px solid var(--line2);
-    border-radius:12px;padding:32px;position:relative}
-  .login-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
-    background:linear-gradient(90deg,transparent,var(--acc),transparent)}
-  .login-title{font-size:22px;font-weight:700;margin-bottom:4px}
-  .login-sub{color:var(--mut);font-size:13px;margin-bottom:24px}
-  .login-err{background:rgba(255,77,106,.1);border:1px solid rgba(255,77,106,.4);
-    color:var(--err);border-radius:6px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+  .login-card{
+    width:100%;max-width:420px;background:var(--card);border:1px solid var(--line2);
+    border-radius:10px;padding:28px;
+  }
+  .login-title{font-size:20px;font-weight:700;margin-bottom:6px}
+  .login-sub{color:var(--mut);font-size:13px;margin-bottom:20px}
 
-  /* ---------- misc ---------- */
-  .muted{color:var(--mut);font-size:12px}
-  .hint{color:var(--mut);font-size:12px;line-height:1.6}
-  .err-banner{background:rgba(255,77,106,.1);border:1px solid rgba(255,77,106,.4);
-    color:var(--err);border-radius:6px;padding:10px 12px;font-size:13px}
-  .ok-banner{background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.4);
-    color:var(--ok);border-radius:6px;padding:10px 12px;font-size:13px}
-  .hidden{display:none}
-  .mono{font-family:'JetBrains Mono',monospace}
+  .hidden{display:none !important}
+  .mono{font-family:'IBM Plex Mono',monospace}
   .ltr{direction:ltr;text-align:left}
-  .spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.2);
-    border-top-color:var(--acc);border-radius:50%;animation:sp .7s linear infinite;vertical-align:middle}
-  @keyframes sp{to{transform:rotate(360deg)}}
-  .fade-in{animation:fi .3s ease}
-  @keyframes fi{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-  .pulse{animation:pu 2s ease-in-out infinite}
-  @keyframes pu{0%,100%{opacity:1}50%{opacity:.5}}
-  .grid-bg{position:fixed;inset:0;pointer-events:none;z-index:-1;
-    background-image:linear-gradient(rgba(0,229,255,.03) 1px,transparent 1px),
-      linear-gradient(90deg,rgba(0,229,255,.03) 1px,transparent 1px);
-    background-size:60px 60px}
+  .hint{color:var(--mut);font-size:12px;line-height:1.6}
+  .muted{color:var(--mut);font-size:12px}
 `;
 
 function esc(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+	return String(s == null ? '' : s)
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
 }
 
 /* =====================================================================
- * PUBLIC PORTAL (no login)
+ * PUBLIC PORTAL (Sub-Bot Pairing + Control + Live Public Status)
  * ===================================================================== */
-export function renderPublicPortalHtml(err, installRenderJs) {
-  const IJS = installRenderJs || INSTALL_RENDER_JS;
-  return `<!DOCTYPE html>
-<html lang="en">
+export function renderPublicPortalHtml(err) {
+	return `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bot Portal</title>
+<title>بوابة ربط البوت — Yono</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>${SHARED_CSS}</style>
 </head>
 <body>
-<div class="grid-bg"></div>
 
-<div class="topbar">
+<header class="topbar">
   <div class="brand">
-    <div class="brand-mark">B</div>
+    <div class="brand-mark">Y</div>
     <div>
-      <div class="brand-name">Bot Portal</div>
-      <div class="brand-sub">public · pairing · status</div>
+      <div class="brand-name" id="topBotName">Yono Bot</div>
+      <div class="brand-sub">بوابة ربط البوتات الفرعية والحالة المباشرة</div>
     </div>
   </div>
   <div class="topbar-right">
-    <span class="status-dot" id="statusDot"></span>
-    <span class="status-text" id="statusText">connecting</span>
-    <a class="btn sm ghost" href="/admin">Admin →</a>
+    <div class="conn-indicator">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">جاري الاتصال...</span>
+    </div>
+    <a class="btn sm ghost" href="/admin">لوحة الإدارة</a>
   </div>
-</div>
+</header>
 
-<div class="container">
+<main class="container">
+  <section class="kpi-strip">
+    <div class="kpi">
+      <div class="kpi-label">حالة البوت الأساسي</div>
+      <div class="kpi-val" id="k-conn">-</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">الأوامر المتاحة</div>
+      <div class="kpi-val" id="k-plugins">-</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">البوتات الفرعية النشطة</div>
+      <div class="kpi-val ltr" id="k-subs">-</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">مدة التشغيل</div>
+      <div class="kpi-val ltr" id="k-uptime">-</div>
+    </div>
+  </section>
+
   <div class="grid">
-
-    <div class="col-4">
-      <div class="card fade-in">
+    <!-- Sub-Bot Pairing & Control Panel -->
+    <section class="col-7">
+      <div class="card">
         <div class="card-head">
-          <div class="card-title"><span class="dot"></span>Status</div>
+          <div class="card-title"><span class="accent"></span>ربط وإدارة البوت الفرعي (Sub-Bot)</div>
+          <span class="muted" id="subSessionBadge">غير مسجل</span>
         </div>
-        <div class="data-row"><span class="data-key">connection</span><span class="data-val" id="s-conn">-</span></div>
-        <div class="data-row"><span class="data-key">registered</span><span class="data-val" id="s-reg">-</span></div>
-        <div class="data-row"><span class="data-key">login_mode</span><span class="data-val" id="s-mode">-</span></div>
-        <div class="data-row"><span class="data-key">bot_number</span><span class="data-val ltr" id="s-phone">-</span></div>
-        <div class="data-row"><span class="data-key">bot_name</span><span class="data-val" id="s-name">-</span></div>
-        <div class="data-row"><span class="data-key">plugins</span><span class="data-val" id="s-plugins">-</span></div>
-        <div class="data-row"><span class="data-key">memory</span><span class="data-val" id="s-mem">-</span></div>
-        <div class="data-row"><span class="data-key">uptime</span><span class="data-val" id="s-uptime">-</span></div>
-        <div class="data-row"><span class="data-key">commit</span><span class="data-val ltr" id="s-commit">-</span></div>
-      </div>
-    </div>
 
-    <div class="col-8">
-      <div class="card fade-in">
-        <div class="card-head">
-          <div class="card-title"><span class="dot"></span>Sub-bot Pairing</div>
-        </div>
-        <div class="hint" style="margin-bottom:12px">Pair your own WhatsApp number as a sub-bot. You will receive a control code to manage it.</div>
-        <div id="subPairForm">
-          <div class="field">
-            <label>your phone number (with country code)</label>
-            <input id="subPhone" class="ltr mono" inputmode="numeric" placeholder="201xxxxxxxxx"/>
+        <div id="subAuthArea">
+          <div class="tabs">
+            <button type="button" class="tab active" id="tabNewBtn" onclick="switchTab('new')">ربط رقم جديد</button>
+            <button type="button" class="tab" id="tabLoginBtn" onclick="switchTab('login')">لدي كود تحكم</button>
           </div>
-          <button class="primary" onclick="pairSubBot()">Pair as sub-bot →</button>
-          <p id="subPairMsg" class="muted" style="margin-top:8px"></p>
-        </div>
-        <div id="subBotInfo" class="hidden"></div>
-      </div>
-    </div>
 
-    <div class="col-6">
-      <div class="card fade-in">
-        <div class="card-head">
-          <div class="card-title"><span class="dot"></span>Send Message</div>
-        </div>
-        <div class="field">
-          <label>target number</label>
-          <input id="sendNum" inputmode="numeric" placeholder="201xxxxxxxxx"/>
-        </div>
-        <div class="field">
-          <label>message</label>
-          <input id="sendMsg" placeholder="hello"/>
-        </div>
-        <button class="primary" onclick="sendMsg()">Send →</button>
-        <p id="sendMsgOut" class="muted" style="margin-top:8px"></p>
-      </div>
-    </div>
+          <!-- Tab 1: New pairing -->
+          <div id="tabNewPanel">
+            <p class="hint" style="margin-bottom:14px">
+              اربط رقم واتساب الخاص بك ليصبح بوتاً فرعياً مستقلاً. أدخل رقمك بالرمز الدولي بدون علامة + أو أصفار زائدة.
+            </p>
+            <div class="form-row">
+              <div class="field">
+                <label for="subPhone">رقم الهاتف (مع رمز الدولة)</label>
+                <input id="subPhone" class="mono ltr" inputmode="numeric" placeholder="201xxxxxxxxx"/>
+              </div>
+              <div class="field">
+                <label for="subPairMode">طريقة الربط</label>
+                <select id="subPairMode">
+                  <option value="code">كود ربط (8 أحرف وأرقام)</option>
+                  <option value="qr">رمز QR</option>
+                </select>
+              </div>
+            </div>
+            <button type="button" class="primary" id="btnPairSub" onclick="pairSubBot()">إصدار كود الربط الآن</button>
+            <div id="subPairMsg" class="hidden" style="margin-top:12px"></div>
+          </div>
 
-    <div class="col-6">
-      <div class="card fade-in">
+          <!-- Tab 2: Control code login -->
+          <div id="tabLoginPanel" class="hidden">
+            <p class="hint" style="margin-bottom:14px">
+              أدخل رقم هاتفك وكود التحكم الخاص بك (مثال: LB-XXXX-YYYY) لإدارة بوتك أو إعادة إصدار كود الربط.
+            </p>
+            <div class="form-row">
+              <div class="field">
+                <label for="authPhone">رقم الهاتف</label>
+                <input id="authPhone" class="mono ltr" inputmode="numeric" placeholder="201xxxxxxxxx"/>
+              </div>
+              <div class="field">
+                <label for="authCode">كود التحكم</label>
+                <input id="authCode" class="mono ltr" placeholder="LB-XXXX-YYYY"/>
+              </div>
+            </div>
+            <button type="button" class="primary" onclick="loginSubBot()">فتح لوحة البوت الفرعي</button>
+            <div id="subAuthMsg" class="hidden" style="margin-top:12px"></div>
+          </div>
+        </div>
+
+        <!-- Authenticated / Active Sub-Bot View -->
+        <div id="subActivePanel" class="hidden">
+          <div class="data-row">
+            <span class="data-key">الرقم</span>
+            <span class="data-val ltr" id="sbPhone">-</span>
+          </div>
+          <div class="data-row">
+            <span class="data-key">الحالة في واتساب</span>
+            <span class="data-val" id="sbState">-</span>
+          </div>
+          <div class="data-row">
+            <span class="data-key">كود التحكم (احفظه لإدارة البوت لاحقاً)</span>
+            <span style="display:flex;align-items:center;gap:8px">
+              <span class="data-val ltr" id="sbControlCode" style="color:var(--acc);font-weight:700">-</span>
+              <button type="button" class="btn sm ghost" onclick="copyText($('sbControlCode').textContent, this)">نسخ</button>
+            </span>
+          </div>
+
+          <!-- Live Pairing Code / QR Box -->
+          <div id="sbPairingBox" class="code-panel hidden">
+            <div class="hint" id="sbPairingTitle" style="text-align:center">أدخل هذا الكود في واتساب للربط:</div>
+            <div id="sbPairCodeText" class="code-block hidden"></div>
+            <div id="sbQrBox" class="qr-box hidden"></div>
+            <div class="code-actions" id="sbCopyCodeWrap">
+              <button type="button" class="btn sm primary" id="sbCopyCodeBtn" onclick="copyText($('sbPairCodeText').textContent, this)">نسخ كود واتساب</button>
+              <button type="button" class="btn sm" onclick="subAction('repair','code')">إصدار كود جديد</button>
+              <button type="button" class="btn sm" onclick="subAction('repair','qr')">عرض QR بدلاً من الكود</button>
+            </div>
+            <ol class="steps-list">
+              <li>افتح تطبيق واتساب على هاتفك ثم اختر <b>الأجهزة المرتبطة (Linked Devices)</b>.</li>
+              <li>اضغط <b>ربط جهاز (Link a Device)</b> ثم اختر <b>الربط برقم الهاتف</b> في الأسفل.</li>
+              <li>أدخل الكود المكون من 8 خانات أعلاه واضغط تأكيد.</li>
+            </ol>
+          </div>
+
+          <div id="sbErrorBanner" class="banner err hidden"></div>
+
+          <!-- Sub-Bot Settings -->
+          <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+            <div class="form-row">
+              <div class="field">
+                <label for="sbMode">وضع التشغيل</label>
+                <select id="sbMode">
+                  <option value="public">عام (يرد على الجميع)</option>
+                  <option value="self">خاص (يرد على رقمك فقط)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="sbPrefix">بادئة الأوامر</label>
+                <input id="sbPrefix" class="mono ltr" maxlength="4" value="."/>
+              </div>
+            </div>
+            <div class="field">
+              <label for="sbCustomName">اسم البوت المخصص</label>
+              <input id="sbCustomName" placeholder="Yono Sub-Bot"/>
+            </div>
+            <label class="check-row">
+              <input type="checkbox" id="sbPaused"/>
+              <span>إيقاف الردود مؤقتاً (Pause)</span>
+            </label>
+
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+              <button type="button" class="primary" onclick="saveSubSettings()">حفظ الإعدادات</button>
+              <button type="button" class="btn" onclick="subAction('repair','code')">إعادة الربط</button>
+              <button type="button" class="btn" onclick="subAction('regenerate-code')">تغيير كود التحكم</button>
+              <button type="button" class="btn danger" onclick="subAction('reset-session')">حذف الجلسة</button>
+              <button type="button" class="btn ghost" onclick="subAction('logout')">خروج</button>
+            </div>
+            <div id="sbActionMsg" class="hidden" style="margin-top:10px"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- System Status & Event Log -->
+    <section class="col-5">
+      <div class="card" style="margin-bottom:16px">
         <div class="card-head">
-          <div class="card-title"><span class="dot"></span>Event Log</div>
+          <div class="card-title"><span class="accent"></span>معلومات الخادم</div>
+        </div>
+        <div class="data-row"><span class="data-key">اسم البوت</span><span class="data-val" id="s-name">-</span></div>
+        <div class="data-row"><span class="data-key">حالة الجلسة</span><span class="data-val" id="s-reg">-</span></div>
+        <div class="data-row"><span class="data-key">وضع الربط الافتراضي</span><span class="data-val" id="s-mode">-</span></div>
+        <div class="data-row"><span class="data-key">الذاكرة المستخدمة</span><span class="data-val ltr" id="s-mem">-</span></div>
+        <div class="data-row"><span class="data-key">رقم الإصدار</span><span class="data-val ltr" id="s-commit">-</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title"><span class="accent"></span>سجل الأحداث المباشر</div>
         </div>
         <div class="log-box" id="log"></div>
       </div>
-    </div>
-
+    </section>
   </div>
-</div>
+</main>
 
-${err ? `<div style="position:fixed;bottom:20px;left:20px;right:20px" class="err-banner">${esc(err)}</div>` : ''}
+${err ? `<div style="position:fixed;bottom:16px;left:16px;right:16px;max-width:600px;margin:auto" class="err-banner">${esc(err)}</div>` : ''}
 
 <script>
 const $ = (id) => document.getElementById(id);
-let lastQR = null, qrObj = null;
+let subQrObj = null, lastSubQr = null;
 
 async function api(path, opts){
   const r = await fetch(path, opts);
-  if(r.status===503){ location.reload(); throw new Error('maintenance'); }
-  return r.json().catch(()=>({}));
+  if(r.status === 503){ location.reload(); throw new Error('maintenance'); }
+  const data = await r.json().catch(() => ({}));
+  return { status: r.status, ...data };
 }
-function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-${IJS}
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function showMsg(el, text, isErr){
+  if(!el) return;
+  el.textContent = text;
+  el.className = isErr ? 'err-banner' : 'ok-banner';
+}
+
+function copyText(text, btn){
+  if(!text) return;
+  navigator.clipboard?.writeText(String(text).trim()).then(() => {
+    if(btn){
+      const old = btn.textContent;
+      btn.textContent = 'تم النسخ ✓';
+      setTimeout(() => { btn.textContent = old; }, 1500);
+    }
+  }).catch(() => {});
+}
+
+function switchTab(name){
+  const isNew = name === 'new';
+  $('tabNewBtn').className = isNew ? 'tab active' : 'tab';
+  $('tabLoginBtn').className = !isNew ? 'tab active' : 'tab';
+  $('tabNewPanel').className = isNew ? '' : 'hidden';
+  $('tabLoginPanel').className = !isNew ? '' : 'hidden';
+}
+
+function renderSubQr(qr){
+  const box = $('sbQrBox');
+  if(!box) return;
+  if(!qr){ box.className = 'qr-box hidden'; box.innerHTML = ''; lastSubQr = null; return; }
+  box.className = 'qr-box';
+  if(qr === lastSubQr) return;
+  lastSubQr = qr;
+  box.innerHTML = '';
+  try {
+    subQrObj = new QRCode(box, { text: qr, width: 210, height: 210, correctLevel: QRCode.CorrectLevel.M });
+  } catch { box.textContent = qr; }
+}
+
+function applySubBotView(bot){
+  if(!bot){
+    $('subAuthArea').className = '';
+    $('subActivePanel').className = 'hidden';
+    $('subSessionBadge').textContent = 'غير مسجل';
+    return;
+  }
+  $('subAuthArea').className = 'hidden';
+  $('subActivePanel').className = '';
+  $('subSessionBadge').textContent = bot.pairStatus === 'connected' ? 'متصل الآن ✓' : (bot.pairStatus || 'جاهز');
+  $('sbPhone').textContent = '+' + bot.phone;
+  $('sbControlCode').textContent = bot.controlCode || '-';
+
+  const stEl = $('sbState');
+  if(bot.pairStatus === 'connected' || bot.connection === 'open'){
+    stEl.textContent = 'متصل بالواتساب ✓';
+    stEl.className = 'data-val ok';
+  } else if(bot.pairStatus === 'pairing_code'){
+    stEl.textContent = 'بانتظار إدخال كود الربط';
+    stEl.className = 'data-val warn';
+  } else if(bot.pairStatus === 'qr'){
+    stEl.textContent = 'بانتظار مسح QR';
+    stEl.className = 'data-val warn';
+  } else if(bot.pairStatus === 'error' || bot.pairStatus === 'logged_out'){
+    stEl.textContent = 'غير متصل (' + bot.pairStatus + ')';
+    stEl.className = 'data-val err';
+  } else {
+    stEl.textContent = bot.connection || bot.pairStatus || 'خامل';
+    stEl.className = 'data-val';
+  }
+
+  const pairBox = $('sbPairingBox');
+  const codeEl = $('sbPairCodeText');
+  const copyBtn = $('sbCopyCodeBtn');
+  if(bot.pairStatus !== 'connected' && (bot.pairingCode || bot.qr)){
+    pairBox.className = 'code-panel';
+    if(bot.pairingCode){
+      codeEl.className = 'code-block';
+      codeEl.textContent = bot.pairingCode;
+      if(copyBtn) copyBtn.className = 'btn sm primary';
+      $('sbPairingTitle').textContent = 'أدخل كود الربط في واتساب (الأجهزة المرتبطة):';
+    } else {
+      codeEl.className = 'code-block hidden';
+      if(copyBtn) copyBtn.className = 'btn sm primary hidden';
+      $('sbPairingTitle').textContent = 'امسح رمز QR من تطبيق واتساب (الأجهزة المرتبطة):';
+    }
+    if(bot.qr){
+      renderSubQr(bot.qr);
+    } else {
+      renderSubQr(null);
+    }
+  } else {
+    pairBox.className = 'code-panel hidden';
+    renderSubQr(null);
+  }
+
+  const errEl = $('sbErrorBanner');
+  if(bot.pairError){
+    errEl.className = 'banner err';
+    errEl.textContent = 'تنبيه: ' + bot.pairError;
+  } else {
+    errEl.className = 'banner err hidden';
+  }
+
+  const actId = document.activeElement ? document.activeElement.id : '';
+  if(!['sbMode','sbPrefix','sbCustomName','sbPaused'].includes(actId) && bot.settings){
+    $('sbMode').value = bot.settings.mode === 'self' ? 'self' : 'public';
+    $('sbPrefix').value = bot.settings.prefix || '.';
+    $('sbCustomName').value = bot.settings.customName || '';
+    $('sbPaused').checked = !!bot.settings.paused;
+  }
+}
 
 async function pairSubBot(){
-  const phone = ($('subPhone') && $('subPhone').value || '').trim();
+  const phone = ($('subPhone').value || '').trim();
+  const mode = $('subPairMode').value || 'code';
   const msg = $('subPairMsg');
-  if(!phone){ if(msg) msg.textContent='Enter your phone number'; return; }
+  const btn = $('btnPairSub');
+  if(!phone){ showMsg(msg, 'أدخل رقم الهاتف أولاً مع رمز الدولة', true); return; }
+  btn.disabled = true;
+  btn.textContent = 'جاري إنشاء جلسة الربط...';
   try{
-    const r = await api('/api/public/sub/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone})});
-    if(r.ok){
-      if(msg){ msg.textContent = '✓ Paired! Control code: '+r.controlCode; msg.className='ok-banner'; }
-      const info = $('subBotInfo');
-      if(info){
-        info.className='';
-        info.innerHTML = '<div class="data-row"><span class="data-key">phone</span><span class="data-val ltr">'+esc(r.phone)+'</span></div>'
-          +'<div class="data-row"><span class="data-key">control_code</span><span class="data-val ltr" style="color:var(--acc)">'+esc(r.controlCode)+'</span></div>'
-          +'<div class="hint" style="margin-top:8px">Save your control code! Use it to manage your sub-bot.</div>';
-      }
+    const r = await api('/api/public/sub/pair', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ phone, mode })
+    });
+    if(r.ok && r.bot){
+      showMsg(msg, r.message || 'تم إصدار بيانات الربط', false);
+      applySubBotView(r.bot);
     } else {
-      if(msg){ msg.textContent = '⚠ '+(r.error||'Failed'); msg.className='err-banner'; }
+      showMsg(msg, r.error || 'تعذر بدء الربط', true);
     }
-  }catch(e){ if(msg){ msg.textContent='⚠ '+e.message; msg.className='err-banner'; } }
+  } catch(e){
+    showMsg(msg, e.message || 'حدث خطأ في الاتصال', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'إصدار كود الربط الآن';
+  }
 }
 
-async function sendMsg(){
-  const out = $('sendMsgOut');
+async function loginSubBot(){
+  const phone = ($('authPhone').value || '').trim();
+  const code = ($('authCode').value || '').trim();
+  const msg = $('subAuthMsg');
   try{
-    const r = await api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action:'send',to:$('sendNum').value,text:$('sendMsg').value})});
-    out.textContent = r.ok ? '✓ sent' : ('⚠ '+(r.message||'failed'));
-    out.className = r.ok ? 'ok-banner' : 'err-banner';
-  }catch(e){ out.textContent='⚠ '+e.message; out.className='err-banner'; }
+    const r = await api('/api/public/sub/auth', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ phone, code })
+    });
+    if(r.ok && r.bot){
+      msg.className = 'hidden';
+      applySubBotView(r.bot);
+    } else {
+      showMsg(msg, r.error || 'بيانات الدخول غير صحيحة', true);
+    }
+  } catch(e){ showMsg(msg, e.message, true); }
 }
 
-function fmtUptime(ms){ const s=Math.floor(ms/1000); const d=Math.floor(s/86400); const h=Math.floor((s%86400)/3600); const m=Math.floor((s%3600)/60); return (d?d+'d ':'')+h+'h '+m+'m'; }
-function renderQR(qr){
-  if(!qr){ const e=$('qr'); if(e) e.innerHTML=''; lastQR=null; return; }
-  if(qr===lastQR) return; lastQR=qr;
-  const e=$('qr'); if(!e) return; e.innerHTML='';
-  try{ qrObj = new QRCode(e,{text:qr,width:200,height:200,correctLevel:QRCode.CorrectLevel.M}); }
-  catch(e2){ e.textContent=qr; }
+async function saveSubSettings(){
+  const msg = $('sbActionMsg');
+  try{
+    const r = await api('/api/public/sub/settings', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        mode: $('sbMode').value,
+        prefix: $('sbPrefix').value,
+        customName: $('sbCustomName').value,
+        paused: $('sbPaused').checked
+      })
+    });
+    if(r.ok){
+      showMsg(msg, r.message || 'تم الحفظ', false);
+      if(r.bot) applySubBotView(r.bot);
+    } else showMsg(msg, r.error || 'فشل الحفظ', true);
+  } catch(e){ showMsg(msg, e.message, true); }
+}
+
+async function subAction(action, mode){
+  if(action === 'reset-session' && !confirm('هل تريد حذف جلسة واتساب لهذا البوت الفرعي؟')) return;
+  const msg = $('sbActionMsg');
+  showMsg(msg, 'جاري التنفيذ...', false);
+  try{
+    const r = await api('/api/public/sub/action', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ action, mode })
+    });
+    if(action === 'logout'){
+      applySubBotView(null);
+      return;
+    }
+    if(r.ok){
+      showMsg(msg, r.message || 'تم التنفيذ', false);
+      if(r.bot) applySubBotView(r.bot);
+    } else {
+      showMsg(msg, r.error || 'تعذر تنفيذ الطلب', true);
+    }
+  } catch(e){ showMsg(msg, e.message, true); }
+}
+
+function fmtUptime(sec){
+  const s = Math.floor(sec || 0);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return (d ? d + 'd ' : '') + h + 'h ' + m + 'm';
 }
 
 async function refresh(){
-  let s;
-  try{ s = await api('/api/status'); }catch(e){ return; }
-  const dot = $('statusDot'); const txt = $('statusText');
-  if(s.connected){ dot.className='status-dot on'; txt.textContent='online'; }
-  else { dot.className='status-dot off'; txt.textContent='offline'; }
-  $('s-conn').textContent = s.connection || '-';
-  $('s-reg').textContent = s.sessionRegistered ? 'yes' : 'no';
-  $('s-mode').textContent = s.loginMode==='qr'?'qr':'code';
-  $('s-phone').textContent = s.configuredPhone || s.phone || '-';
-  $('s-name').textContent = s.name || '-';
-  $('s-plugins').textContent = s.commands || 0;
-  $('s-mem').textContent = (s.memoryMB||0)+' MB';
-  $('s-uptime').textContent = fmtUptime((s.uptimeSec||0)*1000);
-  $('s-commit').textContent = s.commit || '-';
-  const log = $('log');
-  if(log) log.innerHTML = (s.events||[]).map(e=>{
-    const t = new Date(e.ts||Date.now()).toLocaleTimeString();
-    return '<div class="log-line"><span class="log-time">'+t+'</span><span class="log-msg">'+esc(e.text||e.message||'')+'</span></div>';
-  }).join('');
-  if(log) log.scrollTop = log.scrollHeight;
+  try{
+    const s = await api('/api/public/status');
+    if(s.ok){
+      const dot = $('statusDot'), txt = $('statusText');
+      if(s.connected){
+        dot.className = 'status-dot on';
+        txt.textContent = 'متصل';
+        $('k-conn').textContent = 'متصل ✓';
+        $('k-conn').className = 'kpi-val ok';
+      } else if(s.connection === 'connecting' || s.connection === 'starting'){
+        dot.className = 'status-dot warn';
+        txt.textContent = 'جاري الاتصال';
+        $('k-conn').textContent = 'جاري الاتصال';
+        $('k-conn').className = 'kpi-val';
+      } else {
+        dot.className = 'status-dot off';
+        txt.textContent = 'غير متصل';
+        $('k-conn').textContent = 'غير متصل';
+        $('k-conn').className = 'kpi-val err';
+      }
+      if(s.botName) $('topBotName').textContent = s.botName;
+      $('k-plugins').textContent = s.commands || 0;
+      $('k-subs').textContent = (s.activeSubBotsCount || 0) + ' / ' + (s.subBotsCount || 0);
+      $('k-uptime').textContent = fmtUptime(s.uptimeSec);
+      $('s-name').textContent = s.botName || '-';
+      $('s-reg').textContent = s.sessionRegistered ? 'مسجلة' : 'غير مسجلة';
+      $('s-mode').textContent = s.loginMode === 'qr' ? 'QR' : 'Pairing Code';
+      $('s-mem').textContent = (s.memoryMB || 0) + ' MB';
+      $('s-commit').textContent = s.commit || '-';
+
+      const log = $('log');
+      if(log){
+        log.innerHTML = (s.events || []).map(e => {
+          const t = new Date(e.ts || Date.now()).toLocaleTimeString();
+          return '<div class="log-line"><span class="log-time">'+esc(t)+'</span><span class="log-msg">'+esc(e.text || '')+'</span></div>';
+        }).join('') || '<div class="muted">لا توجد أحداث بعد</div>';
+        log.scrollTop = log.scrollHeight;
+      }
+    }
+  } catch {}
+
+  try{
+    const sub = await api('/api/public/sub/me');
+    if(sub.authenticated && sub.bot) applySubBotView(sub.bot);
+  } catch {}
 }
 
 setInterval(refresh, 3000);
@@ -383,187 +738,256 @@ refresh();
 }
 
 /* =====================================================================
- * INSTALL RENDER JS (shared between public & admin)
+ * ADMIN LOGIN (/admin unauthenticated)
  * ===================================================================== */
-const INSTALL_RENDER_JS_PUBLIC = `function renderInstall(d){
-  const box=document.getElementById('installBody');
-  if(!box) return;
-  const activeId=document.activeElement?document.activeElement.id:'';
-  if(activeId==='lm' || activeId==='ph') return;
-  const sig=[!!d.connected,d.pairingCode||'',d.qr?'1':'0',d.loginMode||'',d.configuredPhone||''].join('|');
-  if(window._lastInstallSig===sig) return;
-  window._lastInstallSig=sig;
-  if(d.connected){
-    box.innerHTML='<div class="hint">Bot is already connected to WhatsApp. Use <b>Reset Session</b> (admin) to switch numbers.</div>';
-    return;
-  }
-  let html='';
-  if(d.pairingCode){
-    html+='<div class="hint">Open WhatsApp → Linked devices → Link with phone number, then enter:</div><div class="code">'+esc(d.pairingCode)+'</div>';
-  }
-  if(d.qr){
-    html+='<div class="hint">Scan this QR from WhatsApp:</div><div class="qr-box" id="qr"></div>';
-  }
-  if(!d.pairingCode && !d.qr){
-    html+=(d.loginMode==='code' && !d.configuredPhone)
-      ? '<div class="hint">Enter the bot number below, then press <b>Pair now</b> to issue a pairing code.</div>'
-      : '<div class="hint">Waiting for a QR code or pairing code...</div>';
-  }
-  html+='<div style="margin-top:14px">'
-     +'<div class="field"><label>login method</label>'
-     +'<select id="lm"><option value="code"'+(d.loginMode==='code'?' selected':'')+'>pairing code</option>'
-     +'<option value="qr"'+(d.loginMode==='qr'?' selected':'')+'>qr code</option></select></div>'
-     +'<div class="field"><label>bot number</label>'
-     +'<input id="ph" class="ltr mono" value="'+esc(d.configuredPhone)+'" placeholder="2010xxxxxxxx"></div>'
-     +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
-     +'<button type="button" class="primary sm" onclick="pairMainNow()">Pair now</button>'
-     +'<button type="button" class="btn sm" onclick="applyLogin()">Save &amp; restart</button>'
-     +'<button type="button" class="btn sm ghost" onclick="refresh()">Refresh</button></div></div>';
-  box.innerHTML=html;
-  if(d.qr) renderQR(d.qr);
-}`;
-
-/* =====================================================================
- * ADMIN PANEL (login required)
- * ===================================================================== */
-export function renderAdminPanelHtml(installRenderJs) {
-  const IJS = installRenderJs || INSTALL_RENDER_JS_PUBLIC;
-  return `<!DOCTYPE html>
-<html lang="en">
+export function renderAdminLoginHtml(err) {
+	return `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bot Admin</title>
+<title>دخول الإدارة — Yono</title>
+<style>${SHARED_CSS}</style>
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+      <div class="brand-mark">A</div>
+      <div>
+        <div class="login-title" style="margin-bottom:0">لوحة تحكم الإدارة</div>
+        <div class="muted">إدارة البوت الأساسي والبوتات الفرعية</div>
+      </div>
+    </div>
+    ${err ? `<div class="err-banner" style="margin-bottom:14px">${esc(err)}</div>` : ''}
+    <form method="POST" action="/login">
+      <div class="field">
+        <label for="password">كلمة مرور الإدارة (من ملف system/panel-config.json)</label>
+        <input id="password" name="password" type="password" class="mono ltr" required autofocus placeholder="أدخل كلمة المرور"/>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:16px">
+        <button type="submit" class="primary">تسجيل الدخول</button>
+        <a class="btn ghost sm" href="/">العودة لبوابة الربط</a>
+      </div>
+    </form>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
+/* =====================================================================
+ * INSTALL RENDER JS (Admin main bot pairing box)
+ * ===================================================================== */
+export const INSTALL_RENDER_JS = `function formatPairErr(err){
+  const raw = String(err || '').trim();
+  if(!raw) return '';
+  if(/rate-overlimit/i.test(raw)){
+    return 'فرض واتساب تقييداً مؤقتاً لكثرة طلبات كود الربط (rate-overlimit). انتظر 1-2 دقيقة ثم اضغط إصدار كود الربط، أو اختر رمز QR.';
+  }
+  return 'تعذر إصدار كود الربط: ' + raw;
+}
+function renderInstall(d){
+  const box = document.getElementById('installBody');
+  if(!box) return;
+  const activeId = document.activeElement ? document.activeElement.id : '';
+  if(activeId === 'lm' || activeId === 'ph') return;
+  const showQr = d.loginMode === 'qr' && !!d.qr;
+  const sig = [!!d.connected, d.pairingCode || '', d.pairingError || '', showQr ? '1' : '0', d.loginMode || '', d.configuredPhone || ''].join('|');
+  if(window._lastInstallSig === sig) return;
+  window._lastInstallSig = sig;
+  if(d.connected){
+    box.innerHTML = '<div class="ok-banner">البوت الأساسي متصل بالواتساب بنجاح ✓ — لتغيير الرقم استخدم <b>إعادة ضبط الجلسة</b>.</div>';
+    return;
+  }
+  let html = '';
+  if(d.pairingCode && d.loginMode !== 'qr'){
+    html += '<div class="code-panel">'
+      + '<div class="hint" style="text-align:center">افتح واتساب ← الأجهزة المرتبطة ← الربط برقم الهاتف ثم أدخل:</div>'
+      + '<div class="code-block" id="mainPairCodeVal">' + esc(d.pairingCode) + '</div>'
+      + '<div class="code-actions"><button type="button" class="btn sm primary" onclick="copyText(document.getElementById(\\'mainPairCodeVal\\').textContent, this)">نسخ كود الربط</button></div>'
+      + '</div>';
+  }
+  if(showQr){
+    html += '<div class="code-panel"><div class="hint" style="text-align:center">امسح رمز QR من تطبيق واتساب:</div><div class="qr-box" id="qr"></div></div>';
+  }
+  if(d.pairingError && d.loginMode !== 'qr' && !d.pairingCode){
+    html += '<div class="banner err">' + esc(formatPairErr(d.pairingError)) + '</div>';
+  } else if(!d.pairingCode && !showQr){
+    html += (d.loginMode === 'code' && !d.configuredPhone)
+      ? '<div class="hint">أدخل رقم البوت بالرمز الدولي ثم اضغط <b>إصدار كود الربط</b>.</div>'
+      : '<div class="hint">بانتظار استجابة خادم واتساب لإصدار ' + (d.loginMode === 'qr' ? 'رمز QR' : 'كود الربط') + '...</div>';
+  }
+  html += '<div style="margin-top:14px"><div class="form-row">'
+     + '<div class="field"><label>طريقة الربط</label>'
+     + '<select id="lm"><option value="code"' + (d.loginMode === 'code' ? ' selected' : '') + '>كود ربط (Pairing Code)</option>'
+     + '<option value="qr"' + (d.loginMode === 'qr' ? ' selected' : '') + '>رمز QR</option></select></div>'
+     + '<div class="field"><label>رقم البوت الأساسي</label>'
+     + '<input id="ph" class="ltr mono" value="' + esc(d.configuredPhone) + '" placeholder="201505xxxxxx"></div></div>'
+     + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+     + '<button type="button" class="primary sm" onclick="pairMainNow()">إصدار كود الربط الآن</button>'
+     + '<button type="button" class="btn sm" onclick="applyLogin()">حفظ وتطبيق الطريقة</button>'
+     + '<button type="button" class="btn sm ghost" onclick="refresh()">تحديث</button></div></div>';
+  box.innerHTML = html;
+  if(showQr) renderQR(d.qr);
+}`;
+
+/* =====================================================================
+ * ADMIN PANEL (authenticated)
+ * ===================================================================== */
+export function renderAdminPanelHtml(installRenderJs) {
+	const IJS = installRenderJs || INSTALL_RENDER_JS;
+	return `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>لوحة الإدارة — Yono</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>${SHARED_CSS}</style>
 </head>
 <body>
-<div class="grid-bg"></div>
 
-<div class="topbar">
+<header class="topbar">
   <div class="brand">
     <div class="brand-mark">A</div>
     <div>
-      <div class="brand-name">Admin Panel</div>
-      <div class="brand-sub">control · monitor · deploy</div>
+      <div class="brand-name">لوحة تحكم الإدارة</div>
+      <div class="brand-sub">إدارة البوت الأساسي · البوتات الفرعية · الأوامر</div>
     </div>
   </div>
   <div class="topbar-right">
-    <span class="status-dot" id="statusDot"></span>
-    <span class="status-text" id="statusText">connecting</span>
-    <a class="btn sm ghost" href="/">Public</a>
-    <button class="btn sm danger" onclick="logout()">Logout</button>
+    <div class="conn-indicator">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">جاري الاتصال...</span>
+    </div>
+    <a class="btn sm ghost" href="/">البوابة العامة</a>
+    <button type="button" class="btn sm danger" onclick="logout()">تسجيل الخروج</button>
   </div>
-</div>
+</header>
 
-<div class="container">
+<main class="container">
   <div id="maintBanner" class="maint-banner hidden">
-    <span>⚠</span><span>Maintenance mode is <b>ON</b> — visitors see a maintenance screen.</span>
+    <span>⚠</span><span>وضع الصيانة <b>مفعّل</b> — الزوار يرون شاشة الصيانة حالياً.</span>
   </div>
 
   <div class="grid">
-
-    <!-- status -->
-    <div class="col-4">
-      <div class="card fade-in">
-        <div class="card-head"><div class="card-title"><span class="dot"></span>Status</div></div>
-        <div class="data-row"><span class="data-key">connection</span><span class="data-val" id="s-conn">-</span></div>
-        <div class="data-row"><span class="data-key">registered</span><span class="data-val" id="s-reg">-</span></div>
-        <div class="data-row"><span class="data-key">login_mode</span><span class="data-val" id="s-mode">-</span></div>
-        <div class="data-row"><span class="data-key">bot_number</span><span class="data-val ltr" id="s-phone">-</span></div>
-        <div class="data-row"><span class="data-key">bot_name</span><span class="data-val" id="s-name">-</span></div>
-        <div class="data-row"><span class="data-key">plugins</span><span class="data-val" id="s-plugins">-</span></div>
-        <div class="data-row"><span class="data-key">memory</span><span class="data-val" id="s-mem">-</span></div>
-        <div class="data-row"><span class="data-key">uptime</span><span class="data-val" id="s-uptime">-</span></div>
-        <div class="data-row"><span class="data-key">commit</span><span class="data-val ltr" id="s-commit">-</span></div>
+    <!-- Status -->
+    <section class="col-4">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="accent"></span>حالة البوت الأساسي</div></div>
+        <div class="data-row"><span class="data-key">الاتصال</span><span class="data-val" id="s-conn">-</span></div>
+        <div class="data-row"><span class="data-key">الجلسة</span><span class="data-val" id="s-reg">-</span></div>
+        <div class="data-row"><span class="data-key">طريقة الربط</span><span class="data-val" id="s-mode">-</span></div>
+        <div class="data-row"><span class="data-key">الرقم</span><span class="data-val ltr" id="s-phone">-</span></div>
+        <div class="data-row"><span class="data-key">الاسم</span><span class="data-val" id="s-name">-</span></div>
+        <div class="data-row"><span class="data-key">الإضافات (Plugins)</span><span class="data-val" id="s-plugins">-</span></div>
+        <div class="data-row"><span class="data-key">الذاكرة</span><span class="data-val ltr" id="s-mem">-</span></div>
+        <div class="data-row"><span class="data-key">مدة التشغيل</span><span class="data-val ltr" id="s-uptime">-</span></div>
+        <div class="data-row"><span class="data-key">الإصدار</span><span class="data-val ltr" id="s-commit">-</span></div>
       </div>
-    </div>
+    </section>
 
-    <!-- pairing -->
-    <div class="col-8">
-      <div class="card fade-in">
-        <div class="card-head"><div class="card-title"><span class="dot"></span>WhatsApp Pairing</div></div>
+    <!-- Main Pairing -->
+    <section class="col-8">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="accent"></span>ربط البوت الأساسي بواتساب</div></div>
         <div id="installBody"></div>
       </div>
-    </div>
+    </section>
 
-    <!-- control -->
-    <div class="col-6">
-      <div class="card fade-in">
-        <div class="card-head"><div class="card-title"><span class="dot"></span>Control</div></div>
+    <!-- Controls & Send -->
+    <section class="col-6">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="accent"></span>التحكم وإرسال رسالة تجريبية</div></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
-          <button class="btn" onclick="act('restart')">↻ Restart</button>
-          <button class="btn danger" onclick="act('reset-session')">⊘ Reset Session</button>
-          <button class="btn" onclick="act('stop')">■ Stop</button>
-          <button class="btn" style="border-color:var(--ok);color:var(--ok)" onclick="act('start')">▶ Start</button>
+          <button type="button" class="btn" onclick="act('restart')">↻ إعادة تشغيل</button>
+          <button type="button" class="btn danger" onclick="act('reset-session')">⊘ إعادة ضبط الجلسة</button>
+          <button type="button" class="btn" onclick="act('stop')">■ إيقاف</button>
+          <button type="button" class="btn ok" onclick="act('start')">▶ تشغيل</button>
         </div>
-        <div class="field"><label>target number</label><input id="sendNum" inputmode="numeric" placeholder="201xxxxxxxxx"/></div>
-        <div class="field"><label>message</label><input id="sendMsg" placeholder="hello"/></div>
-        <button class="primary" onclick="sendMsg()">Send →</button>
-        <p id="ctrlMsg" class="muted" style="margin-top:8px"></p>
+        <div class="form-row">
+          <div class="field"><label>رقم المستلم</label><input id="sendNum" class="mono ltr" inputmode="numeric" placeholder="201xxxxxxxxx"/></div>
+          <div class="field"><label>نص الرسالة</label><input id="sendMsg" placeholder="مرحباً"/></div>
+        </div>
+        <button type="button" class="primary" onclick="sendMsg()">إرسال رسالة اختبارية</button>
+        <p id="ctrlMsg" class="muted" style="margin-top:10px"></p>
       </div>
-    </div>
+    </section>
 
-    <!-- updates -->
-    <div class="col-6">
-      <div class="card fade-in">
-        <div class="card-head"><div class="card-title"><span class="dot"></span>Updates</div></div>
-        <p class="hint" style="margin-bottom:12px">Auto-update every <span id="autoInt">-</span> minutes from GitHub.</p>
+    <!-- Security & Maintenance & Updates -->
+    <section class="col-6">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head"><div class="card-title"><span class="accent"></span>وضع الصيانة وكلمة المرور</div></div>
+        <div class="data-row" style="margin-bottom:10px"><span class="data-key">وضع الصيانة</span><span class="data-val" id="maintState">-</span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn danger sm" onclick="setMaint(true)">تفعيل الصيانة</button>
+          <button type="button" class="btn ok sm" onclick="setMaint(false)">إيقاف الصيانة</button>
+          <button type="button" class="btn sm" onclick="rotatePw()">توليد كلمة مرور جديدة</button>
+        </div>
+        <p id="maintMsg" class="muted" style="margin-top:8px"></p>
+        <p id="pwMsg" class="muted" style="margin-top:4px"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="accent"></span>التحديثات</div></div>
+        <p class="hint" style="margin-bottom:10px">تحديث تلقائي كل <span id="autoInt">60</span> دقيقة.</p>
         <div style="display:flex;gap:8px">
-          <button class="btn" onclick="checkUpdate()">Check</button>
-          <button class="primary" onclick="applyUpdate()">Apply</button>
+          <button type="button" class="btn sm" onclick="checkUpdate()">فحص التحديثات</button>
+          <button type="button" class="primary sm" onclick="applyUpdate()">تطبيق التحديث</button>
         </div>
         <p id="updMsg" class="muted" style="margin-top:8px"></p>
       </div>
-    </div>
+    </section>
 
-    <!-- maintenance -->
-    <div class="col-6">
-      <div class="card fade-in">
-        <div class="card-head"><div class="card-title"><span class="dot"></span>Maintenance</div></div>
-        <p class="hint" style="margin-bottom:12px">When ON, visitors see a maintenance screen. Admins can still log in.</p>
-        <div class="data-row"><span class="data-key">status</span><span class="data-val" id="maintState">-</span></div>
-        <div style="display:flex;gap:8px;margin-top:10px">
-          <button class="btn danger" onclick="setMaint(true)">Enable</button>
-          <button class="btn" style="border-color:var(--ok);color:var(--ok)" onclick="setMaint(false)">Disable</button>
+    <!-- Sub-Bots Monitor -->
+    <section class="col-12">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title"><span class="accent"></span>البوتات الفرعية المسجلة (Sub-Bots)</div>
+          <span class="muted" id="subCountMeta">0 مسجل</span>
         </div>
-        <p id="maintMsg" class="muted" style="margin-top:8px"></p>
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>الرقم</th>
+                <th>الاسم</th>
+                <th>الحالة</th>
+                <th>الوضع</th>
+                <th>إجراء</th>
+              </tr>
+            </thead>
+            <tbody id="subBotsTable">
+              <tr><td colspan="5" class="muted">لا توجد بوتات فرعية مسجلة</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    </section>
 
-    <!-- password -->
-    <div class="col-6">
-      <div class="card fade-in">
-        <div class="card-head"><div class="card-title"><span class="dot"></span>Password</div></div>
-        <p class="hint" style="margin-bottom:12px">Generate a new random password. All sessions logged out.</p>
-        <button class="btn" onclick="rotatePw()">Generate new</button>
-        <p id="pwMsg" class="muted" style="margin-top:8px"></p>
-      </div>
-    </div>
-
-    <!-- commands -->
-    <div class="col-12">
-      <div class="card fade-in">
-        <div class="card-head"><div class="card-title"><span class="dot"></span>Commands</div></div>
-        <div style="display:grid;grid-template-columns:1fr 220px;gap:10px;margin-bottom:12px">
-          <input id="cmdSearch" placeholder="search commands…" oninput="loadCommands()"/>
-          <select id="cmdCat" onchange="loadCommands()"><option value="">all categories</option></select>
+    <!-- Commands -->
+    <section class="col-12">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="accent"></span>متصفح الأوامر</div></div>
+        <div class="form-row" style="margin-bottom:12px">
+          <div class="field" style="margin-bottom:0"><input id="cmdSearch" placeholder="ابحث عن أمر..." oninput="loadCommands()"/></div>
+          <div class="field" style="margin-bottom:0"><select id="cmdCat" onchange="loadCommands()"><option value="">كل التصنيفات</option></select></div>
         </div>
         <div class="cmd-list" id="cmdList"></div>
         <p id="cmdMeta" class="muted" style="margin-top:8px"></p>
       </div>
-    </div>
+    </section>
 
-    <!-- log -->
-    <div class="col-12">
-      <div class="card fade-in">
-        <div class="card-head"><div class="card-title"><span class="dot"></span>Event Log</div></div>
+    <!-- Log -->
+    <section class="col-12">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="accent"></span>سجل الأحداث</div></div>
         <div class="log-box" id="log"></div>
       </div>
-    </div>
-
+    </section>
   </div>
-</div>
+</main>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -571,11 +995,24 @@ let lastQR = null, qrObj = null, lastCmdSig = '';
 
 async function api(path, opts){
   const r = await fetch(path, opts);
-  if(r.status===401){ location.reload(); throw new Error('auth'); }
-  if(r.status===503){ location.reload(); throw new Error('maintenance'); }
-  return r.json().catch(()=>({}));
+  if(r.status === 401){ location.reload(); throw new Error('auth'); }
+  if(r.status === 503){ location.reload(); throw new Error('maintenance'); }
+  return r.json().catch(() => ({}));
 }
-function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function copyText(text, btn){
+  if(!text) return;
+  navigator.clipboard?.writeText(String(text).trim()).then(() => {
+    if(btn){
+      const old = btn.textContent;
+      btn.textContent = 'تم النسخ ✓';
+      setTimeout(() => { btn.textContent = old; }, 1500);
+    }
+  }).catch(() => {});
+}
 
 async function logout(){
   await api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'logout'})});
@@ -587,27 +1024,37 @@ ${IJS}
 function pairMainNow(){
   const phone = ($('ph') && $('ph').value || '').trim();
   const mode = ($('lm') && $('lm').value) || 'code';
+  if(mode === 'qr'){
+    applyLogin();
+    return;
+  }
+  const el = $('ctrlMsg');
   api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({action:'pair-main',phone,loginMode:mode})})
-    .then(r=>{ if(r.error) alert(r.error); else refresh(); })
-    .catch(e=>alert(e.message));
+    .then(r => {
+      if(r.error){ if(el) el.textContent = '⚠ ' + r.error; }
+      else { if(el) el.textContent = r.pairingCode ? ('كود الربط: ' + r.pairingCode) : (r.message || 'تم'); }
+      refresh();
+    })
+    .catch(e => { if(el) el.textContent = '⚠ ' + e.message; refresh(); });
 }
 function applyLogin(){
   const phone = ($('ph') && $('ph').value || '').trim();
   const mode = ($('lm') && $('lm').value) || 'code';
   api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({action:'set-login',phone,loginMode:mode})})
-    .then(r=>{ const el=$('ctrlMsg'); if(el) el.textContent = r.message || 'Saved'; })
-    .catch(e=>alert(e.message));
+    .then(r => { const el=$('ctrlMsg'); if(el) el.textContent = r.message || 'تم الحفظ'; })
+    .catch(e => { const el=$('ctrlMsg'); if(el) el.textContent = '⚠ ' + e.message; });
 }
 
-async function act(action){
-  if(action==='reset-session' && !confirm('Move the current session to a backup and restart?')) return;
-  if(action==='stop' && !confirm('Stop the bot?')) return;
-  const el=$('ctrlMsg'); if(el) el.textContent='Working…';
+async function act(action, extra){
+  if(action==='reset-session' && !confirm('نقل الجلسة الحالية لنسخة احتياطية وإعادة التشغيل؟')) return;
+  if(action==='stop' && !confirm('إيقاف البوت الأساسي؟')) return;
+  const el=$('ctrlMsg'); if(el) el.textContent='جاري التنفيذ...';
   try{
-    const r = await api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})});
-    if(el) el.textContent = r.message || (r.ok?'OK':'Failed');
+    const r = await api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action, ...(extra||{})})});
+    if(el) el.textContent = r.message || (r.ok ? 'تم' : 'فشل');
+    refresh();
   }catch(e){ if(el) el.textContent='⚠ '+e.message; }
 }
 async function sendMsg(){
@@ -615,30 +1062,31 @@ async function sendMsg(){
   try{
     const r = await api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action:'send',to:$('sendNum').value,text:$('sendMsg').value})});
-    if(el) el.textContent = r.ok ? '✓ sent' : ('⚠ '+(r.message||'failed'));
+    if(el) el.textContent = r.ok ? ('✓ ' + (r.message||'تم الإرسال')) : ('⚠ '+(r.message||'فشل الإرسال'));
   }catch(e){ if(el) el.textContent='⚠ '+e.message; }
 }
 
 async function checkUpdate(){
-  const el=$('updMsg'); if(el) el.textContent='Checking…';
+  const el=$('updMsg'); if(el) el.textContent='جاري الفحص...';
   const r = await api('/api/update-check');
-  if(el) el.textContent = r.error ? ('⚠ '+r.error) : (r.upToDate ? '✓ up to date' : ('⬇ available: '+r.download.length+' files'));
+  if(el) el.textContent = r.error ? ('⚠ '+r.error) : (r.upToDate ? '✓ محدث لآخر إصدار' : ('⬇ متاح تحديث: '+r.download.length+' ملف'));
 }
 async function applyUpdate(){
-  const el=$('updMsg'); if(el) el.textContent='Applying…';
+  const el=$('updMsg'); if(el) el.textContent='جاري التحديث...';
   await api('/api/update',{method:'POST'});
-  if(el) el.textContent='⏳ updating…';
+  if(el) el.textContent='⏳ يتم تطبيق التحديث...';
 }
 
 async function setMaint(on){
   const r = await api('/api/maintenance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:!!on})});
-  const el=$('maintMsg'); if(el) el.textContent = r.message || 'OK';
+  const el=$('maintMsg'); if(el) el.textContent = r.message || 'تم';
   refresh();
 }
 async function rotatePw(){
-  if(!confirm('Generate a new password and log out all sessions?')) return;
+  if(!confirm('توليد كلمة مرور جديدة وإنهاء الجلسات الأخرى؟')) return;
   const r = await api('/api/rotate-password',{method:'POST'});
-  const el=$('pwMsg'); if(el) el.textContent = r.password ? ('new password: '+r.password) : 'failed';
+  const el=$('pwMsg');
+  if(el) el.textContent = r.password ? ('كلمة المرور الجديدة: ' + r.password) : 'فشل التوليد';
 }
 
 async function loadCommands(){
@@ -647,21 +1095,24 @@ async function loadCommands(){
   const r = await api('/api/commands?q='+encodeURIComponent(q)+'&cat='+encodeURIComponent(cat));
   if(!r.ok) return;
   const sel = $('cmdCat');
-  if(sel && sel.options.length<=1 && r.categories){
+  if(sel && sel.options.length <= 1 && r.categories){
     for(const c of r.categories){ const o=document.createElement('option'); o.value=c.id; o.textContent=c.label+' ('+c.count+')'; sel.appendChild(o); }
   }
-  const sig = r.commands.map(c=>c.primary).join('|')+'#'+r.filtered;
-  if(sig===lastCmdSig) return; lastCmdSig=sig;
-  const list=$('cmdList');
-  if(list) list.innerHTML = r.commands.map(c=>
+  const sig = r.commands.map(c => c.primary).join('|') + '#' + r.filtered;
+  if(sig === lastCmdSig) return; lastCmdSig = sig;
+  const list = $('cmdList');
+  if(list) list.innerHTML = r.commands.map(c =>
     '<div class="cmd-item"><span class="cmd-name">'+esc(c.primary)+'</span>'+
     '<span class="cmd-cat">'+esc(c.categoryLabel)+'</span>'+
     '<span class="cmd-desc">'+esc(c.description||'')+'</span></div>'
-  ).join('') || '<div class="cmd-item muted">no commands</div>';
-  const meta=$('cmdMeta'); if(meta) meta.textContent = r.filtered+' of '+r.total+' commands'+(r.truncated?' (truncated)':'');
+  ).join('') || '<div class="cmd-item muted">لا توجد أوامر مطابقة</div>';
+  const meta=$('cmdMeta'); if(meta) meta.textContent = r.filtered+' من '+r.total+' أمر'+(r.truncated?' (مقتطع)':'');
 }
 
-function fmtUptime(ms){ const s=Math.floor(ms/1000); const d=Math.floor(s/86400); const h=Math.floor((s%86400)/3600); const m=Math.floor((s%3600)/60); return (d?d+'d ':'')+h+'h '+m+'m'; }
+function fmtUptime(sec){
+  const s=Math.floor(sec||0), d=Math.floor(s/86400), h=Math.floor((s%86400)/3600), m=Math.floor((s%3600)/60);
+  return (d?d+'d ':'')+h+'h '+m+'m';
+}
 function renderQR(qr){
   if(!qr){ const e=$('qr'); if(e) e.innerHTML=''; lastQR=null; return; }
   if(qr===lastQR) return; lastQR=qr;
@@ -673,32 +1124,49 @@ function renderQR(qr){
 async function refresh(){
   let s;
   try{ s = await api('/api/status'); }catch(e){ return; }
-  const dot=$('statusDot'); const txt=$('statusText');
-  if(s.connected){ if(dot) dot.className='status-dot on'; if(txt) txt.textContent='online'; }
-  else { if(dot) dot.className='status-dot off'; if(txt) txt.textContent='offline'; }
+  const dot=$('statusDot'), txt=$('statusText');
+  if(s.connected){ if(dot) dot.className='status-dot on'; if(txt) txt.textContent='متصل'; }
+  else { if(dot) dot.className='status-dot off'; if(txt) txt.textContent='غير متصل'; }
   if($('s-conn')) $('s-conn').textContent = s.connection || '-';
-  if($('s-reg')) $('s-reg').textContent = s.sessionRegistered ? 'yes' : 'no';
-  if($('s-mode')) $('s-mode').textContent = s.loginMode==='qr'?'qr':'code';
+  if($('s-reg')) $('s-reg').textContent = s.sessionRegistered ? 'مسجلة' : 'غير مسجلة';
+  if($('s-mode')) $('s-mode').textContent = s.loginMode === 'qr' ? 'QR' : 'Code';
   if($('s-phone')) $('s-phone').textContent = s.configuredPhone || s.phone || '-';
   if($('s-name')) $('s-name').textContent = s.name || '-';
   if($('s-plugins')) $('s-plugins').textContent = s.commands || 0;
-  if($('s-mem')) $('s-mem').textContent = (s.memoryMB||0)+' MB';
-  if($('s-uptime')) $('s-uptime').textContent = fmtUptime((s.uptimeSec||0)*1000);
+  if($('s-mem')) $('s-mem').textContent = (s.memoryMB || 0) + ' MB';
+  if($('s-uptime')) $('s-uptime').textContent = fmtUptime(s.uptimeSec || 0);
   if($('s-commit')) $('s-commit').textContent = s.commit || '-';
+  if($('autoInt') && s.autoUpdateIntervalMin) $('autoInt').textContent = s.autoUpdateIntervalMin;
   const mb=$('maintBanner'); if(mb) mb.className = s.maintenance ? 'maint-banner' : 'maint-banner hidden';
-  if($('maintState')) $('maintState').textContent = s.maintenance ? 'ON' : 'OFF';
-  const ph=$('ph'); if(ph && !ph.value) ph.value = s.configuredPhone || '';
-  const lm=$('lm'); if(lm) lm.value = s.loginMode;
-  if(s.loginMode==='code' && s.pairingCode){ renderQR(null); const pc=$('pairCode'); if(pc) pc.textContent=s.pairingCode; }
-  else if(s.loginMode==='qr'){ renderQR(s.qr); }
-  else { renderQR(null); }
+  if($('maintState')) $('maintState').textContent = s.maintenance ? 'مفعّل' : 'متوقف';
+
   try{ renderInstall(s); }catch(e){}
+
+  const subs = s.subBots || [];
+  if($('subCountMeta')) $('subCountMeta').textContent = subs.length + ' مسجل';
+  const tb = $('subBotsTable');
+  if(tb){
+    tb.innerHTML = subs.length ? subs.map(sb =>
+      '<tr>'
+      + '<td class="ltr mono">+'+esc(sb.phone)+'</td>'
+      + '<td>'+esc(sb.waName || '-')+'</td>'
+      + '<td class="mono">'+esc(sb.pairStatus)+'</td>'
+      + '<td class="mono">'+(sb.paused ? 'متوقف' : esc(sb.mode))+'</td>'
+      + '<td><div style="display:flex;gap:6px;flex-wrap:wrap">'
+      + '<button type="button" class="btn sm" onclick="act(\\'sub-stop\\',{phone:\\''+esc(sb.phone)+'\\'})">إيقاف</button>'
+      + '<button type="button" class="btn sm danger" onclick="act(\\'sub-reset\\',{phone:\\''+esc(sb.phone)+'\\'})">حذف الجلسة</button>'
+      + '</div></td></tr>'
+    ).join('') : '<tr><td colspan="5" class="muted">لا توجد بوتات فرعية مسجلة</td></tr>';
+  }
+
   const log=$('log');
-  if(log) log.innerHTML = (s.events||[]).map(e=>{
-    const t = new Date(e.ts||Date.now()).toLocaleTimeString();
-    return '<div class="log-line"><span class="log-time">'+t+'</span><span class="log-msg">'+esc(e.text||e.message||'')+'</span></div>';
-  }).join('');
-  if(log) log.scrollTop = log.scrollHeight;
+  if(log){
+    log.innerHTML = (s.events||[]).map(e => {
+      const t = new Date(e.ts || Date.now()).toLocaleTimeString();
+      return '<div class="log-line"><span class="log-time">'+esc(t)+'</span><span class="log-msg">'+esc(e.text||'')+'</span></div>';
+    }).join('') || '<div class="muted">لا توجد أحداث</div>';
+    log.scrollTop = log.scrollHeight;
+  }
 }
 
 setInterval(refresh, 3000);
@@ -714,65 +1182,26 @@ loadCommands();
  * MAINTENANCE
  * ===================================================================== */
 export function renderMaintenanceHtml(msg) {
-  return `<!DOCTYPE html>
-<html lang="en">
+	return `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Maintenance</title>
+<title>الموقع في وضع الصيانة — Yono</title>
 <style>${SHARED_CSS}</style>
 </head>
 <body>
 <div class="login-wrap">
   <div class="login-card" style="text-align:center">
     <div class="brand-mark" style="margin:0 auto 16px">M</div>
-    <div class="login-title">Under Maintenance</div>
-    <div class="login-sub">The bot is being serviced. Please check back shortly.</div>
+    <div class="login-title">الموقع تحت الصيانة</div>
+    <div class="login-sub">يتم تحديث البوت وصيانته حالياً. يرجى المحاولة بعد قليل.</div>
     ${msg ? `<div class="err-banner" style="margin-top:12px">${esc(msg)}</div>` : ''}
-    <div style="margin-top:24px">
-      <a class="btn sm ghost" href="/">Admin login →</a>
+    <div style="margin-top:20px">
+      <a class="btn sm ghost" href="/admin">دخول الإدارة</a>
     </div>
   </div>
 </div>
 </body>
 </html>`;
 }
-/* Export the install render js as a string for webPanel.js to inject */
-export const INSTALL_RENDER_JS = `
-function renderInstall(d){
-  const box=document.getElementById('installBody');
-  if(!box) return;
-  const activeId=document.activeElement?document.activeElement.id:'';
-  if(activeId==='lm' || activeId==='ph') return;
-  const sig=[!!d.connected,d.pairingCode||'',d.qr?'1':'0',d.loginMode||'',d.configuredPhone||''].join('|');
-  if(window._lastInstallSig===sig) return;
-  window._lastInstallSig=sig;
-  if(d.connected){
-    box.innerHTML='<div class="hint">Bot is already connected to WhatsApp. Use <b>Reset Session</b> (admin) to switch numbers.</div>';
-    return;
-  }
-  let html='';
-  if(d.pairingCode){
-    html+='<div class="hint">Open WhatsApp → Linked devices → Link with phone number, then enter:</div><div class="code">'+esc(d.pairingCode)+'</div>';
-  }
-  if(d.qr){
-    html+='<div class="hint">Scan this QR from WhatsApp:</div><div class="qr-box" id="qr"></div>';
-  }
-  if(!d.pairingCode && !d.qr){
-    html+=(d.loginMode==='code' && !d.configuredPhone)
-      ? '<div class="hint">Enter the bot number below, then press <b>Pair now</b> to issue a pairing code.</div>'
-      : '<div class="hint">Waiting for a QR code or pairing code...</div>';
-  }
-  html+='<div style="margin-top:14px">'
-     +'<div class="field"><label>login method</label>'
-     +'<select id="lm"><option value="code"'+(d.loginMode==='code'?' selected':'')+'>pairing code</option>'
-     +'<option value="qr"'+(d.loginMode==='qr'?' selected':'')+'>qr code</option></select></div>'
-     +'<div class="field"><label>bot number</label>'
-     +'<input id="ph" class="ltr mono" value="'+esc(d.configuredPhone)+'" placeholder="2010xxxxxxxx"></div>'
-     +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
-     +'<button type="button" class="primary sm" onclick="pairMainNow()">Pair now</button>'
-     +'<button type="button" class="btn sm" onclick="applyLogin()">Save &amp; restart</button>'
-     +'<button type="button" class="btn sm ghost" onclick="refresh()">Refresh</button></div></div>';
-  box.innerHTML=html;
-  if(d.qr) renderQR(d.qr);
-}`;

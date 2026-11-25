@@ -29,6 +29,7 @@ import Database from 'better-sqlite3';
 import { makeWASocket, protoType, serialize } from './lib/simple.js';
 import useSQLite from './lib/useSQLite.js';
 import { readPanelConfig, startWebPanel, pushPanelEvent } from './system/webPanel.js';
+import { setSubBotEventLogger, restoreSubBots } from './system/subBots.js';
 import { applyUpdate } from './system/autoUpdate.mjs';
 
 const { Browsers, fetchLatestWaWebVersion, makeCacheableSignalKeyStore } = global.baileys;
@@ -95,15 +96,26 @@ global.loadDatabase = function () {
 
 loadDatabase();
 
-// إعدادات لوحة التحكم (طريقة الربط + الرقم) قبل الاتصال
 const panelCfg = readPanelConfig();
 const loginMode = panelCfg.loginMode === 'qr' ? 'qr' : 'code';
 if (panelCfg.phone) global.pairingNumber = panelCfg.phone;
+
+function normalizeMainPhone(raw) {
+	let s = String(raw || '').trim();
+	if (s.includes('@')) s = s.split('@')[0];
+	if (s.includes(':')) s = s.split(':')[0];
+	let d = s.replace(/[^0-9]/g, '');
+	if (d.startsWith('00') && d.length >= 10) d = d.slice(2);
+	if (/^200(1[0125]\d{8})$/.test(d)) d = '20' + d.slice(3);
+	return d;
+}
+
 global.__panelState = {
 	connection: 'starting',
 	lastQR: null,
 	pairingCode: null,
-	phone: String(global.pairingNumber),
+	pairingError: null,
+	phone: normalizeMainPhone(global.pairingNumber),
 	mode: loginMode,
 	startedAt: Date.now(),
 };
@@ -118,39 +130,78 @@ const connectionOptions = {
 	},
 	version,
 	logger: pino({ level: 'silent' }),
-	browser: Browsers.ubuntu('Edge'),
+	browser: Browsers.ubuntu('Chrome'),
 	generateHighQualityLinkPreview: true,
 	syncFullHistory: false,
-	shouldSyncHistoryMessage: () => false,
 	markOnlineOnConnect: true,
 	connectTimeoutMs: 60000,
 	keepAliveIntervalMs: 30000,
 	retryRequestDelayMs: 250,
 	maxMsgRetryCount: 5,
-	cachedGroupMetadata: (jid) => conn.chats[jid],
+	cachedGroupMetadata: (jid) => global.conn?.chats?.[jid],
 };
+
+let handshakeReadyResolve = null;
+let handshakeReadyPromise = new Promise((resolve) => {
+	handshakeReadyResolve = resolve;
+});
 
 global.conn = makeWASocket(connectionOptions);
 
-if (!conn.authState.creds.registered) {
+global.issueMainPairingCode = async (phoneRaw) => {
+	const phone = normalizeMainPhone(phoneRaw || global.pairingNumber);
+	if (!phone || phone.startsWith('0') || phone.length < 6 || phone.length > 15) {
+		throw new Error('رقم الهاتف غير صالح — أدخل الرقم بالرمز الدولي بدون أصفار زائدة');
+	}
+	if (global.conn?.authState?.creds?.registered) {
+		throw new Error('البوت مسجل بالفعل. أعد ضبط الجلسة أولاً لتغيير الرقم.');
+	}
+	global.__panelState.phone = phone;
+	global.__panelState.pairingError = null;
+	await Promise.race([
+		handshakeReadyPromise,
+		new Promise((resolve) => {
+			const t = setTimeout(resolve, 4500);
+			t.unref?.();
+		}),
+	]);
+	try {
+		global.conn.cancelPairingCode?.();
+		let code = await global.conn.requestPairingCode(phone);
+		code = code?.match(/.{1,4}/g)?.join('-') || code;
+		global.__panelState.pairingCode = code;
+		global.__panelState.pairingError = null;
+		global.__panelState.lastQR = null;
+		console.log(chalk.black(chalk.bgGreen('Your Pairing Code : ')), chalk.black(chalk.white(code)));
+		pushPanelEvent('كود الربط: ' + code);
+		return code;
+	} catch (e) {
+		const errMsg = e?.message || String(e);
+		global.__panelState.pairingError = errMsg;
+		throw e;
+	}
+};
+
+if (!global.conn.authState.creds.registered) {
 	if (loginMode === 'qr') {
 		console.log(chalk.bgWhite(chalk.blue('QR mode — امسح الرمز من لوحة التحكم')));
 		pushPanelEvent('وضع QR — بانتظار المسح من اللوحة');
 	} else {
 		console.log(chalk.bgWhite(chalk.blue('Generating code...')));
-		try {
-			setTimeout(async () => {
-				let code = await conn.requestPairingCode(global.pairingNumber);
-				code = code?.match(/.{1,4}/g)?.join('-') || code;
-				global.__panelState.pairingCode = code;
-				console.log(chalk.black(chalk.bgGreen('Your Pairing Code : ')), chalk.black(chalk.white(code)));
-				pushPanelEvent('كود الربط: ' + code);
-			}, 3000);
-		} catch (e) {
-			console.log(e);
-			fs.rmSync('./sessions', { recursive: true, force: true });
-			parentPort.postMessage('restart');
-		}
+		Promise.race([
+			handshakeReadyPromise,
+			new Promise((resolve) => {
+				const t = setTimeout(resolve, 4000);
+				t.unref?.();
+			}),
+		])
+			.then(() => global.issueMainPairingCode(global.pairingNumber))
+			.catch((e) => {
+				const errMsg = e?.message || String(e);
+				if (global.__panelState) global.__panelState.pairingError = errMsg;
+				console.error('[PAIRING]', errMsg);
+				pushPanelEvent('تعذر إصدار كود الربط تلقائياً: ' + errMsg);
+			});
 	}
 }
 
@@ -169,10 +220,22 @@ if (global.db) {
 async function connectionUpdate(update) {
 	const { receivedPendingNotifications, connection, lastDisconnect, isOnline, qr } = update;
 
-	if (qr && global.__panelState) global.__panelState.lastQR = qr;
+	if (qr) {
+		handshakeReadyResolve?.();
+		if (global.__panelState) global.__panelState.lastQR = qr;
+	}
 	if (connection && global.__panelState) {
 		global.__panelState.connection = connection;
-		if (connection === 'open') global.__panelState.connectedAt = Date.now();
+		if (connection === 'open') {
+			handshakeReadyResolve?.();
+			global.__panelState.connectedAt = Date.now();
+			global.__panelState.pairingCode = null;
+			global.__panelState.pairingError = null;
+			global.__panelState.lastQR = null;
+			if (global.conn?.user?.id) {
+				global.conn.user.jid = global.conn.decodeJid(global.conn.user.id);
+			}
+		}
 		pushPanelEvent('الاتصال: ' + connection);
 	}
 
@@ -230,53 +293,57 @@ global.reloadHandler = async function (restartConn) {
 		try {
 			global.conn.ws.close();
 		} catch {}
-		conn.ev.removeAllListeners();
+		global.conn.ev.removeAllListeners();
+		handshakeReadyPromise = new Promise((resolve) => {
+			handshakeReadyResolve = resolve;
+		});
 		global.conn = makeWASocket(connectionOptions, { chats: oldChats });
 		isInit = true;
 	}
 
 	if (!isInit) {
-		conn.ev.off('messages.upsert', conn.handler);
-		conn.ev.off('group-participants.update', conn.participantsUpdate);
-		conn.ev.off('groups.update', conn.groupsUpdate);
-		conn.ev.off('message.delete', conn.onDelete);
-		conn.ev.off('connection.update', conn.connectionUpdate);
-		conn.ev.off('creds.update', conn.credsUpdate);
+		global.conn.ev.off('messages.upsert', global.conn.handler);
+		global.conn.ev.off('group-participants.update', global.conn.participantsUpdate);
+		global.conn.ev.off('groups.update', global.conn.groupsUpdate);
+		global.conn.ev.off('message.delete', global.conn.onDelete);
+		global.conn.ev.off('connection.update', global.conn.connectionUpdate);
+		global.conn.ev.off('creds.update', global.conn.credsUpdate);
 	}
 
-	conn.welcome = '✦━━━━━━[ *WELCOME* ]━━━━━━✦\n\n┏––––––━━━━━━━━•\n│⫹⫺ @subject\n┣━━━━━━━━┅┅┅\n│( 👋 Hello @user)\n├[ *INTRO* ]—\n│ *Name:* \n│ *Age:* \n│ *Gender:*\n┗––––––━━┅┅┅\n\n––––––┅┅ *DESCRIPTION* ┅┅––––––\n@desc';
-	conn.bye = '✦━━━━━━[ *GOOD BYE* ]━━━━━━✦\nSayonara *@user* 👋( ╹▽╹ )';
-	conn.spromote = '@user is now admin!';
-	conn.sdemote = '@user is no longer admin!';
-	conn.sDesc = 'Description has been changed to \n@desc';
-	conn.sSubject = 'Group title has been changed to \n@subject';
-	conn.sIcon = 'Group icon has been changed!';
-	conn.sRevoke = 'Group link has been changed to \n@revoke';
+	global.conn.welcome = '✦━━━━━━[ *WELCOME* ]━━━━━━✦\n\n┏––––––━━━━━━━━•\n│⫹⫺ @subject\n┣━━━━━━━━┅┅┅\n│( 👋 Hello @user)\n├[ *INTRO* ]—\n│ *Name:* \n│ *Age:* \n│ *Gender:*\n┗––––––━━┅┅┅\n\n––––––┅┅ *DESCRIPTION* ┅┅––––––\n@desc';
+	global.conn.bye = '✦━━━━━━[ *GOOD BYE* ]━━━━━━✦\nSayonara *@user* 👋( ╹▽╹ )';
+	global.conn.spromote = '@user is now admin!';
+	global.conn.sdemote = '@user is no longer admin!';
+	global.conn.sDesc = 'Description has been changed to \n@desc';
+	global.conn.sSubject = 'Group title has been changed to \n@subject';
+	global.conn.sIcon = 'Group icon has been changed!';
+	global.conn.sRevoke = 'Group link has been changed to \n@revoke';
 
-	conn.handler = handler.handler.bind(global.conn);
-	conn.participantsUpdate = handler.participantsUpdate.bind(global.conn);
-	conn.groupsUpdate = handler.groupsUpdate.bind(global.conn);
-	conn.onDelete = handler.deleteUpdate.bind(global.conn);
-	conn.connectionUpdate = connectionUpdate.bind(global.conn);
-	conn.credsUpdate = saveCreds.bind(global.conn);
+	global.conn.handler = handler.handler.bind(global.conn);
+	global.conn.participantsUpdate = handler.participantsUpdate.bind(global.conn);
+	global.conn.groupsUpdate = handler.groupsUpdate.bind(global.conn);
+	global.conn.onDelete = handler.deleteUpdate.bind(global.conn);
+	global.conn.connectionUpdate = connectionUpdate.bind(global.conn);
+	global.conn.credsUpdate = saveCreds.bind(global.conn);
 
-	conn.ev.on('call', async (calls) => {
+	global.conn.ev.on('call', async (calls) => {
 		for (const call of calls) {
 			const { id, from, status } = call;
-			const settings = global.db.data.settings[conn.user.jid];
-			if (status === 'offer' && settings.anticall) {
-				await conn.rejectCall(id, from);
+			const botJid = global.conn.user?.jid || (global.conn.user?.id ? global.conn.decodeJid(global.conn.user.id) : 'main');
+			const settings = global.db.data.settings[botJid];
+			if (status === 'offer' && settings?.anticall) {
+				await global.conn.rejectCall(id, from);
 				console.log('Rejecting call from', from);
 			}
 		}
 	});
 
-	conn.ev.on('messages.upsert', conn.handler);
-	conn.ev.on('group-participants.update', conn.participantsUpdate);
-	conn.ev.on('groups.update', conn.groupsUpdate);
-	conn.ev.on('message.delete', conn.onDelete);
-	conn.ev.on('connection.update', conn.connectionUpdate);
-	conn.ev.on('creds.update', conn.credsUpdate);
+	global.conn.ev.on('messages.upsert', global.conn.handler);
+	global.conn.ev.on('group-participants.update', global.conn.participantsUpdate);
+	global.conn.ev.on('groups.update', global.conn.groupsUpdate);
+	global.conn.ev.on('message.delete', global.conn.onDelete);
+	global.conn.ev.on('connection.update', global.conn.connectionUpdate);
+	global.conn.ev.on('creds.update', global.conn.credsUpdate);
 
 	isInit = false;
 	return true;
@@ -343,9 +410,11 @@ Object.freeze(global.reload);
 fs.watch(pluginFolder, global.reload);
 await global.reloadHandler();
 
-// لوحة التحكم الويب
+// لوحة التحكم الويب + استعادة البوتات الفرعية
 try {
+	setSubBotEventLogger(pushPanelEvent);
 	startWebPanel();
+	restoreSubBots().catch((e) => console.error('[SUBBOT]', e?.message || e));
 } catch (e) {
 	console.error('[WEB] تعذّر تشغيل اللوحة:', e && e.message);
 }

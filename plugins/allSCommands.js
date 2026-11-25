@@ -264,6 +264,9 @@ let handler = async (m, { conn, text, args, command, usedPrefix }) => {
 
 handler.before = async (m, { conn }) => {
     const txt = getText(m)
+    if (!txt || (global.prefix instanceof RegExp && global.prefix.test(txt)) || /^[.!#$%/]/.test(txt)) {
+        return false
+    }
     if (txt.startsWith('.ุงุถูุณ') || txt.startsWith('.ุฎุฑุง') || /^.ุณ\d+/.test(txt)) {
         return false
     }

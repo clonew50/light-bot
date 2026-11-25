@@ -15,7 +15,7 @@ function localDetect(text) {
   if (avg > 18) score += 20;
   else if (avg > 12) score += 10;
   if (words > 50) score += 10;
-  if (!/[😂😭😅🔥👍❤️]/.test(text)) score += 8; // Formal text = more AI
+  if (!['😂', '😭', '😅', '🔥', '👍', '❤️'].some(e => text.includes(e))) score += 8; // Formal text = more AI
   if (/[.!?]$/.test(text.trim())) score += 5;
   return Math.min(92, Math.max(5, score));
 }

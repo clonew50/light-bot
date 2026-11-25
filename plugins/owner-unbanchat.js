@@ -1,4 +1,5 @@
 let handler = async (m) => {
+	global.db.data.chats[m.chat] = global.db.data.chats[m.chat] || {};
 	global.db.data.chats[m.chat].isBanned = false;
 	m.reply('Done!');
 };

@@ -38,12 +38,18 @@ const defaultMenu = {
     // ===========================[ DATA ]===========================
     const mode      = global.opts?.['self'] ? 'Private' : 'Public'
     const _package  = JSON.parse(await promises.readFile(join(process.cwd() + '/package.json')).catch(_ => '{}')) || {}
-    const { level, age, exp, limit, registered, money } = db.data.users[m.sender]
-    const name      = db.data.users[m.sender].name
-    const premium   = db.data.users[m.sender].premiumTime
+    const userData  = db?.data?.users?.[m.sender] || {}
+    const { level = 1, age = -1, exp = 0, limit = 20, registered = false, money = 0 } = userData
+    const name      = userData.name || m.pushName || 'User'
+    const premium   = userData.premiumTime || 0
     const prems     = premium > 0 ? 'Premium' : 'Free'
     const platform  = os.platform()
-    const dev       = global.settings.owner.filter(([id, name, isCreator]) => id && isCreator).map(([id]) => id)[0]
+    const ownerList = global.settings?.owner || global.owner || []
+    const dev       = ownerList.filter(([id, , isCreator]) => id && isCreator).map(([id]) => String(id).replace(/[^0-9]/g, ''))[0] || ''
+    const botTitle  = global.settings?.botname || global.namebot || 'Yono'
+    const botImgUrl = (await Promise.resolve(global.img?.profile?.bot).catch(() => null)) || 'https://files.catbox.moe/96cm7n.jpeg'
+    const senderImg = (await Promise.resolve(global.img?.profile?.sender).catch(() => null)) || botImgUrl
+    const serverUrl = typeof global.getServerUrl === 'function' ? global.getServerUrl() : (process.env.APP_URL || 'https://whatsapp.com/channel/0029VaVJo460bIdoxTVoJY3e')
 
     // ===========================[ QUOTED ]=========================
     const allQuoted = {
@@ -62,14 +68,14 @@ const defaultMenu = {
     const TeksBefore = `──────────────────
 
 *U S E R*
-- \`Name:\` ${db.data.users[m.sender].name}
+- \`Name:\` ${name}
 - \`Status:\` ${m.sender.split('@')[0] == dev ? 'Developer' : isOwner ? 'Owner' : isPrems ? 'Premium User' : 'User'}
 - \`Registered:\` ${registered ? 'Yes' : 'No'}
 
 ──────────────────
 
 *I N F O R M A T I O N*
-- \`Bot Name:\` ${global.settings.botname}
+- \`Bot Name:\` ${botTitle}
 - \`Developer:\` @${dev}
 - \`Version:\` ${_package.version}
 
@@ -108,19 +114,25 @@ const defaultMenu = {
         .filter((h, i, arr) => arr.indexOf(h) === i)
         .length
 
-      conn.sendButton(m.chat, {
-        document: { url: img.profile.bot },
-        jpegThumbnail: await conn.resize(
-          Buffer.from(await (await fetch(await global.img.profile.bot)).arrayBuffer()),
-          100, 100
-        ),
+      let botThumb = Buffer.alloc(0)
+      try {
+        const res = await fetch(botImgUrl)
+        if (res.ok) {
+          const rawBuf = Buffer.from(await res.arrayBuffer())
+          botThumb = typeof conn.resize === 'function' ? await conn.resize(rawBuf, 100, 100) : rawBuf
+        }
+      } catch {}
+
+      await conn.sendButton(m.chat, {
+        document: { url: botImgUrl },
+        jpegThumbnail: botThumb,
         mimetype: 'image/webp',
         caption: TeksBefore,
-        fileName: global.settings.botname,
+        fileName: botTitle,
         fileLength: '665666646645000',
         nativeFlow: [{},
           { text: '📢', url: 'https://whatsapp.com/channel/0029VaVJo460bIdoxTVoJY3e' },
-          { text: '🌐', url: getServerUrl(), useWebview: false },
+          { text: '🌐', url: serverUrl, useWebview: false },
           { text: '\u0000', sections: [
             {
               highlight_label: '✦ SHOW ALL MENU',
@@ -136,7 +148,7 @@ const defaultMenu = {
             }
           ]},
         ],
-        mentions: [m.sender, `${dev}@s.whatsapp.net`]
+        mentions: [m.sender, ...(dev ? [`${dev}@s.whatsapp.net`] : [])]
       }, allQuoted.contact)
 
       return 0
@@ -202,7 +214,7 @@ const defaultMenu = {
 
     const replace = {
       '%':        '%',
-      me:         conn.getName(conn.user.jid),
+      me:         conn.getName(conn.user?.jid || conn.user?.id || ''),
       npmname:    _package.name,
       npmdesc:    _package.description,
       version:    _package.version,
@@ -216,13 +228,18 @@ const defaultMenu = {
       (_, key) => '' + replace[key]
     )
 
+    let orderThumb = Buffer.alloc(0)
+    try {
+      orderThumb = typeof conn.resize === 'function' ? await conn.resize(senderImg, 150, 150) : Buffer.alloc(0)
+    } catch {}
+
     // ===========================[ SEND MENU ]===================
-    conn.reply(m.chat, text, {
+    await conn.reply(m.chat, text, {
       key: { remoteJid: '0@s.whatsapp.net' },
       message: {
         orderMessage: {
           orderId: '780642630945098',
-          thumbnail: await conn.resize(global.img.profile.sender, 150, 150),
+          thumbnail: orderThumb,
           itemCount: 666,
           status: 1,
           surface: 1,
@@ -239,7 +256,7 @@ const defaultMenu = {
   } catch (e) {
     m.error = e
     console.log(e)
-    conn.reply(m.chat, '> *Sorry*, the menu is currently error', m)
+    await conn.reply(m.chat, '> *Sorry*, the menu is currently error', m)
   }
 }
 

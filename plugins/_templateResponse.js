@@ -3,39 +3,42 @@ export async function all(m, chatUpdate) {
 	if (!m.message) return;
 	if (!(m.message.buttonsResponseMessage || m.message.templateButtonReplyMessage || m.message.listResponseMessage || m.message.interactiveResponseMessage || m.message.pollUpdateMessage)) return;
 
-	let id =
-		m.mtype === 'conversation'
-			? m.message.conversation
-			: m.mtype == 'imageMessage'
-				? m.message.imageMessage.caption
-				: m.mtype == 'videoMessage'
-					? m.message.videoMessage.caption
-					: m.mtype == 'extendedTextMessage'
-						? m.message.extendedTextMessage.text
-						: m.mtype == 'buttonsResponseMessage'
-							? m.message.buttonsResponseMessage.selectedButtonId
-							: m.mtype == 'listResponseMessage'
-								? m.message.listResponseMessage.singleSelectReply.selectedRowId
-								: m.mtype == 'templateButtonReplyMessage'
-									? m.message.templateButtonReplyMessage.selectedId
-									: m.mtype == 'interactiveResponseMessage'
-										? JSON.parse(m.msg.nativeFlowResponseMessage.paramsJson).id
-										: m.mtype == 'templateButtonReplyMessage'
-											? appenTextMessage(m.msg.selectedId, chatUpdate)
-											: m.mtype === 'messageContextInfo'
-												? m.message.buttonsResponseMessage?.selectedButtonId || m.message.listResponseMessage?.singleSelectReply.selectedRowId || m.text
-												: '';
+	let id = '';
+	try {
+		if (m.mtype === 'buttonsResponseMessage') {
+			id = m.message.buttonsResponseMessage?.selectedButtonId || '';
+		} else if (m.mtype === 'listResponseMessage') {
+			id = m.message.listResponseMessage?.singleSelectReply?.selectedRowId || '';
+		} else if (m.mtype === 'templateButtonReplyMessage') {
+			id = m.message.templateButtonReplyMessage?.selectedId || '';
+		} else if (m.mtype === 'interactiveResponseMessage') {
+			const paramsRaw = m.msg?.nativeFlowResponseMessage?.paramsJson;
+			if (paramsRaw) {
+				const parsed = JSON.parse(paramsRaw);
+				id = parsed?.id || '';
+			}
+		} else if (m.mtype === 'messageContextInfo') {
+			id =
+				m.message.buttonsResponseMessage?.selectedButtonId ||
+				m.message.listResponseMessage?.singleSelectReply?.selectedRowId ||
+				m.text ||
+				'';
+		}
+	} catch {
+		id = '';
+	}
+	if (!id) return;
 
 	let messages = await baileys.generateWAMessage(
 		m.chat,
 		{ text: id, mentions: m.mentionedJid },
 		{
-			userJid: this.user.jid,
+			userJid: this.user?.jid || this.user?.id,
 			quoted: m.quoted && m.quoted.fakeObj,
 		}
 	);
 	messages.key.remoteJid = m.chat;
-	messages.key.fromMe = baileys.areJidsSameUser(m.sender, this.user.id);
+	messages.key.fromMe = baileys.areJidsSameUser(m.sender, this.user?.id || this.user?.jid);
 	messages.key.id = m.key.id;
 	messages.pushName = m.pushName;
 	if (m.isGroup) messages.key.participant = messages.participant = m.sender;
