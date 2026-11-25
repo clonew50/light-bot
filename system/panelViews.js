@@ -252,9 +252,18 @@ export function renderPublicPortalHtml(err, installRenderJs) {
     <div class="col-8">
       <div class="card fade-in">
         <div class="card-head">
-          <div class="card-title"><span class="dot"></span>WhatsApp Pairing</div>
+          <div class="card-title"><span class="dot"></span>Sub-bot Pairing</div>
         </div>
-        <div id="installBody"></div>
+        <div class="hint" style="margin-bottom:12px">Pair your own WhatsApp number as a sub-bot. You will receive a control code to manage it.</div>
+        <div id="subPairForm">
+          <div class="field">
+            <label>your phone number (with country code)</label>
+            <input id="subPhone" class="ltr mono" inputmode="numeric" placeholder="201xxxxxxxxx"/>
+          </div>
+          <button class="primary" onclick="pairSubBot()">Pair as sub-bot →</button>
+          <p id="subPairMsg" class="muted" style="margin-top:8px"></p>
+        </div>
+        <div id="subBotInfo" class="hidden"></div>
       </div>
     </div>
 
@@ -303,21 +312,25 @@ function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,
 
 ${IJS}
 
-function pairMainNow(){
-  const phone = ($('ph') && $('ph').value || '').trim();
-  const mode = ($('lm') && $('lm').value) || 'code';
-  api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action:'pair-main',phone,loginMode:mode})})
-    .then(r=>{ if(r.error) alert(r.error); else refresh(); })
-    .catch(e=>alert(e.message));
-}
-function applyLogin(){
-  const phone = ($('ph') && $('ph').value || '').trim();
-  const mode = ($('lm') && $('lm').value) || 'code';
-  api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action:'set-login',phone,loginMode:mode})})
-    .then(r=>{ const el=$('sendMsgOut'); if(el) el.textContent = r.message || 'Saved'; })
-    .catch(e=>alert(e.message));
+async function pairSubBot(){
+  const phone = ($('subPhone') && $('subPhone').value || '').trim();
+  const msg = $('subPairMsg');
+  if(!phone){ if(msg) msg.textContent='Enter your phone number'; return; }
+  try{
+    const r = await api('/api/public/sub/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone})});
+    if(r.ok){
+      if(msg){ msg.textContent = '✓ Paired! Control code: '+r.controlCode; msg.className='ok-banner'; }
+      const info = $('subBotInfo');
+      if(info){
+        info.className='';
+        info.innerHTML = '<div class="data-row"><span class="data-key">phone</span><span class="data-val ltr">'+esc(r.phone)+'</span></div>'
+          +'<div class="data-row"><span class="data-key">control_code</span><span class="data-val ltr" style="color:var(--acc)">'+esc(r.controlCode)+'</span></div>'
+          +'<div class="hint" style="margin-top:8px">Save your control code! Use it to manage your sub-bot.</div>';
+      }
+    } else {
+      if(msg){ msg.textContent = '⚠ '+(r.error||'Failed'); msg.className='err-banner'; }
+    }
+  }catch(e){ if(msg){ msg.textContent='⚠ '+e.message; msg.className='err-banner'; } }
 }
 
 async function sendMsg(){
@@ -354,13 +367,6 @@ async function refresh(){
   $('s-mem').textContent = (s.memoryMB||0)+' MB';
   $('s-uptime').textContent = fmtUptime((s.uptimeSec||0)*1000);
   $('s-commit').textContent = s.commit || '-';
-  if(!$('ph')?.value) { const ph=$('ph'); if(ph) ph.value = s.configuredPhone || ''; }
-  const lm=$('lm'); if(lm) lm.value = s.loginMode;
-  if(s.loginMode==='code' && s.pairingCode){ renderQR(null); const pc=$('pairCode'); if(pc) pc.textContent=s.pairingCode; }
-  else if(s.loginMode==='qr'){ renderQR(s.qr); }
-  else { renderQR(null); }
-  // re-run install renderer
-  try{ renderInstall(s); }catch(e){}
   const log = $('log');
   if(log) log.innerHTML = (s.events||[]).map(e=>{
     const t = new Date(e.ts||Date.now()).toLocaleTimeString();

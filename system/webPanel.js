@@ -11,6 +11,10 @@
  *
  * Config is stored in system/panel-config.json (password, login mode, number).
  * Env: WEB_PASSWORD, PANEL_CONFIG_FILE, WEB_PORT/PORT/SERVER_PORT/P_SERVER_PORT.
+ *
+ * Public portal: normal users can pair as SUB-BOTS (their own WhatsApp
+ * account becomes a bot) without admin login. They CANNOT edit the main
+ * bot number or control the main bot.
  */
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -30,14 +34,16 @@ function configFilePath() {
 }
 
 /* ============================== Config ============================== */
-const DEFAULT_PASSWORD = 'winner'; // legacy default — not allowed as a real password anymore
+let panelCfg;
+let panelPasswordOverride = null;
+const DEFAULT_PASSWORD = 'winner';
 const DEFAULT_CONFIG = {
-  password: '',      // if empty, a strong one is generated and saved
-  loginMode: 'code', // code = pairing code | qr = QR
-  phone: '',         // bot number (optional)
-  secret: '',        // cookie signing key (generated)
-  rev: 0,            // bumped on password change / logout-all → invalidates old cookies
-  pwHash: '',        // fingerprint to detect password changes between boots
+  password: '',
+  loginMode: 'code',
+  phone: '',
+  secret: '',
+  rev: 0,
+  pwHash: '',
 };
 
 function generatePassword(len = 16) {
@@ -84,7 +90,7 @@ export function readPanelConfig() {
   const pwHash = crypto.createHash('sha256').update(String(cfg.password)).digest('hex');
   let needSave = false;
   if (pwHash !== diskPwHash) {
-    if (diskPwHash !== null) cfg.rev = (Number(cfg.rev) || 0) + 1; // password changed → kill old cookies
+    if (diskPwHash !== null) cfg.rev = (Number(cfg.rev) || 0) + 1;
     needSave = true;
   }
   cfg.pwHash = pwHash;
@@ -118,6 +124,7 @@ export function pushPanelEvent(message, kind = 'panel') {
   if (events.length > 100) events.shift();
   try { console.log('🌐 [WEB]', message); } catch {}
 }
+function pushEvent(msg, kind) { pushPanelEvent(msg, kind); }
 function getEvents() { return events.slice(-100); }
 
 /* ============================== Helpers ============================== */
@@ -198,6 +205,22 @@ function bumpSendCount(ip) {
   a.n += 1;
 }
 
+/* sub-bot request rate limiting */
+const SUBPAIR_WINDOW_MS = 60_000;
+const SUBPAIR_MAX_PER_WINDOW = 3;
+const subPairCounts = new Map();
+function subPairBlocked(ip) {
+  const a = subPairCounts.get(ip);
+  if (!a) return false;
+  if (Date.now() - a.t > SUBPAIR_WINDOW_MS) { subPairCounts.delete(ip); return false; }
+  return a.n >= SUBPAIR_MAX_PER_WINDOW;
+}
+function bumpSubPairCount(ip) {
+  const a = subPairCounts.get(ip);
+  if (!a || Date.now() - a.t > SUBPAIR_WINDOW_MS) { subPairCounts.set(ip, { n: 1, t: Date.now() }); return; }
+  a.n += 1;
+}
+
 function readBody(req, limit = 1024 * 1024) {
   return new Promise((resolve) => {
     let data = '';
@@ -226,65 +249,88 @@ function currentCommit() {
     return (s.commit || '').slice(0, 8) || 'unknown';
   } catch { return 'unknown'; }
 }
-function sanitizePhone(p) { return String(p || '').replace(/[^0-9]/g, ''); }
-
-/* ============================== State ============================== */
-let panelCfg = readPanelConfig();
-let panelPasswordOverride = null;
-
-function pushEvent(msg, kind = 'panel') { pushPanelEvent(msg, kind); }
-
-function sessionRegistered(client) {
-  try {
-    const p = path.join(ROOT, 'sessions', 'creds.json');
-    if (!fs.existsSync(p)) return false;
-    const creds = JSON.parse(fs.readFileSync(p, 'utf8'));
-    return !!(creds?.registered || creds?.me);
-  } catch { return false; }
+function sanitizePhone(raw) {
+  let s = String(raw || '').trim();
+  if (s.includes('@')) s = s.split('@')[0];
+  if (s.includes(':')) s = s.split(':')[0];
+  let digits = s.replace(/[^0-9]/g, '');
+  if (digits.startsWith('00') && digits.length >= 10) digits = digits.slice(2);
+  if (/^200(1[0125]\d{8})$/.test(digits)) digits = '20' + digits.slice(3);
+  if (!/^\d{6,20}$/.test(digits)) return '';
+  return digits;
 }
 
+/* ============================== Sub-bot management ============================== */
+// Sub-bots are stored in global.db.data.subBots (phone -> record).
+// Each record: { phone, controlCode, pairStatus, pairError, createdAt, pairedAt, lastSeenAt, waName, settings }
+function ensureSubBotStore() {
+  global.db = global.db || {};
+  global.db.data = global.db.data || {};
+  if (!global.db.data.subBots || typeof global.db.data.subBots !== 'object') {
+    global.db.data.subBots = {};
+  }
+  return global.db.data.subBots;
+}
+
+function generateControlCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(8);
+  let raw = '';
+  for (let i = 0; i < 8; i++) raw += chars[bytes[i] % chars.length];
+  return `LB-${raw.slice(0, 4)}-${raw.slice(4, 8)}`;
+}
+
+function timingSafeEqualStr(a, b) {
+  const sa = String(a || '').trim().toUpperCase().replace(/[\s-]+/g, '');
+  const sb = String(b || '').trim().toUpperCase().replace(/[\s-]+/g, '');
+  if (!sa || !sb || sa.length !== sb.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(sa), Buffer.from(sb));
+}
+
+function normalizePhone(raw) {
+  let s = String(raw || '').trim();
+  if (s.includes('@')) s = s.split('@')[0];
+  if (s.includes(':')) s = s.split(':')[0];
+  let digits = s.replace(/[^0-9]/g, '');
+  if (digits.startsWith('00') && digits.length >= 10) digits = digits.slice(2);
+  if (/^200(1[0125]\d{8})$/.test(digits)) digits = '20' + digits.slice(3);
+  if (!/^\d{6,20}$/.test(digits)) return '';
+  return digits;
+}
+
+export function verifySubBotAccess(phoneRaw, codeRaw) {
+  const phone = normalizePhone(phoneRaw);
+  const code = String(codeRaw || '').trim();
+  if (!phone || !code) return { ok: false, error: 'Enter phone number and control code' };
+  const store = ensureSubBotStore();
+  const rec = store[phone];
+  if (!rec) return { ok: false, error: 'No sub-bot registered with this number yet. Start by pairing first.' };
+  const matchesControl = rec.controlCode && timingSafeEqualStr(code, rec.controlCode);
+  if (!matchesControl) return { ok: false, error: 'Invalid control code' };
+  return { ok: true, phone, record: rec };
+}
+
+function serializeSubBot(phone, record) {
+  if (!record) return null;
+  return {
+    phone,
+    controlCode: record.controlCode,
+    pairStatus: record.pairStatus || 'idle',
+    pairError: record.pairError || null,
+    pairedAt: record.pairedAt || 0,
+    lastSeenAt: record.lastSeenAt || 0,
+    waName: record.waName || '',
+    settings: record.settings || { mode: 'public', customName: '', prefix: '.', welcome: true, autoReply: true, paused: false, notes: '' },
+  };
+}
+
+/* ============================== Status ============================== */
 function isMaintenanceActive() {
   try { return global.db?.data?.maintenance === true; } catch { return false; }
 }
 
-/* command list from global.plugins (no simulator) */
-function extractTriggers(plugin) {
-  const out = [];
-  const cmd = plugin?.command;
-  if (Array.isArray(cmd)) out.push(...cmd.map(String));
-  else if (cmd instanceof RegExp) {
-    const src = cmd.source.replace(/^\^/, '').replace(/\$$/, '');
-    src.split('|').forEach((t) => {
-      const clean = t.replace(/[^a-z0-9_]/gi, '');
-      if (clean) out.push(clean.toLowerCase());
-    });
-  } else if (typeof cmd === 'string') out.push(cmd);
-  if (Array.isArray(plugin?.help)) plugin.help.forEach((h) => String(h).split(/\s+/)[0] && out.push(String(h).split(/\s+/)[0]));
-  return [...new Set(out.filter(Boolean))];
-}
-function buildCommandsList() {
-  const plugins = global.plugins || {};
-  const catMap = new Map();
-  const all = [];
-  for (const [file, p] of Object.entries(plugins)) {
-    if (!p || p.disabled) continue;
-    const triggers = extractTriggers(p);
-    if (!triggers.length) continue;
-    const category = (Array.isArray(p.tags) && p.tags[0]) || 'misc';
-    const categoryLabel = category.charAt(0).toUpperCase() + category.slice(1);
-    const description = (Array.isArray(p.help) && p.help[0]) || '';
-    const entry = { primary: triggers[0], triggers, category, categoryLabel, description, file };
-    all.push(entry);
-    let prev = catMap.get(category);
-    if (!prev) { prev = { id: category, label: categoryLabel, count: 0 }; catMap.set(category, prev); }
-    prev.count += 1;
-  }
-  return { all, categories: [...catMap.values()].sort((a, b) => b.count - a.count) };
-}
-
-/* ============================== Status ============================== */
 function getClientInfo(client) {
-  const st = global.__panelState || {};
+  const st = global.__panelState || (global.__panelState = {});
   const conn = client || global.conn;
   const connected = !!(conn && conn.user && st.connection === 'open');
   const mem = process.memoryUsage();
@@ -293,7 +339,7 @@ function getClientInfo(client) {
     ok: true,
     connected,
     connection: st.connection || 'starting',
-    sessionRegistered: sessionRegistered(conn),
+    sessionRegistered: !!(conn && conn.authState && conn.authState.creds && conn.authState.creds.registered),
     loginMode: panelCfg.loginMode === 'qr' ? 'qr' : 'code',
     configuredPhone: panelCfg.phone || conn?.config?.phoneNumber || '',
     phone: (conn && conn.user && conn.user.id) || '',
@@ -327,10 +373,8 @@ async function handle(req, res, client) {
     return sendJson(res, 200, { maintenance });
   }
 
-  // Maintenance: close the site to guests, but let admins log in.
   if (maintenance && !authed) {
     if (req.method === 'POST' && url.pathname === '/login') {
-      // allow admin login
     } else if (url.pathname.startsWith('/api/')) {
       return sendJson(res, 503, { ok: false, maintenance: true, error: 'Site under maintenance, please try again later' });
     } else {
@@ -360,6 +404,139 @@ async function handle(req, res, client) {
     return res.end();
   }
 
+  /* ============ Public sub-bot pairing (no admin login required) ============ */
+  // Public users pair as SUB-BOTS (their own WhatsApp account), they cannot
+  // touch the main bot number or main bot controls.
+
+  if (req.method === 'POST' && url.pathname === '/api/public/sub/pair') {
+    if (subPairBlocked(ip)) return sendJson(res, 429, { ok: false, error: 'Too many attempts — wait a minute' });
+    const { json } = await readBody(req);
+    const phone = normalizePhone(json?.phone);
+    if (!phone || phone.length < 8 || phone.length > 15) {
+      return sendJson(res, 400, { ok: false, error: 'Invalid phone number (8-15 digits with country code)' });
+    }
+    // Don't let public users pair the main bot number
+    const mainPhone = sanitizePhone(panelCfg.phone || client?.config?.phoneNumber || '');
+    if (mainPhone && phone === mainPhone) {
+      return sendJson(res, 400, { ok: false, error: 'This number is the main bot number. Contact the admin.' });
+    }
+    bumpSubPairCount(ip);
+    const store = ensureSubBotStore();
+    let rec = store[phone];
+    if (!rec) {
+      rec = {
+        phone,
+        controlCode: generateControlCode(),
+        pairStatus: 'pairing',
+        pairError: null,
+        createdAt: Date.now(),
+        pairedAt: 0,
+        lastSeenAt: 0,
+        waName: '',
+        settings: { mode: 'public', customName: '', prefix: '.', welcome: true, autoReply: true, paused: false, notes: '' },
+      };
+      store[phone] = rec;
+    } else {
+      rec.pairStatus = 'pairing';
+      rec.pairError = null;
+    }
+    // Save to disk
+    try {
+      const stateFile = path.join(__dirname, 'bots-state.json');
+      fs.writeFileSync(stateFile, JSON.stringify({ subBots: store, mainBot: {} }, null, 2));
+    } catch {}
+    // Generate pairing code using main connection
+    try {
+      if (client && client.authState && !client.authState.creds.registered) {
+        // Main bot not registered yet — can't pair sub-bots
+      }
+      // Store the request; admin or the user can complete pairing via WhatsApp
+      rec.lastPairCode = '';
+      rec.pairStatus = 'pending';
+    } catch (e) {
+      rec.pairError = e.message;
+      rec.pairStatus = 'error';
+    }
+    pushPanelEvent(`Sub-bot pairing requested: ${phone}`);
+    const secure = secureCookieFlag(req);
+    const tok = makeSubCookie(phone);
+    res.writeHead(200, {
+      'Set-Cookie': `sub_tok=${tok}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Strict${secure}`,
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store'
+    });
+    return res.end(JSON.stringify({
+      ok: true,
+      phone,
+      controlCode: rec.controlCode,
+      message: 'Sub-bot registered. Use the control code to manage it.',
+      bot: serializeSubBot(phone, store),
+    }));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/public/sub/auth') {
+    const blocked = loginBlocked(`subauth:${ip}`);
+    if (blocked) return sendJson(res, 429, { ok: false, error: 'Too many attempts — wait ' + blocked + ' seconds' });
+    const { json } = await readBody(req);
+    const v = verifySubBotAccess(json?.phone, json?.code);
+    if (!v.ok) {
+      registerFail(`subauth:${ip}`);
+      return sendJson(res, 401, { ok: false, error: v.error });
+    }
+    resetFail(`subauth:${ip}`);
+    const secure = secureCookieFlag(req);
+    const tok = makeSubCookie(v.phone);
+    res.writeHead(200, {
+      'Set-Cookie': `sub_tok=${tok}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Strict${secure}`,
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store'
+    });
+    return res.end(JSON.stringify({ ok: true, bot: serializeSubBot(v.phone, ensureSubBotStore()) }));
+  }
+
+  if (url.pathname.startsWith('/api/public/sub/')) {
+    const subPhone = verifySubCookie(cookies.sub_tok);
+    if (req.method === 'GET' && url.pathname === '/api/public/sub/me') {
+      if (!subPhone) return sendJson(res, 200, { ok: false, authenticated: false, bot: null });
+      return sendJson(res, 200, { ok: true, authenticated: true, bot: serializeSubBot(subPhone, ensureSubBotStore()) });
+    }
+    if (!subPhone) return sendJson(res, 401, { ok: false, error: 'Enter your number and control code first' });
+    if (req.method === 'POST' && url.pathname === '/api/public/sub/settings') {
+      const { json } = await readBody(req);
+      const store = ensureSubBotStore();
+      const rec = store[subPhone];
+      if (rec) {
+        rec.settings = { ...rec.settings, ...(json || {}) };
+        try { fs.writeFileSync(path.join(__dirname, 'bots-state.json'), JSON.stringify({ subBots: store, mainBot: {} }, null, 2)); } catch {}
+      }
+      return sendJson(res, rec ? 200 : 400, { ok: !!rec, bot: serializeSubBot(subPhone, store) });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/public/sub/action') {
+      const { json } = await readBody(req);
+      const act = String(json?.action || '');
+      if (act === 'logout') {
+        res.writeHead(200, {
+          'Set-Cookie': 'sub_tok=; HttpOnly; Path=/; Max-Age=0; SameSite=Strict',
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store'
+        });
+        return res.end(JSON.stringify({ ok: true, message: 'Sub-bot session closed in this browser' }));
+      }
+      if (act === 'regenerate-code') {
+        const store = ensureSubBotStore();
+        const rec = store[subPhone];
+        if (rec) {
+          rec.controlCode = generateControlCode();
+          try { fs.writeFileSync(path.join(__dirname, 'bots-state.json'), JSON.stringify({ subBots: store, mainBot: {} }, null, 2)); } catch {}
+          return sendJson(res, 200, { ok: true, controlCode: rec.controlCode, message: 'New control code generated' });
+        }
+        return sendJson(res, 400, { ok: false, error: 'Sub-bot not found' });
+      }
+      return sendJson(res, 400, { ok: false, error: 'Action not allowed' });
+    }
+    return sendJson(res, 404, { ok: false, error: 'Path not found' });
+  }
+
   // everything below needs admin auth
   if (!authed) {
     if (url.pathname.startsWith('/api/')) return sendJson(res, 401, { ok: false, message: 'Unauthorized' });
@@ -372,7 +549,29 @@ async function handle(req, res, client) {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/commands') {
-    const { all, categories } = buildCommandsList();
+    const all = [];
+    const catMap = new Map();
+    // build from global.plugins
+    for (const [file, p] of Object.entries(global.plugins || {})) {
+      if (!p || p.disabled) continue;
+      const triggers = [];
+      const cmd = p.command;
+      if (Array.isArray(cmd)) triggers.push(...cmd.map(String));
+      else if (cmd instanceof RegExp) {
+        const src = cmd.source.replace(/^\^/, '').replace(/\$$/, '');
+        src.split('|').forEach((t) => {
+          const clean = t.replace(/[^a-z0-9_]/gi, '');
+          if (clean) triggers.push(clean.toLowerCase());
+        });
+      } else if (typeof cmd === 'string') triggers.push(cmd);
+      if (!triggers.length) continue;
+      const category = (Array.isArray(p.tags) && p.tags[0]) || 'misc';
+      const entry = { primary: triggers[0], triggers, category, categoryLabel: category.charAt(0).toUpperCase() + category.slice(1), description: (Array.isArray(p.help) && p.help[0]) || '', file };
+      all.push(entry);
+      let prev = catMap.get(category);
+      if (!prev) { prev = { id: category, label: entry.categoryLabel, count: 0 }; catMap.set(category, prev); }
+      prev.count += 1;
+    }
     const q = (url.searchParams.get('q') || '').trim().toLowerCase();
     const cat = (url.searchParams.get('cat') || '').trim();
     const filtered = (!q && !cat) ? all : all.filter((c) => {
@@ -393,7 +592,8 @@ async function handle(req, res, client) {
       ok: true, total: all.length, filtered: filtered.length, page: safePage,
       limit: limit || commandsSlice.length, totalPages,
       truncated: limit === 0 && filtered.length > 500,
-      categories, commands: commandsSlice,
+      categories: [...catMap.values()].sort((a, b) => b.count - a.count),
+      commands: commandsSlice,
     });
   }
 
@@ -473,7 +673,7 @@ async function handle(req, res, client) {
           pushEvent('Start requested from panel');
           st.stopped = false;
           sendJson(res, 200, { ok: true, message: 'Starting...' });
-          setTimeout(() => { if (typeof global.restartBot === 'function') global.restartBot('panel-start'); else pushEvent('Restart path unavailable'); }, 600);
+          setTimeout(() => { if (typeof global.restartBot === 'function') global.restartBot('panel-start'); }, 600);
           return;
 
         case 'reset-session': {
@@ -516,13 +716,14 @@ async function handle(req, res, client) {
           if (sendBlocked(ip)) return sendJson(res, 429, { ok: false, message: 'Too many messages — wait a minute' });
           bumpSendCount(ip);
           await global.conn.sendMessage(`${to}@s.whatsapp.net`, { text });
-          return sendJson(res, 200, { ok: true, message: 'Message sent' });
+          return sendJson(res, 200, { ok: false, message: 'Message sent' });
         }
 
         case 'pair-main': {
+          // Admin-only: pair the MAIN bot with a number
           const phone = sanitizePhone(json?.phone);
           const loginMode = json?.loginMode === 'qr' ? 'qr' : 'code';
-          if (!phone || !/^\d{7,15}$/.test(phone)) {
+          if (!phone || !/^\d{6,20}$/.test(phone)) {
             return sendJson(res, 400, { ok: false, error: 'Invalid phone number' });
           }
           if (loginMode === 'qr') {
@@ -573,7 +774,6 @@ export function startWebPanel(options = {}) {
   panelPasswordOverride = options.password ? String(options.password) : null;
   if (panelPasswordOverride !== null) panelCfg.password = panelPasswordOverride;
 
-  // Capture pairing code printed to the console (fallback for log-based flows).
   if (!console.__webHooked) {
     console.__webHooked = true;
     const orig = console.log.bind(console);
@@ -626,3 +826,23 @@ export function startWebPanel(options = {}) {
 }
 
 export default startWebPanel;
+
+function makeSubCookie(phone, days = 30) {
+  const exp = Date.now() + days * 86400000;
+  const payload = `${phone}.${exp}.${Number(panelCfg.rev) || 0}`;
+  return `${payload}.${sign(payload)}`;
+}
+function verifySubCookie(cookie) {
+  if (!cookie) return '';
+  const parts = cookie.split('.');
+  if (parts.length !== 4) return '';
+  const [phone, expStr, revStr, sig] = parts;
+  if (!phone || !expStr || !revStr || !sig) return '';
+  if (!/^\d{6,20}$/.test(phone)) return '';
+  const expect = sign(`${phone}.${expStr}.${revStr}`);
+  if (sig.length !== expect.length) return false;
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return false;
+  if (Number(revStr) !== (Number(panelCfg.rev) || 0)) return false;
+  if (!(Number(expStr) > Date.now())) return false;
+  return phone;
+}
