@@ -9,7 +9,7 @@ import sizeOf from 'image-size';
 
 import '../lib/globals.js';
 import '../config.js';
-import { makeWASocket, protoType, serialize, smsg } from '../lib/simple.js';
+import { makeWASocket, prepareOutgoingContent, protoType, serialize, smsg } from '../lib/simple.js';
 import initDatabase from '../lib/database.js';
 import { handler } from '../handler.js';
 import mainMenuPlugin from '../plugins/main-menu.js';
@@ -242,10 +242,69 @@ test('handler executes command for non-owner user in DM with extra aliases & res
 	assert.ok(!unregReplies[0].includes('.daftar'));
 });
 
-test('plugins/media-readviewonce.js reveals viewOnce image/video and rejects non-viewOnce replies', async () => {
+test('plugins/media-readviewonce.js and smsg handle viewOnce replies (.فضح / .vv), messageContextInfo, and clean sendMessage', async () => {
 	const { sock, sent } = createConnectedFakeSock();
 	const fakeBuf = Buffer.from('fake-image-bytes');
 
+	// Verify prepareOutgoingContent (used by sendMessage) no longer injects streamingSidecar or embeddedMusic annotations
+	const { generateWAMessageContent } = await import('baileys');
+	const outgoingPayload = prepareOutgoingContent(sock, { image: fakeBuf, caption: 'clean reveal @201099887766' });
+	assert.equal(outgoingPayload.annotations, undefined);
+	assert.equal(outgoingPayload.streamingSidecar, undefined);
+	assert.deepEqual(outgoingPayload.mentions, ['201099887766@s.whatsapp.net']);
+	const generated = await generateWAMessageContent(outgoingPayload, {
+		upload: async () => ({
+			directPath: '/v/t62.7118-24/mock',
+			mediaUrl: 'https://mmg.whatsapp.net/v/t62.7118-24/mock',
+			mediaKey: Buffer.alloc(32, 1),
+			fileSha256: Buffer.alloc(32, 2),
+			fileEncSha256: Buffer.alloc(32, 3),
+			fileLength: fakeBuf.length,
+		}),
+	});
+	assert.ok(generated.imageMessage);
+	assert.equal(generated.imageMessage.annotations?.length || 0, 0, 'imageMessage must not have fake embeddedMusic annotations');
+	assert.equal(generated.imageMessage.streamingSidecar?.length || 0, 0, 'imageMessage must not have fake streamingSidecar');
+
+	// Malformed/empty quotedMessage must never crash smsg
+	assert.doesNotThrow(() =>
+		smsg(sock, {
+			key: { remoteJid: '201099887766@s.whatsapp.net', fromMe: false, id: 'USER_MALFORMED_Q1' },
+			message: {
+				extendedTextMessage: {
+					text: '.فضح',
+					contextInfo: { stanzaId: 'BAD_Q', participant: '201099887766@s.whatsapp.net', quotedMessage: {} },
+				},
+			},
+		}).quoted
+	);
+
+	// messageContextInfo before imageMessage inside viewOnceMessageV2 must still resolve m.quoted.mediaType === 'imageMessage'
+	const mCtxQuoted = smsg(sock, {
+		key: { remoteJid: '201099887766@s.whatsapp.net', fromMe: false, id: 'USER_RVO_CTX_00001' },
+		message: {
+			extendedTextMessage: {
+				text: '.فضح',
+				contextInfo: {
+					stanzaId: 'QUOTED_CTX',
+					participant: '201099887766@s.whatsapp.net',
+					quotedMessage: {
+						viewOnceMessageV2: {
+							message: {
+								messageContextInfo: { deviceListMetadataVersion: 2 },
+								imageMessage: { caption: 'ctx secret', mimetype: 'image/jpeg', viewOnce: true, url: 'https://mmg.whatsapp.net/ctx' },
+							},
+						},
+					},
+				},
+			},
+		},
+	});
+	assert.equal(mCtxQuoted.quoted.mtype, 'imageMessage');
+	assert.equal(mCtxQuoted.quoted.mediaType, 'imageMessage');
+	assert.equal(typeof mCtxQuoted.quoted.download, 'function');
+
+	// Non-viewOnce reply should throw the Arabic prompt
 	const mNonViewOnce = smsg(sock, {
 		key: { remoteJid: '201099887766@s.whatsapp.net', fromMe: false, id: 'USER_RVO_00000000001' },
 		message: {
@@ -261,26 +320,49 @@ test('plugins/media-readviewonce.js reveals viewOnce image/video and rejects non
 	});
 	await assert.rejects(() => readViewOncePlugin.call(sock, mNonViewOnce, { conn: sock }), /رد على فيديو أو صورة/);
 
+	// Ephemeral + viewOnceMessageV2 + .vv command + loadMessage fallback when quoted stub lacks url
+	assert.ok(readViewOncePlugin.command.test('vv'));
+	assert.ok(readViewOncePlugin.command.test('فضح'));
+	sock.chats['201099887766@s.whatsapp.net'] = {
+		id: '201099887766@s.whatsapp.net',
+		messages: {
+			QUOTED_2: {
+				key: { remoteJid: '201099887766@s.whatsapp.net', id: 'QUOTED_2' },
+				message: {
+					viewOnceMessageV2: {
+						message: {
+							imageMessage: { caption: 'secret', mimetype: 'image/jpeg', viewOnce: true, url: 'https://mmg.whatsapp.net/x' },
+						},
+					},
+				},
+			},
+		},
+	};
+	Object.defineProperty(sock, 'downloadM', { value: async () => fakeBuf, configurable: true });
 	const mViewOnce = smsg(sock, {
 		key: { remoteJid: '201099887766@s.whatsapp.net', fromMe: false, id: 'USER_RVO_00000000002' },
 		message: {
 			extendedTextMessage: {
-				text: '.فضح',
+				text: '.vv',
 				contextInfo: {
 					stanzaId: 'QUOTED_2',
 					participant: '201099887766@s.whatsapp.net',
 					quotedMessage: {
-						viewOnceMessageV2: {
-							message: { imageMessage: { caption: 'secret', mimetype: 'image/jpeg', viewOnce: true, url: 'https://mmg.whatsapp.net/x' } },
+						ephemeralMessage: {
+							message: {
+								viewOnceMessageV2: {
+									message: {
+										messageContextInfo: { deviceListMetadataVersion: 2 },
+										imageMessage: { caption: 'secret', mimetype: 'image/jpeg', viewOnce: true },
+									},
+								},
+							},
 						},
 					},
 				},
 			},
 		},
 	});
-	const quotedObj = mViewOnce.quoted;
-	Object.defineProperty(quotedObj, 'download', { value: async () => fakeBuf });
-	Object.defineProperty(mViewOnce, 'quoted', { value: quotedObj });
 	await readViewOncePlugin.call(sock, mViewOnce, { conn: sock });
 	assert.equal(sent.length, 1);
 	assert.deepEqual(sent[0].content.image, fakeBuf);

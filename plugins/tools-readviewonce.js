@@ -1,18 +1,29 @@
-let handler = async (m) => {
+let handler = async (m, { conn }) => {
 	if (!m.quoted) return m.reply('Reply to the image/video you want to view');
-	if (m.quoted.mediaMessage[m.quoted?.mediaType]?.viewOnce) {
-		let msg = await m.getQuotedObj()?.message;
-		let type = Object.keys(msg)[0];
-		let media = (await m.quoted?.download()) || (await m.getQuotedObj().download());
-		if (!media) return m.reply('Failed to execute the media!');
+	const mediaType = m.quoted.mediaType;
+	const mediaNode = mediaType ? m.quoted.mediaMessage?.[mediaType] : null;
+	if (m.quoted.viewOnce || m.quoted.msg?.viewOnce || mediaNode?.viewOnce) {
+		const media = (typeof m.quoted.download === 'function' ? await m.quoted.download().catch(() => null) : null) ||
+			(mediaNode && typeof conn.downloadM === 'function' ? await conn.downloadM(mediaNode, mediaType.replace(/Message$/i, ''), false).catch(() => null) : null);
+		if (!Buffer.isBuffer(media) || !media.length) return m.reply('Failed to execute the media!');
 
-		await conn.sendFile(m.chat, media, 'error.mp4', msg[type]?.caption || '', m);
+		const mtype = (mediaType || m.quoted.mtype || '').replace(/Message$/i, '');
+		const caption = mediaNode?.caption || m.quoted.caption || '';
+		if (mtype === 'image' || mtype === 'video' || mtype === 'audio') {
+			await conn.sendMessage(
+				m.chat,
+				mtype === 'audio' ? { audio: media, mimetype: mediaNode?.mimetype || 'audio/mp4', ptt: Boolean(mediaNode?.ptt) } : { [mtype]: media, caption },
+				{ quoted: m }
+			);
+		} else {
+			await conn.sendFile(m.chat, media, 'media', caption, m);
+		}
 	} else m.reply('This is not a view-once message.');
 };
 
 handler.help = ['rvo'];
 handler.tags = ['tools'];
-handler.command = /^rvo|read/i;
+handler.command = /^rvo|read$/i;
 handler.register = true;
 
 export default handler;
