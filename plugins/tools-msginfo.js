@@ -1,33 +1,32 @@
+const MSG_WRAPPER_KEYS = [
+    'deviceSentMessage',
+    'ephemeralMessage',
+    'viewOnceMessage',
+    'viewOnceMessageV2',
+    'viewOnceMessageV2Extension',
+    'documentWithCaptionMessage',
+    'editedMessage',
+    'associatedChildMessage',
+    'botInvokeMessage',
+    'groupStatusMessage',
+    'groupStatusMessageV2',
+    'spoilerMessage',
+]
+
 function unwrapMessage(obj) {
     let cur = obj
     const wrappers = []
-    for (let i = 0; i < 6 && cur && typeof cur === 'object'; i++) {
-        if (cur.ephemeralMessage?.message) {
-            wrappers.push('ephemeralMessage')
-            cur = cur.ephemeralMessage.message
-            continue
+    for (let i = 0; i < 8 && cur && typeof cur === 'object'; i++) {
+        let stepped = false
+        for (const key of MSG_WRAPPER_KEYS) {
+            if (cur[key]?.message && typeof cur[key].message === 'object') {
+                wrappers.push(key)
+                cur = cur[key].message
+                stepped = true
+                break
+            }
         }
-        if (cur.viewOnceMessage?.message) {
-            wrappers.push('viewOnceMessage')
-            cur = cur.viewOnceMessage.message
-            continue
-        }
-        if (cur.viewOnceMessageV2?.message) {
-            wrappers.push('viewOnceMessageV2')
-            cur = cur.viewOnceMessageV2.message
-            continue
-        }
-        if (cur.viewOnceMessageV2Extension?.message) {
-            wrappers.push('viewOnceMessageV2Extension')
-            cur = cur.viewOnceMessageV2Extension.message
-            continue
-        }
-        if (cur.documentWithCaptionMessage?.message) {
-            wrappers.push('documentWithCaptionMessage')
-            cur = cur.documentWithCaptionMessage.message
-            continue
-        }
-        break
+        if (!stepped) break
     }
     return { inner: cur, wrappers }
 }
@@ -186,8 +185,8 @@ const handler = async (m, { conn }) => {
     )
 }
 
-handler.help = ['msginfo', 'معلومات', 'تفاصيل']
+handler.help = ['msginfo', 'معلومات', 'تفاصيل', 'رابط']
 handler.tags = ['tools']
-handler.command = /^msginfo|minfo|inspect|معلومات|تفاصيل|رابط_الرسالة$/i
+handler.command = /^msginfo|minfo|inspect|معلومات|تفاصيل|رابط_الرسالة|رابط|فحص$/i
 
 export default handler

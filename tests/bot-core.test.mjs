@@ -420,6 +420,63 @@ test('plugins/media-readviewonce.js and smsg handle viewOnce replies (.فضح / 
 	assert.ok(infoText.includes('/v/vo999'));
 	assert.ok(infoText.includes('MediaKey'));
 	assert.ok(infoText.includes('peek'));
+
+	// Simulate bot restart with deviceSentMessage -> viewOnceMessageV2 (directPath only, persisted in global.db.data.msgs)
+	global.db = { data: { users: {}, chats: {}, stats: {}, msgs: {}, sticker: {}, settings: {} } };
+	await sock.pushMessage([
+		{
+			key: { remoteJid: '201099887766@s.whatsapp.net', fromMe: true, id: 'DEVICE_SENT_VO_1' },
+			message: {
+				deviceSentMessage: {
+					destinationJid: '201099887766@s.whatsapp.net',
+					message: {
+						viewOnceMessageV2: {
+							message: {
+								imageMessage: {
+									directPath: '/v/t62/device_sent_only',
+									mimetype: 'image/jpeg',
+									mediaKey: Buffer.alloc(32, 5),
+									viewOnce: true,
+									caption: 'device sent secret',
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	]);
+	const { sock: restartedSock, sent: restartedSent } = createConnectedFakeSock();
+	Object.defineProperty(restartedSock, 'downloadM', {
+		value: async (node) => {
+			assert.equal(node.directPath, '/v/t62/device_sent_only');
+			assert.equal(node.url, 'https://mmg.whatsapp.net/v/t62/device_sent_only');
+			assert.ok(Buffer.isBuffer(node.mediaKey));
+			return fakeBuf;
+		},
+		configurable: true,
+	});
+	const mAfterRestart = smsg(restartedSock, {
+		key: { remoteJid: '201099887766@s.whatsapp.net', fromMe: false, id: 'USER_RVO_AFTER_RESTART' },
+		message: {
+			extendedTextMessage: {
+				text: '.فضح',
+				contextInfo: {
+					stanzaId: 'DEVICE_SENT_VO_1',
+					participant: '201099887766@s.whatsapp.net',
+					quotedMessage: {
+						viewOnceMessageV2: {
+							message: { imageMessage: { mimetype: 'image/jpeg', viewOnce: true } },
+						},
+					},
+				},
+			},
+		},
+	});
+	await readViewOncePlugin.call(restartedSock, mAfterRestart, { conn: restartedSock });
+	assert.equal(restartedSent.length, 1);
+	assert.deepEqual(restartedSent[0].content.image, fakeBuf);
+	assert.ok(restartedSent[0].content.caption.includes('device sent secret'));
 });
 
 test('plugins/main-menu.js runs cleanly for list, category, and unknown menu without protobuf or TypeError', async () => {
