@@ -87,7 +87,7 @@ You *${status}*, You ${text}
 	// If replying but it's not "yes/no", ignore
 };
 
-handler.help = ['judi'];
+handler.help = ['bet'];
 handler.tags = ['rpg'];
 handler.command = /^(judi|bet)$/i;
 

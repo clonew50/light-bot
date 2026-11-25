@@ -30,8 +30,8 @@ let handler = async (m, { conn }) => {
  `.trim();
 	conn.reply(m.chat, ndy, m);
 };
-handler.help = ['kandang'];
+handler.help = ['farm'];
 handler.tags = ['rpg'];
-handler.command = /^(kandang)$/i;
+handler.command = /^(kandang|farm)$/i;
 
 export default handler;

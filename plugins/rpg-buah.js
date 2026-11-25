@@ -10,7 +10,7 @@ let handler = async (m, { usedPrefix }) => {
 	m.reply(ini_txt);
 };
 
-handler.help = ['listbuah'];
+handler.help = ['fruits'];
 handler.tags = ['rpg'];
 handler.command = /^((list)?(buah|fruits?))$/i;
 

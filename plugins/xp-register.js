@@ -5,7 +5,7 @@ let handler = async function (m, { text, usedPrefix }) {
 	let user = global.db.data.users[m.sender];
 	const pp = await conn.profilePictureUrl(m.sender, 'image', 'buffer');
 	if (user.registered === true) throw `You Have Already Registered In The Database, Do You Want To Re-Register? *${usedPrefix}unreg*`;
-	if (!Reg.test(text)) throw `Enter Name.Age\nExample: .daftar Vlyyyn.17`;
+	if (!Reg.test(text)) throw `Enter Name.Age\nExample: .register Alex.17`;
 	let [_, name, _splitter, age] = text.match(Reg);
 	if (!name) throw 'Name cannot be empty';
 	if (!age) throw 'Age cannot be empty';
@@ -37,7 +37,7 @@ let handler = async function (m, { text, usedPrefix }) {
 		body: 'You Are User Number ' + Object.values(db.data.users).filter((v) => v.registered == true).length,
 	});
 };
-handler.help = ['daftar <name>.<age>'];
+handler.help = ['register <name>.<age>'];
 handler.tags = ['xp'];
 handler.command = /^(daftar|verify|reg(ister)?)$/i;
 

@@ -233,6 +233,13 @@ test('handler executes command for non-owner user in DM with extra aliases & res
 	assert.equal(calls.length, 2);
 	assert.equal(calls[1].extra.isROwner, true);
 	assert.equal(calls[1].extra.isOwner, true);
+
+	// Unregistered prompt uses English .register command
+	const unregReplies = [];
+	await global.dfail('unreg', { chat: '201099887766@s.whatsapp.net' }, { reply: async (_chat, text) => unregReplies.push(text) });
+	assert.equal(unregReplies.length, 1);
+	assert.ok(unregReplies[0].includes('.register Name.age'));
+	assert.ok(!unregReplies[0].includes('.daftar'));
 });
 
 test('plugins/media-readviewonce.js reveals viewOnce image/video and rejects non-viewOnce replies', async () => {

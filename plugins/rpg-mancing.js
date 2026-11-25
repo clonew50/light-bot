@@ -60,7 +60,7 @@ ${usedPrefix}cook
 	}
 };
 
-handler.help = ['mancing'];
+handler.help = ['fishing'];
 handler.tags = ['rpg'];
 handler.command = /^(fishing|mancing)$/i;
 

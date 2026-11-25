@@ -451,7 +451,7 @@ global.dfail = (type, m, conn) => {
 		private: 'Private Chat - This command can only be used in private chat',
 		admin: 'Only Admin - This command is only for group admins',
 		botAdmin: 'Only Bot Admin - This command can only be used when bot is admin',
-		unreg: 'Hello! 👋 You must register to the bot database first before using this feature\nHow to register: type .daftar Name.age',
+		unreg: 'Hello! 👋 You must register to the bot database first before using this feature\nHow to register: type .register Name.age',
 		restrict: 'Restrict - Restrict feature not activated in this chat',
 	}[type];
 	if (msg) return conn.reply(m.chat, msg, m);

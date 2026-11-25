@@ -1,19 +1,19 @@
 const rewardConfig = {
-	harian: {
+	daily: {
 		cooldown: 86400000, // 1 day
 		lastKey: 'lastclaim',
 		free: { exp: 500, money: 1000, limit: 5 },
 		prem: { exp: 1000, money: 5000, limit: 10 },
 	},
 
-	mingguan: {
+	weekly: {
 		cooldown: 604800000, // 7 days
 		lastKey: 'lastweekly',
 		free: { exp: 2999, money: 7000, limit: 15 },
 		prem: { exp: 4999, money: 14000, limit: 30 },
 	},
 
-	bulanan: {
+	monthly: {
 		cooldown: 2592000000, // 30 days
 		lastKey: 'lastmonthly',
 		free: { exp: 4999, money: 50000, limit: 30 },
@@ -22,7 +22,7 @@ const rewardConfig = {
 };
 
 let handler = async (m, { command, isPrems }) => {
-	const type = /harian|claim/i.test(command) ? 'harian' : /mingguan|weekly/i.test(command) ? 'mingguan' : /monthly|bulanan/i.test(command) ? 'bulanan' : null;
+	const type = /daily|harian|claim/i.test(command) ? 'daily' : /mingguan|weekly/i.test(command) ? 'weekly' : /monthly|bulanan/i.test(command) ? 'monthly' : null;
 
 	if (!type) return;
 
@@ -47,9 +47,9 @@ let handler = async (m, { command, isPrems }) => {
 	m.reply(`🎁 *${type.charAt(0).toUpperCase() + type.slice(1)} Reward*\n` + `\n+ ${reward.exp} Exp` + `\n+ ${reward.money} Money` + `\n+ ${reward.limit} Limit`);
 };
 
-handler.help = ['harian', 'mingguan', 'bulanan'];
+handler.help = ['daily', 'weekly', 'monthly'];
 handler.tags = ['rpg'];
-handler.command = /^(harian|claim|mingguan|weekly|monthly|bulanan)$/i;
+handler.command = /^(daily|harian|claim|mingguan|weekly|monthly|bulanan)$/i;
 
 export default handler;
 

@@ -74,7 +74,7 @@ And got ${itemrand}
 	}
 };
 
-handler.help = ['petualang'];
+handler.help = ['adventure'];
 handler.tags = ['rpg'];
 handler.command = /^(petualang|adventure)$/i;
 handler.group = true;

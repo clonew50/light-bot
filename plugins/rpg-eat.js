@@ -156,7 +156,7 @@ let handler = async (m, { command, args }) => {
 	}
 };
 
-handler.help = ['makan'];
+handler.help = ['eat'];
 handler.tags = ['rpg'];
 handler.register = true;
 handler.group = true;

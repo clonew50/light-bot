@@ -17,7 +17,7 @@ let handler = async (m) => {
  🐼 > ${rbrb5}              🐖 > ${rbrb11}
  🐊 > ${rbrb6}              🐓 > ${rbrb12}
 
-*Type: .kandang to see the results*
+*Type: .farm to see the results*
 `;
 
 	user.banteng += rbrb1;
@@ -42,9 +42,9 @@ let handler = async (m) => {
 	user.lastberburu = now;
 };
 
-handler.help = ['berburu'];
+handler.help = ['hunt'];
 handler.tags = ['rpg'];
-handler.command = /^(berburu)$/i;
+handler.command = /^(berburu|hunt)$/i;
 handler.group = true;
 export default handler;
 

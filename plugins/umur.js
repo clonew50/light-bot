@@ -1,7 +1,7 @@
 // plugins/umur.js - Alya Bot | Dev yono - NEXT BIRTHDAY INFO
 
 let handler = async (m, { conn, args }) => {
-    if (!args[0]) return m.reply(`📌 *Usage:* .umur 2/2/2010`)
+    if (!args[0]) return m.reply(`📌 *Usage:* .age 2/2/2010`)
 
     let input = args[0]
     let d, mo, y
@@ -96,7 +96,7 @@ let handler = async (m, { conn, args }) => {
     }, {})
 }
 
-handler.help = ['umur <date>']
+handler.help = ['age <date>']
 handler.tags = ['tools']
 handler.command = /^(umur|age)$/i
 export default handler

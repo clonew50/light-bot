@@ -15,7 +15,7 @@ let handler = async (m, { conn }) => {
 		conn.reply(m.chat, `Successfully robbed their money and you got Rp.${dapat}`, m);
 	} else conn.reply(m.chat, `You have already robbed and successfully hid, wait ${timers} to rob again`, m);
 };
-handler.help = ['merampok'];
+handler.help = ['rob'];
 handler.tags = ['rpg'];
 handler.command = /^merampok|rob$/;
 handler.limit = true;
