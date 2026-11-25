@@ -1,453 +1,664 @@
 /**
- * webPanel.js — لوحة تحكم ويب للبوت (Elaina-Multidevice)
- * ======================================================
- * لوحة ويب بتشتغل جوه عملية البوت (worker) فبتقدر تقرأ حالة الاتصال
- * (global.conn) وتبعت رسائل وتعيد التشغيل.
+ * webPanel.js — web control panel for Elaina-Multidevice
+ * =====================================================
+ * Rebuilt to match the old panel design & features (secure login, live QR /
+ * pairing-code pairing, control, status, errors, send message, event log,
+ * maintenance mode, command browser, password rotation, auto-update) — but
+ * WITHOUT the command simulator / testing feature.
  *
- * الميزات:
- *   - دخول بكلمة سر (كوكي موقّع بـ HMAC) — الافتراضي: winner
- *   - ربط البوت بواتساب: كود ربط (برقم) أو QR
- *   - عرض الحالة: متصل / كود الربط / QR / اسم البوت / عدد البلجنز / uptime / الكوميت
- *   - إعادة تشغيل / تصفير الجلسة / إرسال رسالة
- *   - فحص وتطبيق التحديثات من الريبو (system/autoUpdate.mjs)
- *   - سجل أحداث مباشر
+ * Runs inside the bot worker process so it can read the live connection
+ * (global.conn / global.__panelState), send messages and restart the bot.
  *
- * الإعدادات بتتحفظ في system/panel-config.json (كلمة السر، طريقة الربط، الرقم).
- * المتغيرات البيئية: WEB_PASSWORD, PANEL_CONFIG_FILE, WEB_PORT/PORT/SERVER_PORT/P_SERVER_PORT.
+ * Config is stored in system/panel-config.json (password, login mode, number).
+ * Env: WEB_PASSWORD, PANEL_CONFIG_FILE, WEB_PORT/PORT/SERVER_PORT/P_SERVER_PORT.
  */
-import http from 'http';
-import fs from 'fs';
-import path from 'path';
-import crypto from 'crypto';
-import { fileURLToPath } from 'url';
+import http from 'node:http';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { checkUpdate, applyUpdate } from './autoUpdate.mjs';
+import { renderPublicPortalHtml, renderAdminPanelHtml, renderMaintenanceHtml } from './panelViews.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const CONFIG_FILE = process.env.PANEL_CONFIG_FILE || path.join(__dirname, 'panel-config.json');
-const DEFAULT_PASSWORD = process.env.WEB_PASSWORD || 'winner';
 
-/* ----------------------------- الإعدادات ----------------------------- */
-function loadCfg() {
-	try {
-		return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) || {};
-	} catch {
-		return {};
-	}
-}
-function saveCfg(c) {
-	fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
-	const tmp = CONFIG_FILE + '.tmp-' + process.pid;
-	fs.writeFileSync(tmp, JSON.stringify(c, null, 2));
-	fs.renameSync(tmp, CONFIG_FILE);
-}
-function getSecret() {
-	const c = loadCfg();
-	if (!c.secret) {
-		c.secret = crypto.randomBytes(16).toString('hex');
-		saveCfg(c);
-	}
-	return c.secret;
-}
-export function readPanelConfig() {
-	const c = loadCfg();
-	return {
-		password: c.password || DEFAULT_PASSWORD,
-		loginMode: c.loginMode === 'qr' ? 'qr' : 'code',
-		phone: c.phone || '',
-	};
+function configFilePath() {
+  return process.env.PANEL_CONFIG_FILE
+    ? path.resolve(process.env.PANEL_CONFIG_FILE)
+    : path.join(__dirname, 'panel-config.json');
 }
 
-/* ----------------------------- سجل الأحداث ----------------------------- */
-const events = [];
-export function pushPanelEvent(message) {
-	const e = { t: Date.now(), message: String(message) };
-	events.push(e);
-	if (events.length > 100) events.shift();
-	try {
-		console.log('[PANEL]', message);
-	} catch {}
-}
-
-/* ----------------------------- المصادقة ----------------------------- */
-function sign(secret, val) {
-	return crypto.createHmac('sha256', secret).update(val).digest('hex');
-}
-function makeToken(secret) {
-	return sign(secret, 'panel-ok');
-}
-function checkAuth(req, secret) {
-	const cookie = req.headers.cookie || '';
-	const m = cookie.match(/(?:^|;\s*)panel=([^;]+)/);
-	return !!m && m[1] === makeToken(secret);
-}
-function readBody(req) {
-	return new Promise((resolve) => {
-		let data = '';
-		req.on('data', (c) => (data += c));
-		req.on('end', () => resolve(data));
-		req.on('error', () => resolve(data));
-	});
-}
-function json(res, code, obj, extraHeaders = {}) {
-	res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', ...extraHeaders });
-	res.end(JSON.stringify(obj));
-}
-function currentCommit() {
-	try {
-		const s = JSON.parse(fs.readFileSync(path.join(ROOT, '.git-pull-state.json'), 'utf8'));
-		return (s.commit || '').slice(0, 8) || 'unknown';
-	} catch {
-		return 'unknown';
-	}
-}
-
-/* ----------------------------- الخادم ----------------------------- */
-export function startWebPanel() {
-	const secret = getSecret();
-	const getState = () => global.__panelState || {};
-
-	const server = http.createServer(async (req, res) => {
-		try {
-			const url = new URL(req.url, 'http://localhost');
-			const p = url.pathname;
-
-			if (p === '/' || p === '/index.html') {
-				res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-				res.end(PAGE);
-				return;
-			}
-
-			if (p === '/api/login' && req.method === 'POST') {
-				let pw = '';
-				try {
-					pw = JSON.parse(await readBody(req)).password || '';
-				} catch {}
-				if (pw === readPanelConfig().password) {
-					json(res, 200, { ok: true }, {
-						'Set-Cookie': `panel=${makeToken(secret)}; Path=/; HttpOnly; SameSite=Lax`,
-					});
-				} else {
-					json(res, 401, { ok: false, error: 'كلمة السر غلط' });
-				}
-				return;
-			}
-
-			// كل اللي تحت محتاج تسجيل دخول
-			if (!checkAuth(req, secret)) {
-				json(res, 401, { ok: false, error: 'auth' });
-				return;
-			}
-
-			if (p === '/api/status' && req.method === 'GET') {
-				const st = getState();
-				const conn = global.conn;
-				const connected = !!(conn && conn.user && st.connection === 'open');
-				const isRegistered = !!(conn && conn.authState && conn.authState.creds && conn.authState.creds.registered);
-				json(res, 200, {
-					ok: true,
-					connected,
-					connection: st.connection || 'starting',
-					isRegistered,
-					pairingCode: st.pairingCode || null,
-					qr: st.lastQR || null,
-					phone: st.phone || '',
-					mode: st.mode || 'code',
-					botJid: (conn && conn.user && conn.user.id) || null,
-					botName: (conn && conn.user && (conn.user.name || conn.user.verifiedName)) || global.namebot || 'Bot',
-					plugins: Object.keys(global.plugins || {}).length,
-					uptimeMs: Date.now() - (st.startedAt || Date.now()),
-					commit: currentCommit(),
-					events: events.slice(-40),
-				});
-				return;
-			}
-
-			if (p === '/api/pair' && req.method === 'POST') {
-				let b = {};
-				try {
-					b = JSON.parse(await readBody(req));
-				} catch {}
-				const c = loadCfg();
-				if (b.phone) c.phone = String(b.phone).replace(/[^0-9]/g, '');
-				if (b.mode === 'qr' || b.mode === 'code') c.loginMode = b.mode;
-				saveCfg(c);
-				pushPanelEvent('تم حفظ إعدادات الربط — إعادة تشغيل');
-				json(res, 200, { ok: true });
-				setTimeout(() => global.restartBot && global.restartBot('panel-pair'), 800);
-				return;
-			}
-
-			if (p === '/api/restart' && req.method === 'POST') {
-				pushPanelEvent('طلب إعادة تشغيل من اللوحة');
-				json(res, 200, { ok: true });
-				setTimeout(() => global.restartBot && global.restartBot('panel-restart'), 600);
-				return;
-			}
-
-			if (p === '/api/reset' && req.method === 'POST') {
-				try {
-					fs.rmSync(path.join(ROOT, 'sessions'), { recursive: true, force: true });
-					pushPanelEvent('تم تصفير الجلسة — إعادة تشغيل');
-				} catch (e) {
-					pushPanelEvent('تعذّر تصفير الجلسة: ' + (e && e.message));
-				}
-				json(res, 200, { ok: true });
-				setTimeout(() => global.restartBot && global.restartBot('panel-reset'), 600);
-				return;
-			}
-
-			if (p === '/api/send' && req.method === 'POST') {
-				let b = {};
-				try {
-					b = JSON.parse(await readBody(req));
-				} catch {}
-				const number = String(b.number || '').replace(/[^0-9]/g, '');
-				const message = String(b.message || '');
-				const conn = global.conn;
-				if (!conn || !conn.user) return json(res, 400, { ok: false, error: 'البوت مش متصل' });
-				if (!number || !message) return json(res, 400, { ok: false, error: 'رقم أو رسالة ناقصة' });
-				try {
-					await conn.sendMessage(number + '@s.whatsapp.net', { text: message });
-					pushPanelEvent('تم إرسال رسالة إلى ' + number);
-					json(res, 200, { ok: true });
-				} catch (e) {
-					json(res, 500, { ok: false, error: e && e.message });
-				}
-				return;
-			}
-
-			if (p === '/api/update-check' && req.method === 'GET') {
-				const r = await checkUpdate();
-				json(res, 200, r);
-				return;
-			}
-
-			if (p === '/api/update' && req.method === 'POST') {
-				pushPanelEvent('طلب تحديث من اللوحة');
-				json(res, 200, { ok: true });
-				// في الخلفية عشان الرد يوصل الأول
-				setTimeout(async () => {
-					try {
-						await applyUpdate({
-							log: (t) => pushPanelEvent(t),
-							event: (m) => pushPanelEvent(m),
-							delayMs: 1500,
-						});
-					} catch (e) {
-						pushPanelEvent('فشل التحديث: ' + (e && e.message));
-					}
-				}, 500);
-				return;
-			}
-
-			json(res, 404, { ok: false, error: 'not found' });
-		} catch (e) {
-			try {
-				json(res, 500, { ok: false, error: e && e.message });
-			} catch {}
-		}
-	});
-
-	const port = Number(
-		process.env.WEB_PORT || process.env.PORT || process.env.SERVER_PORT || process.env.P_SERVER_PORT || 3732
-	);
-
-	let attempts = 0;
-	const maxAttempts = 10;
-	function tryListen() {
-		server.once('error', (e) => {
-			if (e && e.code === 'EADDRINUSE' && attempts < maxAttempts) {
-				attempts++;
-				setTimeout(tryListen, 500); // إعادة المحاولة بعد تحرير المنفذ (بعد إعادة التشغيل)
-				return;
-			}
-			console.error('[WEB] فشل تشغيل اللوحة:', e && e.message);
-			pushPanelEvent('فشل تشغيل اللوحة: ' + (e && e.message));
-		});
-		server.listen(port, '0.0.0.0', () => {
-			console.log('🌐 [WEB] لوحة التحكم شغالة على: http://0.0.0.0:' + port);
-			pushPanelEvent('لوحة التحكم شغالة على المنفذ ' + port);
-		});
-	}
-	tryListen();
-
-	return server;
-}
-
-/* ----------------------------- صفحة الواجهة ----------------------------- */
-const PAGE = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>لوحة تحكم البوت</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<style>
-  :root{--bg:#0b1020;--card:#141a2e;--line:#243056;--txt:#e7ecff;--mut:#93a0c8;--acc:#4f8cff;--ok:#2ecc71;--warn:#f1c40f;--err:#ff5c5c;}
-  *{box-sizing:border-box}
-  body{margin:0;font-family:system-ui,Tahoma,Arial,sans-serif;background:linear-gradient(160deg,#0b1020,#0e1530);color:var(--txt);min-height:100vh}
-  header{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--line);background:rgba(20,26,46,.7);backdrop-filter:blur(8px)}
-  header h1{font-size:18px;margin:0}
-  .wrap{max-width:1000px;margin:0 auto;padding:22px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px}
-  .card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
-  .row{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed rgba(255,255,255,.06);font-size:14px}
-  .row:last-child{border-bottom:0}
-  .row b{color:var(--mut);font-weight:600}
-  .pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700}
-  .ok{background:rgba(46,204,113,.15);color:var(--ok)}
-  .warn{background:rgba(241,196,15,.15);color:var(--warn)}
-  .err{background:rgba(255,92,92,.15);color:var(--err)}
-  input,select,button{font:inherit;border-radius:10px;border:1px solid var(--line);background:#0e1530;color:var(--txt);padding:10px 12px;width:100%}
-  label{display:block;font-size:13px;color:var(--mut);margin:10px 0 6px}
-  button{cursor:pointer;background:linear-gradient(180deg,#4f8cff,#3a6fe0);border:none;font-weight:700;margin-top:10px;transition:.15s}
-  button:hover{filter:brightness(1.08)}
-  button.ghost{background:#1b2444;border:1px solid var(--line)}
-  button.danger{background:linear-gradient(180deg,#ff6b6b,#e04848)}
-  .btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  #qr{display:flex;justify-content:center;padding:10px}
-  #log{height:180px;overflow:auto;background:#0a0f22;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:12px;direction:ltr;text-align:left;font-family:ui-monospace,monospace}
-  .muted{color:var(--mut);font-size:13px}
-  .login{max-width:380px;margin:12vh auto}
-  .hidden{display:none}
-  a{color:var(--acc)}
-</style>
-</head>
-<body>
-<header>
-  <h1>🤖 لوحة تحكم البوت</h1>
-  <span id="connPill" class="pill warn">…</span>
-</header>
-
-<div id="login" class="login card">
-  <h2>🔐 تسجيل الدخول</h2>
-  <label for="pw">كلمة السر</label>
-  <input id="pw" type="password" placeholder="••••••" autocomplete="current-password"/>
-  <button id="loginBtn">دخول</button>
-  <p id="loginErr" class="muted"></p>
-</div>
-
-<div id="app" class="wrap hidden">
-  <div class="grid">
-    <div class="card">
-      <h2>📊 الحالة</h2>
-      <div class="row"><b>الاتصال</b><span id="s-conn">-</span></div>
-      <div class="row"><b>طريقة الربط</b><span id="s-mode">-</span></div>
-      <div class="row"><b>رقم البوت</b><span id="s-phone">-</span></div>
-      <div class="row"><b>اسم البوت</b><span id="s-name">-</span></div>
-      <div class="row"><b>البلجنز</b><span id="s-plugins">-</span></div>
-      <div class="row"><b>آخر كوميت</b><span id="s-commit">-</span></div>
-      <div class="row"><b>مدة التشغيل</b><span id="s-uptime">-</span></div>
-    </div>
-
-    <div class="card">
-      <h2>🔗 ربط واتساب</h2>
-      <label for="phone">رقم البوت (بكود الدولة، بدون +)</label>
-      <input id="phone" inputmode="numeric" placeholder="201505362172"/>
-      <label for="mode">طريقة الربط</label>
-      <select id="mode">
-        <option value="code">كود ربط (برقم الهاتف)</option>
-        <option value="qr">رمز QR</option>
-      </select>
-      <button id="pairBtn">حفظ وإعادة التشغيل</button>
-      <div id="qr"></div>
-      <div id="pairCode" class="muted" style="text-align:center;font-size:18px;font-weight:800;letter-spacing:2px"></div>
-    </div>
-
-    <div class="card">
-      <h2>🎛️ التحكم</h2>
-      <div class="btns">
-        <button class="ghost" id="restartBtn">♻️ إعادة تشغيل</button>
-        <button class="danger" id="resetBtn">🗑️ تصفير الجلسة</button>
-      </div>
-      <label for="sendNum">إرسال رسالة إلى رقم</label>
-      <input id="sendNum" inputmode="numeric" placeholder="201xxxxxxxxx"/>
-      <label for="sendMsg">نص الرسالة</label>
-      <input id="sendMsg" placeholder="hello"/>
-      <button class="ghost" id="sendBtn">✉️ إرسال</button>
-    </div>
-
-    <div class="card">
-      <h2>⬇️ التحديثات</h2>
-      <p class="muted">تحديث تلقائي كل <span id="autoInt">-</span> دقيقة من الريبو (GitHub).</p>
-      <div class="btns">
-        <button class="ghost" id="checkBtn">فحص</button>
-        <button id="updateBtn">تطبيق التحديث</button>
-      </div>
-      <p id="updMsg" class="muted"></p>
-    </div>
-
-    <div class="card" style="grid-column:1/-1">
-      <h2>📜 سجل الأحداث</h2>
-      <div id="log"></div>
-    </div>
-  </div>
-</div>
-
-<script>
-const $ = (id) => document.getElementById(id);
-let lastQR = null, qrObj = null;
-
-async function api(path, opts){
-  const r = await fetch(path, opts);
-  if(r.status===401){ showLogin(); throw new Error('auth'); }
-  return r.json();
-}
-function showLogin(){ $('login').classList.remove('hidden'); $('app').classList.add('hidden'); }
-function showApp(){ $('login').classList.add('hidden'); $('app').classList.remove('hidden'); }
-
-$('loginBtn').onclick = async () => {
-  $('loginErr').textContent = '';
-  try{
-    await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('pw').value})});
-    showApp(); refresh();
-  }catch(e){ $('loginErr').textContent = 'فشل الدخول'; }
+/* ============================== Config ============================== */
+const DEFAULT_PASSWORD = 'winner'; // legacy default — not allowed as a real password anymore
+const DEFAULT_CONFIG = {
+  password: '',      // if empty, a strong one is generated and saved
+  loginMode: 'code', // code = pairing code | qr = QR
+  phone: '',         // bot number (optional)
+  secret: '',        // cookie signing key (generated)
+  rev: 0,            // bumped on password change / logout-all → invalidates old cookies
+  pwHash: '',        // fingerprint to detect password changes between boots
 };
 
-$('pairBtn').onclick = async () => { await api('/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:$('phone').value,mode:$('mode').value})}); $('updMsg').textContent='تم الحفظ، جاري إعادة التشغيل…'; };
-$('restartBtn').onclick = async () => { await api('/api/restart',{method:'POST'}); };
-$('resetBtn').onclick = async () => { if(confirm('متأكد؟ هتمسح الجلسة الحالية')) await api('/api/reset',{method:'POST'}); };
-$('sendBtn').onclick = async () => { try{ await api('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({number:$('sendNum').value,message:$('sendMsg').value})}); $('updMsg').textContent='✅ تم الإرسال'; }catch(e){ $('updMsg').textContent='⚠️ '+e.message; } };
-$('checkBtn').onclick = async () => { $('updMsg').textContent='جاري الفحص…'; const r = await api('/api/update-check'); $('updMsg').textContent = r.error? ('⚠️ '+r.error) : (r.upToDate? '✅ لا يوجد تحديث' : ('⬇️ متاح: '+r.download.length+' ملف')); };
-$('updateBtn').onclick = async () => { await api('/api/update',{method:'POST'}); $('updMsg').textContent='⏳ جاري التحديث…'; };
-
-function fmtUptime(ms){ const s=Math.floor(ms/1000); const d=Math.floor(s/86400); const h=Math.floor((s%86400)/3600); const m=Math.floor((s%3600)/60); return (d?d+'d ':'')+h+'h '+m+'m'; }
-
-function renderQR(qr){
-  if(!qr){ $('qr').innerHTML=''; $('pairCode').textContent=''; lastQR=null; return; }
-  if(qr===lastQR) return; lastQR=qr;
-  $('pairCode').textContent='';
-  $('qr').innerHTML='';
-  try{ qrObj = new QRCode($('qr'),{text:qr,width:220,height:220,correctLevel:QRCode.CorrectLevel.M}); }
-  catch(e){ $('qr').textContent=qr; }
+function generatePassword(len = 16) {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(len);
+  let out = '';
+  for (let i = 0; i < len; i++) out += chars[bytes[i] % chars.length];
+  return out;
 }
 
-async function refresh(){
-  let s;
-  try{ s = await api('/api/status'); }catch(e){ return; }
-  const pill = $('connPill');
-  if(s.connected){ pill.textContent='متصل ✅'; pill.className='pill ok'; }
-  else { pill.textContent='غير متصل'; pill.className='pill warn'; }
-  $('s-conn').textContent = s.connection;
-  $('s-mode').textContent = s.mode==='qr'?'QR':'كود';
-  $('s-phone').textContent = s.phone||'-';
-  $('s-name').textContent = s.botName||'-';
-  $('s-plugins').textContent = s.plugins;
-  $('s-commit').textContent = s.commit;
-  $('s-uptime').textContent = fmtUptime(s.uptimeMs);
-  if(!$('phone').value) $('phone').value = s.phone||'';
-  $('mode').value = s.mode;
-  if(s.mode==='code' && s.pairingCode) $('pairCode').textContent = s.pairingCode;
-  if(s.mode==='qr') renderQR(s.qr); else renderQR(null);
-  const log = $('log');
-  log.innerHTML = (s.events||[]).map(e=>'<div>['+new Date(e.t).toLocaleTimeString()+'] '+e.message.replace(/</g,'&lt;')+'</div>').join('');
-  log.scrollTop = log.scrollHeight;
+export function readPanelConfig() {
+  const cfgPath = configFilePath();
+  let cfg = { ...DEFAULT_CONFIG };
+  let diskPwHash = null;
+  try {
+    if (fs.existsSync(cfgPath)) {
+      const disk = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+      cfg = { ...cfg, ...disk };
+      if (disk && typeof disk.pwHash === 'string') diskPwHash = disk.pwHash;
+      try {
+        if ((fs.statSync(cfgPath).mode & 0o777) !== 0o600) fs.chmodSync(cfgPath, 0o600);
+      } catch {}
+    }
+  } catch (e) {
+    console.error('⚠️ [WEB] Could not read panel-config.json:', e.message);
+    try {
+      const bad = `${cfgPath}.corrupt-${Date.now()}.json`;
+      fs.renameSync(cfgPath, bad);
+      console.warn(`🗃️ [WEB] Corrupt file moved to ${path.basename(bad)}`);
+    } catch {}
+  }
+
+  if (process.env.WEB_PASSWORD) {
+    cfg.password = process.env.WEB_PASSWORD;
+  } else if (!cfg.password || cfg.password === DEFAULT_PASSWORD) {
+    cfg.password = generatePassword(16);
+    Object.defineProperty(cfg, '__generated', { value: true, configurable: true });
+  } else if (cfg.__generated) {
+    delete cfg.__generated;
+  }
+
+  if (!Number.isInteger(cfg.rev) || cfg.rev < 0) cfg.rev = 0;
+
+  const pwHash = crypto.createHash('sha256').update(String(cfg.password)).digest('hex');
+  let needSave = false;
+  if (pwHash !== diskPwHash) {
+    if (diskPwHash !== null) cfg.rev = (Number(cfg.rev) || 0) + 1; // password changed → kill old cookies
+    needSave = true;
+  }
+  cfg.pwHash = pwHash;
+  if (!cfg.secret) {
+    cfg.secret = crypto.randomBytes(32).toString('hex');
+    needSave = true;
+  }
+  if (needSave) savePanelConfig(cfg);
+  return cfg;
 }
 
-setInterval(refresh, 3000);
-refresh();
-</script>
-</body>
-</html>`;
+export function savePanelConfig(cfg) {
+  const cfgPath = configFilePath();
+  const tmp = `${cfgPath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    fs.mkdirSync(path.dirname(cfgPath), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+    fs.chmodSync(tmp, 0o600);
+    fs.renameSync(tmp, cfgPath);
+  } catch (e) {
+    try { fs.rmSync(tmp, { force: true }); } catch {}
+    console.error('⚠️ [WEB] Could not save panel-config.json:', e.message);
+  }
+}
+
+/* ============================== Events ============================== */
+const events = [];
+export function pushPanelEvent(message, kind = 'panel') {
+  const e = { ts: Date.now(), kind: String(kind), text: String(message) };
+  events.push(e);
+  if (events.length > 100) events.shift();
+  try { console.log('🌐 [WEB]', message); } catch {}
+}
+function getEvents() { return events.slice(-100); }
+
+/* ============================== Helpers ============================== */
+const ANSI = /\x1b\[[0-9;]*m/g;
+
+function sign(value) {
+  return crypto.createHmac('sha256', panelCfg.secret).update(value).digest('hex');
+}
+function makeCookie(days = 30) {
+  const exp = Date.now() + days * 86400000;
+  const payload = `${exp}.${Number(panelCfg.rev) || 0}`;
+  return `${payload}.${sign(payload)}`;
+}
+function verifyCookie(cookie) {
+  if (!cookie) return false;
+  const parts = cookie.split('.');
+  if (parts.length !== 3) return false;
+  const [expStr, revStr, sig] = parts;
+  if (!expStr || !revStr || !sig) return false;
+  const expect = sign(`${expStr}.${revStr}`);
+  if (sig.length !== expect.length) return false;
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return false;
+  if (Number(revStr) !== (Number(panelCfg.rev) || 0)) return false;
+  return Number(expStr) > Date.now();
+}
+function parseCookies(req) {
+  const out = {};
+  (req.headers.cookie || '').split(';').forEach((part) => {
+    const i = part.indexOf('=');
+    if (i > -1) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  });
+  return out;
+}
+function clientIp(req) {
+  const xff = String(req.headers['x-forwarded-for'] || '');
+  const first = xff.split(',')[0].trim();
+  return first || req.socket.remoteAddress || 'x';
+}
+function secureCookieFlag(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  return proto === 'https' ? '; Secure' : '';
+}
+
+/* rate limiting (login) */
+const attempts = new Map();
+const MAX_ATTEMPTS = 8;
+function pruneAttempts() {
+  const now = Date.now();
+  for (const [k, v] of attempts) if (v.until <= now) attempts.delete(k);
+}
+function loginBlocked(ip) {
+  const a = attempts.get(ip);
+  if (a && a.until > Date.now() && a.count >= MAX_ATTEMPTS) return Math.ceil((a.until - Date.now()) / 1000);
+  return 0;
+}
+function registerFail(ip) {
+  if (attempts.size > 500) pruneAttempts();
+  const a = attempts.get(ip) || { count: 0, until: 0 };
+  a.count = Math.min(MAX_ATTEMPTS, a.count + 1);
+  a.until = Date.now() + 5 * 60000;
+  attempts.set(ip, a);
+}
+function resetFail(ip) { attempts.delete(ip); }
+
+/* send rate limiting */
+const SEND_WINDOW_MS = 60_000;
+const SEND_MAX_PER_WINDOW = 5;
+const sendCounts = new Map();
+function sendBlocked(ip) {
+  const a = sendCounts.get(ip);
+  if (!a) return false;
+  if (Date.now() - a.t > SEND_WINDOW_MS) { sendCounts.delete(ip); return false; }
+  return a.n >= SEND_MAX_PER_WINDOW;
+}
+function bumpSendCount(ip) {
+  const a = sendCounts.get(ip);
+  if (!a || Date.now() - a.t > SEND_WINDOW_MS) { sendCounts.set(ip, { n: 1, t: Date.now() }); return; }
+  a.n += 1;
+}
+
+function readBody(req, limit = 1024 * 1024) {
+  return new Promise((resolve) => {
+    let data = '';
+    req.on('data', (c) => { data += c; if (data.length > limit) req.destroy(); });
+    req.on('end', () => {
+      let json = null, form = null;
+      try { json = JSON.parse(data); } catch {}
+      try { form = Object.fromEntries(new URLSearchParams(data)); } catch {}
+      resolve({ data, json, form });
+    });
+    req.on('error', () => resolve({ data: '', json: null, form: null }));
+  });
+}
+function sendJson(res, code, obj, extra = {}) {
+  const body = JSON.stringify(obj);
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...extra });
+  res.end(body);
+}
+function sendHtml(res, code, html) {
+  res.writeHead(code, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(html);
+}
+function currentCommit() {
+  try {
+    const s = JSON.parse(fs.readFileSync(path.join(ROOT, '.git-pull-state.json'), 'utf8'));
+    return (s.commit || '').slice(0, 8) || 'unknown';
+  } catch { return 'unknown'; }
+}
+function sanitizePhone(p) { return String(p || '').replace(/[^0-9]/g, ''); }
+
+/* ============================== State ============================== */
+let panelCfg = readPanelConfig();
+let panelPasswordOverride = null;
+
+function pushEvent(msg, kind = 'panel') { pushPanelEvent(msg, kind); }
+
+function sessionRegistered(client) {
+  try {
+    const p = path.join(ROOT, 'sessions', 'creds.json');
+    if (!fs.existsSync(p)) return false;
+    const creds = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return !!(creds?.registered || creds?.me);
+  } catch { return false; }
+}
+
+function isMaintenanceActive() {
+  try { return global.db?.data?.maintenance === true; } catch { return false; }
+}
+
+/* command list from global.plugins (no simulator) */
+function extractTriggers(plugin) {
+  const out = [];
+  const cmd = plugin?.command;
+  if (Array.isArray(cmd)) out.push(...cmd.map(String));
+  else if (cmd instanceof RegExp) {
+    const src = cmd.source.replace(/^\^/, '').replace(/\$$/, '');
+    src.split('|').forEach((t) => {
+      const clean = t.replace(/[^a-z0-9_]/gi, '');
+      if (clean) out.push(clean.toLowerCase());
+    });
+  } else if (typeof cmd === 'string') out.push(cmd);
+  if (Array.isArray(plugin?.help)) plugin.help.forEach((h) => String(h).split(/\s+/)[0] && out.push(String(h).split(/\s+/)[0]));
+  return [...new Set(out.filter(Boolean))];
+}
+function buildCommandsList() {
+  const plugins = global.plugins || {};
+  const catMap = new Map();
+  const all = [];
+  for (const [file, p] of Object.entries(plugins)) {
+    if (!p || p.disabled) continue;
+    const triggers = extractTriggers(p);
+    if (!triggers.length) continue;
+    const category = (Array.isArray(p.tags) && p.tags[0]) || 'misc';
+    const categoryLabel = category.charAt(0).toUpperCase() + category.slice(1);
+    const description = (Array.isArray(p.help) && p.help[0]) || '';
+    const entry = { primary: triggers[0], triggers, category, categoryLabel, description, file };
+    all.push(entry);
+    let prev = catMap.get(category);
+    if (!prev) { prev = { id: category, label: categoryLabel, count: 0 }; catMap.set(category, prev); }
+    prev.count += 1;
+  }
+  return { all, categories: [...catMap.values()].sort((a, b) => b.count - a.count) };
+}
+
+/* ============================== Status ============================== */
+function getClientInfo(client) {
+  const st = global.__panelState || {};
+  const conn = client || global.conn;
+  const connected = !!(conn && conn.user && st.connection === 'open');
+  const mem = process.memoryUsage();
+  const cmdCount = Object.keys(global.plugins || {}).length;
+  return {
+    ok: true,
+    connected,
+    connection: st.connection || 'starting',
+    sessionRegistered: sessionRegistered(conn),
+    loginMode: panelCfg.loginMode === 'qr' ? 'qr' : 'code',
+    configuredPhone: panelCfg.phone || conn?.config?.phoneNumber || '',
+    phone: (conn && conn.user && conn.user.id) || '',
+    name: (conn && conn.user && (conn.user.name || conn.user.verifiedName)) || global.namebot || 'Bot',
+    commands: cmdCount,
+    memoryMB: Math.round(mem.rss / 1024 / 1024),
+    uptimeSec: Math.round(process.uptime()),
+    commit: currentCommit(),
+    pairingCode: st.pairingCode || null,
+    qr: st.lastQR || null,
+    maintenance: isMaintenanceActive(),
+    events: getEvents(),
+  };
+}
+
+/* ============================== HTML views ============================== */
+const LOGIN_HTML = (err) => renderPublicPortalHtml(err);
+const INSTALL_RENDER_JS = `let lastInstallSig='';
+function renderInstall(d){
+  const box=document.getElementById('installBody');
+  const activeId=document.activeElement?document.activeElement.id:'';
+  if(activeId==='lm' || activeId==='ph') return;
+  const sig=[!!d.connected,d.pairingCode||'',d.qr?'1':'0',d.loginMode||'',d.configuredPhone||''].join('|');
+  if(sig===lastInstallSig) return;
+  lastInstallSig=sig;
+  if(d.connected){
+    box.innerHTML='<div class="hint">The main bot is already connected to WhatsApp. To change it to another number use <b>Reset Session</b> then pair again.</div>';
+    return;
+  }
+  let html='';
+  if(d.pairingCode){
+    html+='<div class="hint">Open WhatsApp → Linked devices → Link with phone number and enter the code:</div><div class="code">'+esc(d.pairingCode)+'</div>';
+  }
+  if(d.qr){
+    html+='<div class="qrbox"><div class="hint">Scan the QR code from WhatsApp:</div><div id="qr"></div></div>';
+  }
+  if(!d.pairingCode && !d.qr){
+    html+=(d.loginMode==='code' && !d.configuredPhone)
+      ? '<div class="hint">Enter the main bot WhatsApp number below then press <b>Pair now (no restart)</b> to issue the pairing code.</div>'
+      : '<div class="hint">Waiting for a QR code or pairing code for the main bot...</div>';
+  }
+  html+='<div style="margin-top:12px">'
+     +'<label class="lbl">Login method</label>'
+     +'<select id="lm"><option value="code"'+(d.loginMode==='code'?' selected':'')+'>Pairing code (by phone number)</option>'
+     +'<option value="qr"'+(d.loginMode==='qr'?' selected':'')+'>QR code</option></select>'
+     +'<label class="lbl">Main bot number</label>'
+     +'<input id="ph" class="ltr mono" value="'+esc(d.configuredPhone)+'" placeholder="2010xxxxxxxx">'
+     +'<div class="actions"><button type="button" class="pri" onclick="pairMainNow()">Pair now (no restart)</button>'
+     +'<button type="button" class="sky" onclick="applyLogin()">Save &amp; restart</button>'
+     +'<button type="button" class="ghost" onclick="refresh()">Refresh</button></div></div>';
+  box.innerHTML=html;
+  if(d.qr) renderQR(d.qr);
+}`;
+const PANEL_HTML = renderAdminPanelHtml(INSTALL_RENDER_JS);
+
+/* ============================== Request handler ============================== */
+async function handle(req, res, client) {
+  panelCfg = readPanelConfig();
+  if (panelPasswordOverride !== null) panelCfg.password = panelPasswordOverride;
+  const ip = clientIp(req);
+  const url = new URL(req.url, 'http://localhost');
+  const cookies = parseCookies(req);
+  const authed = verifyCookie(cookies.pw);
+  const maintenance = isMaintenanceActive();
+
+  if (req.method === 'GET' && url.pathname === '/api/maintenance-status') {
+    return sendJson(res, 200, { maintenance });
+  }
+
+  // Maintenance: close the site to guests, but let admins log in.
+  if (maintenance && !authed) {
+    if (req.method === 'POST' && url.pathname === '/login') {
+      // allow admin login
+    } else if (url.pathname.startsWith('/api/')) {
+      return sendJson(res, 503, { ok: false, maintenance: true, error: 'Site under maintenance, please try again later' });
+    } else {
+      return sendHtml(res, 503, renderMaintenanceHtml(''));
+    }
+  }
+
+  if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
+    if (authed) return sendHtml(res, 200, PANEL_HTML);
+    return sendHtml(res, 200, LOGIN_HTML(''));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/login') {
+    const blocked = loginBlocked(ip);
+    if (blocked) return sendHtml(res, 429, maintenance ? renderMaintenanceHtml('Too many attempts, wait ' + blocked + ' seconds') : LOGIN_HTML('Too many attempts, wait ' + blocked + ' seconds'));
+    const { json, form } = await readBody(req);
+    const pass = (json?.password ?? form?.password ?? '').toString();
+    const ok = pass.length === panelCfg.password.length &&
+      crypto.timingSafeEqual(Buffer.from(pass), Buffer.from(panelCfg.password));
+    if (!ok) {
+      registerFail(ip);
+      return sendHtml(res, 401, maintenance ? renderMaintenanceHtml('Wrong password') : LOGIN_HTML('Wrong password'));
+    }
+    resetFail(ip);
+    const secure = secureCookieFlag(req);
+    res.writeHead(302, { 'Set-Cookie': `pw=${makeCookie()}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Strict${secure}`, Location: '/' });
+    return res.end();
+  }
+
+  // everything below needs admin auth
+  if (!authed) {
+    if (url.pathname.startsWith('/api/')) return sendJson(res, 401, { ok: false, message: 'Unauthorized' });
+    res.writeHead(302, { Location: '/' });
+    return res.end();
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/status') {
+    return sendJson(res, 200, getClientInfo(client));
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/commands') {
+    const { all, categories } = buildCommandsList();
+    const q = (url.searchParams.get('q') || '').trim().toLowerCase();
+    const cat = (url.searchParams.get('cat') || '').trim();
+    const filtered = (!q && !cat) ? all : all.filter((c) => {
+      if (cat && c.category !== cat) return false;
+      if (!q) return true;
+      return c.primary.toLowerCase().includes(q)
+        || (c.description || '').toLowerCase().includes(q)
+        || c.categoryLabel.toLowerCase().includes(q)
+        || c.triggers.some((t) => t.toLowerCase().includes(q));
+    });
+    const hasLimit = url.searchParams.has('limit') || url.searchParams.has('page');
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
+    const limit = hasLimit ? Math.min(500, Math.max(1, parseInt(url.searchParams.get('limit') || '24', 10) || 24)) : 0;
+    const totalPages = limit > 0 ? Math.max(1, Math.ceil(filtered.length / limit)) : 1;
+    const safePage = Math.min(page, totalPages);
+    const commandsSlice = limit > 0 ? filtered.slice((safePage - 1) * limit, safePage * limit) : (filtered.length > 500 ? filtered.slice(0, 500) : filtered);
+    return sendJson(res, 200, {
+      ok: true, total: all.length, filtered: filtered.length, page: safePage,
+      limit: limit || commandsSlice.length, totalPages,
+      truncated: limit === 0 && filtered.length > 500,
+      categories, commands: commandsSlice,
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/maintenance') {
+    const { json } = await readBody(req);
+    const enabled = !!json?.enabled;
+    try {
+      global.db = global.db || {};
+      global.db.data = global.db.data || {};
+      global.db.data.maintenance = enabled;
+      pushEvent(enabled ? 'Maintenance mode enabled' : 'Maintenance mode disabled');
+      return sendJson(res, 200, { ok: true, maintenance: enabled, message: enabled ? 'Maintenance enabled' : 'Maintenance disabled' });
+    } catch (e) {
+      return sendJson(res, 500, { ok: false, message: e.message });
+    }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/rotate-password') {
+    const nextPass = generatePassword(16);
+    panelPasswordOverride = null;
+    panelCfg.password = nextPass;
+    panelCfg.pwHash = crypto.createHash('sha256').update(nextPass).digest('hex');
+    panelCfg.rev = (Number(panelCfg.rev) || 0) + 1;
+    savePanelConfig(panelCfg);
+    pushEvent('Generated a new random panel password');
+    const secure = secureCookieFlag(req);
+    res.writeHead(200, {
+      'Set-Cookie': `pw=${makeCookie()}; HttpOnly; Path=/; Max-Age=${30 * 86400}; SameSite=Strict${secure}`,
+      'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
+    });
+    return res.end(JSON.stringify({ ok: true, password: nextPass, message: 'New random password generated' }));
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/update-check') {
+    try { return sendJson(res, 200, await checkUpdate()); }
+    catch (e) { return sendJson(res, 200, { ok: false, error: e.message }); }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/update') {
+    pushEvent('Update requested from panel');
+    sendJson(res, 200, { ok: true });
+    setTimeout(async () => {
+      try {
+        await applyUpdate({ log: (t) => pushEvent(t), event: (m) => pushEvent(m), delayMs: 1500 });
+      } catch (e) { pushEvent('Update failed: ' + (e && e.message)); }
+    }, 500);
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/action') {
+    const { json } = await readBody(req);
+    const action = json?.action;
+    const st = global.__panelState || (global.__panelState = {});
+    try {
+      switch (action) {
+        case 'logout':
+          panelCfg.rev = (Number(panelCfg.rev) || 0) + 1;
+          savePanelConfig(panelCfg);
+          pushEvent('Logged out of all sessions — rev is now ' + panelCfg.rev);
+          res.writeHead(200, { 'Set-Cookie': 'pw=; HttpOnly; Path=/; Max-Age=0', 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: true, message: 'Logged out — all sessions revoked' }));
+
+        case 'restart':
+          pushEvent('Restart requested from panel');
+          st.stopped = false;
+          sendJson(res, 200, { ok: true, message: 'Restarting...' });
+          setTimeout(() => { if (typeof global.restartBot === 'function') global.restartBot('panel'); else pushEvent('Restart path unavailable'); }, 600);
+          return;
+
+        case 'stop':
+          pushEvent('Stop requested from panel');
+          st.stopped = true;
+          try { global.conn?.ws?.close(); } catch {}
+          return sendJson(res, 200, { ok: true, message: 'Bot stopped' });
+
+        case 'start':
+          pushEvent('Start requested from panel');
+          st.stopped = false;
+          sendJson(res, 200, { ok: true, message: 'Starting...' });
+          setTimeout(() => { if (typeof global.restartBot === 'function') global.restartBot('panel-start'); else pushEvent('Restart path unavailable'); }, 600);
+          return;
+
+        case 'reset-session': {
+          pushEvent('Reset session requested from panel');
+          const sp = path.join(ROOT, 'sessions');
+          if (!fs.existsSync(sp)) {
+            pushEvent('No session exists — nothing to reset');
+            return sendJson(res, 200, { ok: false, message: 'No session to delete' });
+          }
+          sendJson(res, 200, { ok: true, message: 'Session moved. Restarting...', pendingRestart: true });
+          setTimeout(() => {
+            void (async () => {
+              try { global.conn?.ws?.close(); } catch {}
+              let bak = `${sp}.bak-${Date.now()}`;
+              let n = 0;
+              while (fs.existsSync(bak)) { n += 1; bak = `${sp}.bak-${Date.now()}-${n}`; }
+              try {
+                fs.renameSync(sp, bak);
+                pushEvent('Old session moved to ' + path.basename(bak) + ' — nothing deleted');
+              } catch (e) {
+                pushEvent('Could not move session — reset cancelled: ' + (e?.message || e));
+                return;
+              }
+              st.stopped = false;
+              if (typeof global.restartBot === 'function') global.restartBot('panel-reset');
+            })().catch((e) => pushEvent('Reset error: ' + (e?.message || e)));
+          }, 500);
+          return;
+        }
+
+        case 'send': {
+          if (!(global.conn && global.conn.user && st.connection === 'open')) {
+            return sendJson(res, 400, { ok: false, message: 'Bot is not connected' });
+          }
+          const to = String(json?.to || '').replace(/[^0-9]/g, '');
+          const text = String(json?.text || '');
+          if (!/^\d{7,15}$/.test(to)) return sendJson(res, 400, { ok: false, message: 'Invalid WhatsApp number' });
+          if (!text || !text.trim()) return sendJson(res, 400, { ok: false, message: 'Number or text missing' });
+          if (text.length > 4096) return sendJson(res, 400, { ok: false, message: 'Text longer than allowed (4096)' });
+          if (sendBlocked(ip)) return sendJson(res, 429, { ok: false, message: 'Too many messages — wait a minute' });
+          bumpSendCount(ip);
+          await global.conn.sendMessage(`${to}@s.whatsapp.net`, { text });
+          return sendJson(res, 200, { ok: true, message: 'Message sent' });
+        }
+
+        case 'pair-main': {
+          const phone = sanitizePhone(json?.phone);
+          const loginMode = json?.loginMode === 'qr' ? 'qr' : 'code';
+          if (!phone || !/^\d{7,15}$/.test(phone)) {
+            return sendJson(res, 400, { ok: false, error: 'Invalid phone number' });
+          }
+          if (loginMode === 'qr') {
+            return sendJson(res, 200, { ok: true, message: 'QR mode: use Save & restart to apply and scan the QR' });
+          }
+          try {
+            if (global.conn?.authState?.creds?.registered) {
+              return sendJson(res, 400, { ok: false, error: 'Bot is already registered. Reset the session first.' });
+            }
+            let code = await global.conn.requestPairingCode(phone);
+            code = code?.match(/.{1,4}/g)?.join('-') || code;
+            st.pairingCode = code;
+            st.lastQR = null;
+            pushEvent('Pairing code issued: ' + code);
+            return sendJson(res, 200, { ok: true, pairingCode: code });
+          } catch (e) {
+            return sendJson(res, 400, { ok: false, error: e?.message || String(e) });
+          }
+        }
+
+        case 'set-login': {
+          const loginMode = json?.loginMode === 'qr' ? 'qr' : 'code';
+          const phone = sanitizePhone(json?.phone || '');
+          panelCfg.loginMode = loginMode;
+          panelCfg.phone = phone;
+          savePanelConfig(panelCfg);
+          pushEvent('Login method changed to: ' + loginMode + (phone ? ' — number ' + phone : ''));
+          sendJson(res, 200, { ok: true, message: 'Saved. Restarting...', pendingRestart: true });
+          setTimeout(() => { if (typeof global.restartBot === 'function') global.restartBot('panel-set-login'); }, 500);
+          return;
+        }
+
+        default:
+          return sendJson(res, 400, { ok: false, message: 'Unknown action' });
+      }
+    } catch (e) {
+      pushEvent('Error executing ' + action + ': ' + e.message);
+      return sendJson(res, 500, { ok: false, message: 'Error: ' + e.message });
+    }
+  }
+
+  return sendHtml(res, 404, '<h3 style="font-family:sans-serif">404</h3>');
+}
+
+/* ============================== Startup ============================== */
+export function startWebPanel(options = {}) {
+  panelCfg = readPanelConfig();
+  panelPasswordOverride = options.password ? String(options.password) : null;
+  if (panelPasswordOverride !== null) panelCfg.password = panelPasswordOverride;
+
+  // Capture pairing code printed to the console (fallback for log-based flows).
+  if (!console.__webHooked) {
+    console.__webHooked = true;
+    const orig = console.log.bind(console);
+    console.log = (...args) => {
+      try {
+        const line = String(args.join(' ')).replace(ANSI, '');
+        const m = line.match(/Pairing Code\s*[:：]?\s*([A-Za-z0-9-]{6,12})/i);
+        if (m && global.__panelState) global.__panelState.pairingCode = m[1];
+      } catch {}
+      return orig(...args);
+    };
+  }
+
+  const port = options.port !== undefined
+    ? Number(options.port)
+    : (Number(process.env.WEB_PORT || process.env.PORT || process.env.SERVER_PORT || process.env.P_SERVER_PORT) || 3732);
+  const host = options.host || '0.0.0.0';
+
+  const server = http.createServer((req, res) => {
+    handle(req, res, global.conn).catch((e) => {
+      console.error('⚠️ [WEB] error:', e.message);
+      try { sendJson(res, 500, { ok: false, message: 'Internal error' }); } catch {}
+    });
+  });
+
+  let attempts = 0;
+  const maxAttempts = 10;
+  function tryListen() {
+    server.once('error', (e) => {
+      if (e && e.code === 'EADDRINUSE' && attempts < maxAttempts) {
+        attempts++;
+        setTimeout(tryListen, 500);
+        return;
+      }
+      console.error('[WEB] Failed to start panel:', e && e.message);
+      pushEvent('Failed to start panel: ' + (e && e.message));
+    });
+    server.listen(port, host, () => {
+      console.log(`\n🌐 [WEB] Control panel running at: http://${host}:${port}`);
+      const cfgPath = configFilePath();
+      const cfgRel = path.isAbsolute(cfgPath) ? path.relative(process.cwd(), cfgPath) : cfgPath;
+      console.log(`   🔑 Password saved in ${cfgRel || cfgPath} (not printed to logs for security)`);
+      console.log(`   Current login mode: ${panelCfg.loginMode}\n`);
+      pushEvent('Control panel running on port ' + port);
+    });
+  }
+  tryListen();
+
+  return server;
+}
+
+export default startWebPanel;

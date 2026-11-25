@@ -184,6 +184,11 @@ async function connectionUpdate(update) {
 
 	if (receivedPendingNotifications) console.log(chalk.yellow('Waiting for New Message'));
 
+	if (global.__panelState?.stopped && connection === 'close') {
+		console.log(chalk.yellow('Bot stopped via panel — not reconnecting'));
+		return;
+	}
+
 	const output = lastDisconnect?.error?.output;
 	if (output?.payload) {
 		if (output.statusCode === 401) {
