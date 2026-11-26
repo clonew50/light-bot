@@ -1,8 +1,9 @@
 let handler = async (m) => {
-	let stats = Object.entries(db.data.stats)
+	let stats = Object.entries(global.db.data.stats || {})
 		.map(([key, val]) => {
-			let name = Array.isArray(plugins[key]?.help) ? plugins[key]?.help.join(' , ') : plugins[key]?.help || key;
-			if (/exec/.test(name)) return;
+			let plugin = global.plugins[key];
+			let name = Array.isArray(plugin?.help) ? plugin?.help.join(' , ') : plugin?.help || key;
+			if (/exec/.test(name)) return null;
 			return { name, ...val };
 		})
 		.filter(Boolean);
@@ -14,7 +15,7 @@ let handler = async (m) => {
 			return `*${i + 1}.* *${name}*\n - *Hits* : ${total}\n - *Success* : ${success}\n - *Last Used* : ${getTime(last)}\n - *Last Success* : ${formatTime(lastSuccess)}`;
 		})
 		.join('\n\n');
-	m.reply(handlers);
+	await m.reply(handlers || 'No command statistics recorded yet.');
 };
 
 handler.help = ['dashboard'];

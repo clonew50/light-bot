@@ -76,6 +76,57 @@ function pickBest(opts) {
   return opts.find((o) => /hq|hd/i.test(o.label)) || opts[0];
 }
 
+export async function downloadInstagramMedia(url) {
+  const jar = createJar();
+
+  const page = await call(jar, 'GET', '/nl');
+  if (page.status >= 400) throw new Error(`Site returned ${page.status} (maybe Cloudflare)`);
+  const csrf =
+    /name="csrf-token"\s+content="([^"]+)"/.exec(page.data)?.[1] ||
+    /name="_token"\s+value="([^"]+)"/.exec(page.data)?.[1];
+
+  const form = { url };
+  if (csrf) form._token = csrf;
+  const r = await call(jar, 'POST', '/fetch', { form, xhr: true });
+
+  let json;
+  try {
+    json = JSON.parse(r.data);
+  } catch {
+    throw new Error(`Response /fetch is not JSON (status ${r.status})`);
+  }
+  if (!json.status) throw new Error(json.message || 'Link not supported or private account');
+
+  const items = parseItems(json.data || '');
+  if (!items.length) throw new Error('No media in this link');
+
+  const mediaList = [];
+  let lastErr = 'Download failed';
+
+  for (const it of items.slice(0, MAX_ITEMS)) {
+    const opt = pickBest(it.opts);
+    const d = await call(jar, 'POST', '/media-download', {
+      binary: true,
+      form: { _token: it.token, action_type: 'download', username: it.username, url: opt.value }
+    });
+
+    const type = String(d.headers['content-type'] || '');
+    if (d.status !== 200 || !/^(video|image)\//.test(type)) {
+      lastErr = `media-download returned ${d.status} (${type || 'no type'})`;
+      continue;
+    }
+
+    mediaList.push({
+      type: type.startsWith('video/') ? 'video' : 'image',
+      mimetype: type.split(';')[0],
+      buffer: Buffer.from(d.data),
+    });
+  }
+
+  if (!mediaList.length) throw new Error(lastErr);
+  return mediaList;
+}
+
 let handler = async (m, { conn, text, usedPrefix, command }) => {
   const url = (text || '').trim().split(/\s+/)[0];
 
@@ -91,55 +142,16 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
   await conn.sendMessage(m.chat, { react: { text: '⏳', key: m.key } });
 
   try {
-    const jar = createJar();
+    const mediaList = await downloadInstagramMedia(url);
 
-    const page = await call(jar, 'GET', '/nl');
-    if (page.status >= 400) throw new Error(`Site returned ${page.status} (maybe Cloudflare)`);
-    const csrf =
-      /name="csrf-token"\s+content="([^"]+)"/.exec(page.data)?.[1] ||
-      /name="_token"\s+value="([^"]+)"/.exec(page.data)?.[1];
-
-    const form = { url };
-    if (csrf) form._token = csrf;
-    const r = await call(jar, 'POST', '/fetch', { form, xhr: true });
-
-    let json;
-    try {
-      json = JSON.parse(r.data);
-    } catch {
-      throw new Error(`Response /fetch is not JSON (status ${r.status})`);
-    }
-    if (!json.status) throw new Error(json.message || 'Link not supported or private account');
-
-    const items = parseItems(json.data || '');
-    if (!items.length) throw new Error('No media in this link');
-
-    let sent = 0;
-    let lastErr = 'Download failed';
-
-    for (const it of items.slice(0, MAX_ITEMS)) {
-      const opt = pickBest(it.opts);
-      const d = await call(jar, 'POST', '/media-download', {
-        binary: true,
-        form: { _token: it.token, action_type: 'download', username: it.username, url: opt.value }
-      });
-
-      const type = String(d.headers['content-type'] || '');
-      if (d.status !== 200 || !/^(video|image)\//.test(type)) {
-        lastErr = `media-download returned ${d.status} (${type || 'no type'})`;
-        continue;
-      }
-
-      const buf = Buffer.from(d.data);
-      if (type.startsWith('video/')) {
-        await conn.sendMessage(m.chat, { video: buf, mimetype: 'video/mp4', caption: '✅ Downloaded successfully' }, { quoted: m });
+    for (const item of mediaList) {
+      if (item.type === 'video') {
+        await conn.sendMessage(m.chat, { video: item.buffer, mimetype: 'video/mp4', caption: '✅ Downloaded successfully' }, { quoted: m });
       } else {
-        await conn.sendMessage(m.chat, { image: buf, caption: '✅ Downloaded successfully' }, { quoted: m });
+        await conn.sendMessage(m.chat, { image: item.buffer, caption: '✅ Downloaded successfully' }, { quoted: m });
       }
-      sent++;
     }
 
-    if (!sent) throw new Error(lastErr);
     await conn.sendMessage(m.chat, { react: { text: '✅', key: m.key } });
 
   } catch (err) {

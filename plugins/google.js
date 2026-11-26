@@ -5,7 +5,7 @@ import fs from 'fs'
 import path from 'path'
 
 let handler = async (m, { conn, args, usedPrefix, command }) => {
-    let text = args.join(' ') || m.text
+    let text = args.join(' ').trim()
     if (!text) return conn.reply(m.chat, `❌ Enter query!\nExample: *${usedPrefix + command} national team news*`, m)
 
     await conn.reply(m.chat, `🔍 _Searching news: ${text}_`, m)

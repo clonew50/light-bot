@@ -1,9 +1,9 @@
 import axios from 'axios';
 import FormData from 'form-data';
 
-let handler = async (m, { usedPrefix, command }) => {
+let handler = async (m, { conn, usedPrefix, command }) => {
 	let quoted = m.quoted ? m.quoted : m;
-	let mime = (quoted.msg || quoted).mimetype;
+	let mime = (quoted.msg || quoted).mimetype || '';
 	if (!/image/.test(mime)) throw `Send/Reply a photo with the caption ${usedPrefix + command}`;
 	let media = await quoted.download();
 	let res;
@@ -12,7 +12,9 @@ let handler = async (m, { usedPrefix, command }) => {
 	} else {
 		res = await upscale(media, 2);
 	}
-	conn.sendFile(m.chat, res?.data?.downloadUrls[0], 'hd.png', 'Here is the result', m);
+	const outUrl = res?.data?.downloadUrls?.[0];
+	if (!outUrl) throw new Error('Upscale returned no download URL');
+	await conn.sendFile(m.chat, outUrl, 'hd.png', 'Here is the result', m);
 };
 handler.help = ['hd', 'hdr'];
 handler.tags = ['tools'];
@@ -30,21 +32,26 @@ async function upscale(buffer, rasio = 2) {
 			...form.getHeaders(),
 			Origin: 'https://imgupscaler.com',
 		},
+		timeout: 30000,
 	});
 
-	if (upload.status !== 200) throw new Error('Failed to Upload Image');
+	if (upload.status !== 200 || !upload.data?.data?.code) {
+		throw new Error('Failed to Upload Image');
+	}
 
+	const code = upload.data.data.code;
 	for (let i = 0; i < 20; i++) {
 		const check = await axios.post(
 			'https://get1.imglarger.com/api/UpscalerNew/CheckStatusNew',
 			{
-				code: upload.data?.data?.code,
+				code,
 				scaleRadio: rasio,
 			},
 			{
 				headers: {
 					'Content-Type': 'application/json',
 				},
+				timeout: 20000,
 			}
 		);
 
@@ -53,8 +60,11 @@ async function upscale(buffer, rasio = 2) {
 		if (result?.data?.status === 'success') {
 			return result;
 		}
+		if (result?.data?.status === 'failed' || result?.data?.status === 'error') {
+			throw new Error('Upscale failed on server');
+		}
 
-		await baileys.delay(5000);
+		await new Promise((resolve) => setTimeout(resolve, 5000));
 	}
 
 	throw new Error('Upscale Timeout');

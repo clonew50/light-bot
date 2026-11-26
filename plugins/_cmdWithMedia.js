@@ -2,26 +2,29 @@ export async function all(m, chatUpdate) {
 	if (m.isBaileys) return;
 	if (!m.message) return;
 	if (!m.msg?.fileSha256) return;
-	let hash = Buffer.from(m.msg.fileSha256).toString('base64');
-	if (!(hash in global.db.data.sticker)) return;
+	const stickerDb = global.db?.data?.sticker;
+	if (!stickerDb) return;
+	const hash = Buffer.from(m.msg.fileSha256).toString('base64');
+	if (!(hash in stickerDb)) return;
 
-	let { text, mentionedJid } = global.db.data.sticker[hash];
-	let messages = await baileys.generateWAMessage(
+	const { text, mentionedJid } = stickerDb[hash];
+	const baileysMod = global.baileys;
+	const messages = await baileysMod.generateWAMessage(
 		m.sender,
 		{ text: text, mentions: mentionedJid },
 		{
-			userJid: this.user.jid,
+			userJid: this.user?.jid || this.user?.id,
 			quoted: m.quoted && m.quoted.fakeObj,
 		}
 	);
 	messages.key.remoteJid = m.chat;
-	messages.key.fromMe = baileys.areJidsSameUser(m.chat, this.user.id);
+	messages.key.fromMe = baileysMod.areJidsSameUser(m.sender, this.user?.id || this.user?.jid);
 	messages.key.id = m.key.id;
 	messages.pushName = m.pushName;
 	if (m.isGroup) messages.key.participant = m.sender;
-	let msg = {
+	const msg = {
 		...chatUpdate,
-		messages: [baileys.proto.WebMessageInfo.create(messages)],
+		messages: [baileysMod.proto.WebMessageInfo.create(messages)],
 		type: 'append',
 	};
 	this.ev.emit('messages.upsert', msg);

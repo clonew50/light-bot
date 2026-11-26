@@ -3,8 +3,10 @@ import * as cheerio from 'cheerio';
 async function searchPornhub(search) {
   try {
     let res = await fetch(`https://www.pornhub.com/video/search?search=${encodeURIComponent(search)}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(15000)
     });
+    if (!res.ok) return [];
     let html = await res.text();
     let $ = cheerio.load(html);
     let result = [];
@@ -12,8 +14,8 @@ async function searchPornhub(search) {
       let title = $(b).find('a').attr('title');
       let duration = $(b).find('var.duration').text().trim();
       let views = $(b).find('var.views').text().trim();
-      let url = 'https://www.pornhub.com' + $(b).find('a').attr('href');
-      if (title && url) result.push({ title, duration, views, url });
+      let href = $(b).find('a').attr('href');
+      if (title && href) result.push({ title, duration, views, url: 'https://www.pornhub.com' + href });
     });
     return result.slice(0, 10);
   } catch {
@@ -22,7 +24,7 @@ async function searchPornhub(search) {
 }
 
 let handler = async (m, { conn, args, usedPrefix }) => {
-  if (!db.data.chats[m.chat].nsfw && m.isGroup) {
+  if (!global.db?.data?.chats?.[m.chat]?.nsfw && m.isGroup) {
     return conn.reply(m.chat, `nsfw is off, enable with ${usedPrefix}nsfw on`, m);
   }
   if (!args[0]) {
@@ -32,12 +34,12 @@ let handler = async (m, { conn, args, usedPrefix }) => {
   if (!results.length) return conn.reply(m.chat, `No results`, m);
   let text = `PORNHUB SEARCH - REM BOT\n\n`;
   text += results.map((v, i) => `${i+1}. ${v.title}\n${v.duration} | ${v.views}\n${v.url}\n`).join('\n');
-  conn.reply(m.chat, text, m);
+  await conn.reply(m.chat, text, m);
 };
 
-handler.help = ['ph'];
+handler.help = ['ph2'];
 handler.tags = ['+18'];
-handler.command = /^ph$/i;
+handler.command = /^ph2$/i;
 handler.nsfw = true;
 
 export default handler;

@@ -1,4 +1,4 @@
-const handler = async (m, { text, participants, groupMetadata, command }) => {
+const handler = async (m, { conn, text, participants, groupMetadata, command }) => {
 	const target = m.quoted ? m.quoted.sender : m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : text ? text.replace(/[^0-9]/g, '') + '@s.whatsapp.net' : null;
 
 	const cmd = ['add', 'kick', 'promote', 'demote'];
@@ -12,17 +12,17 @@ const handler = async (m, { text, participants, groupMetadata, command }) => {
 			{
 				if (inGc) throw 'User already in the group!';
 				const response = await conn.groupParticipantsUpdate(m.chat, [target], 'add');
-				const jpegThumbnail = await conn.profilePictureUrl(m.chat, 'image', 'buffer');
+				const jpegThumbnail = await conn.profilePictureUrl(m.chat, 'image', 'buffer').catch(() => Buffer.alloc(0));
 
-				for (const participant of response) {
-					const jid = participant.content.attrs.phone_number || participant.content.attrs.jid;
-					const status = participant.status;
+				for (const participant of response || []) {
+					const jid = participant?.content?.attrs?.phone_number || participant?.content?.attrs?.jid || target;
+					const status = participant?.status;
 
 					if (status === '408') {
-						m.reply(`Unable to add @${jid.split('@')[0]}!\nMaybe @${jid.split('@')[0]} just left this group or was kicked`);
+						await m.reply(`Unable to add @${jid.split('@')[0]}!\nMaybe @${jid.split('@')[0]} just left this group or was kicked`);
 					} else if (status === '403') {
-						const inviteCode = participant.content.content[0].attrs.code;
-						const inviteExp = participant.content.content[0].attrs.expiration;
+						const inviteCode = participant?.content?.content?.[0]?.attrs?.code;
+						const inviteExp = participant?.content?.content?.[0]?.attrs?.expiration;
 						await m.reply(`Inviting @${jid.split('@')[0]} using invite...`);
 
 						await conn.sendGroupV4Invite(m.chat, jid, inviteCode, inviteExp, groupMetadata.subject, 'Invitation to join my WhatsApp group', jpegThumbnail);
@@ -33,32 +33,32 @@ const handler = async (m, { text, participants, groupMetadata, command }) => {
 
 		case 'kick':
 			if (!inGc) throw 'User not in the group.';
-			conn.groupParticipantsUpdate(m.chat, [target], 'remove');
-			m.reply(`Successfully kicked: @${target.split('@')[0]}`);
+			await conn.groupParticipantsUpdate(m.chat, [target], 'remove');
+			await m.reply(`Successfully kicked: @${target.split('@')[0]}`);
 			break;
 
 		case 'promote':
 			if (!inGc) throw 'User is not in the group!';
-			conn.groupParticipantsUpdate(m.chat, [target], 'promote');
-			m.reply(`Promote: @${target.split('@')[0]}`);
+			await conn.groupParticipantsUpdate(m.chat, [target], 'promote');
+			await m.reply(`Promote: @${target.split('@')[0]}`);
 			break;
 
 		case 'demote':
 			if (!inGc) throw 'User is not in the group!';
-			conn.groupParticipantsUpdate(m.chat, [target], 'demote');
-			m.reply(`Demote: @${target.split('@')[0]}`);
+			await conn.groupParticipantsUpdate(m.chat, [target], 'demote');
+			await m.reply(`Demote: @${target.split('@')[0]}`);
 			break;
 
 		case 'closegc':
 		case 'mute':
-			conn.groupSettingUpdate(m.chat, 'announcement');
-			m.reply('Group successfully closed (only admins can chat).');
+			await conn.groupSettingUpdate(m.chat, 'announcement');
+			await m.reply('Group successfully closed (only admins can chat).');
 			break;
 
 		case 'opengc':
 		case 'unmute':
-			conn.groupSettingUpdate(m.chat, 'not_announcement');
-			m.reply('Group successfully opened (all members can chat).');
+			await conn.groupSettingUpdate(m.chat, 'not_announcement');
+			await m.reply('Group successfully opened (all members can chat).');
 			break;
 
 		default:

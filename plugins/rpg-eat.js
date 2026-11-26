@@ -1,7 +1,23 @@
-let handler = async (m, { command, args }) => {
-	let user = global.db.data.users[m.sender];
-	let type = (args[0] || '').toLowerCase();
-	let _type = (args[1] || '').toLowerCase();
+const FOODS = {
+	ayamgoreng: 'Ayam goreng',
+	ayambakar: 'Ayam bakar',
+	oporayam: 'Opor ayam',
+	rendang: 'Rendang',
+	steak: 'Steak',
+	gulaiayam: 'Gulai ayam',
+	babipanggang: 'Babi panggang',
+	ikanbakar: 'Ikan bakar',
+	lelebakar: 'Lele bakar',
+	nilabakar: 'Nila bakar',
+	bawalbakar: 'Bawal bakar',
+	udangbakar: 'Udang bakar',
+	pausbakar: 'Paus bakar',
+	kepitingbakar: 'Kepiting bakar',
+};
+
+let handler = async (m, { conn, command, args }) => {
+	const user = global.db.data.users[m.sender];
+	const type = (args[0] || '').toLowerCase();
 	const list = `
 ╭──『 Food 』
 │• *Ayambakar*
@@ -20,139 +36,27 @@ let handler = async (m, { command, args }) => {
 │• *Kepitingbakar*
 ╰───────────────
 `.trim();
-	//try {
+
 	if (/makan|eat/i.test(command)) {
-		const count = args[1] && args[1].length > 0 ? Math.min(99999999, Math.max(parseInt(args[1]), 1)) : !args[1] || args.length < 3 ? 1 : Math.min(1, count);
-		switch (type) {
-			case 'ayamgoreng':
-				if (user.stamina < 100) {
-					if (user.ayamgoreng >= count * 1) {
-						user.ayamgoreng -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Ayam goreng`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			case 'ayambakar':
-				if (user.stamina < 100) {
-					if (user.ayambakar >= count * 1) {
-						user.ayambakar -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Ayam bakar`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			case 'oporayam':
-				if (user.stamina < 100) {
-					if (user.oporayam >= count * 1) {
-						user.oporayam -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Opor ayam`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			case 'rendang':
-				if (user.stamina < 100) {
-					if (user.rendang >= count * 1) {
-						user.rendang -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Rendang`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			case 'steak':
-				if (user.stamina < 100) {
-					if (user.steak >= count * 1) {
-						user.steak -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Steak`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			case 'gulaiayam':
-				if (user.stamina < 100) {
-					if (user.gulaiayam >= count * 1) {
-						user.gulaiayam -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Gulai ayam`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			case 'babipanggang':
-				if (user.stamina < 100) {
-					if (user.babipanggang >= count * 1) {
-						user.babipanggang -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Babi panggang`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			case 'ikanbakar':
-				if (user.stamina < 100) {
-					if (user.ikanbakar >= count * 1) {
-						user.ikanbakar -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Ikan bakar`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			case 'lelebakar':
-				if (user.stamina < 100) {
-					if (user.lelebakar >= count * 1) {
-						user.lelebakar -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Lele bakar`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			case 'nilabakar':
-				if (user.stamina < 100) {
-					if (user.nilabakar >= count * 1) {
-						user.nilabakar -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Nila bakar`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			case 'bawalbakar':
-				if (user.stamina < 100) {
-					if (user.bawalbakar >= count * 1) {
-						user.bawalbakar -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Bawal bakar`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			case 'udangbakar':
-				if (user.stamina < 100) {
-					if (user.udangbakar >= count * 1) {
-						user.udangbakar -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Udang bakar`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			case 'pausbakar':
-				if (user.stamina < 100) {
-					if (user.pausbakar >= count * 1) {
-						user.pausbakar -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Paus bakar`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			case 'kepitingbakar':
-				if (user.stamina < 100) {
-					if (user.kepitingbakar >= count * 1) {
-						user.kepitingbakar -= count * 1;
-						user.stamina += 20 * count;
-						conn.reply(m.chat, `Yum yum`, m);
-					} else conn.reply(m.chat, ` You don't have enough Kepiting bakar`, m);
-				} else conn.reply(m.chat, `Your stamina is already full`, m);
-				break;
-			default:
-				conn.reply(m.chat, list, m);
+		const parsed = parseInt(args[1], 10);
+		const count = args[1] && !Number.isNaN(parsed) ? Math.min(99999999, Math.max(parsed, 1)) : 1;
+
+		const label = FOODS[type];
+		if (!label) {
+			return conn.reply(m.chat, list, m);
 		}
+
+		if ((user.stamina ?? 0) >= 100) {
+			return conn.reply(m.chat, `Your stamina is already full`, m);
+		}
+
+		if ((user[type] || 0) >= count) {
+			user[type] -= count;
+			user.stamina = Math.min(100, (user.stamina || 0) + 20 * count);
+			return conn.reply(m.chat, `Yum yum`, m);
+		}
+
+		return conn.reply(m.chat, `You don't have enough ${label}`, m);
 	}
 };
 

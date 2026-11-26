@@ -56,7 +56,7 @@ async function get300Thumb(url) {
 let handler = async (m, { conn, usedPrefix }) => {
   let tags = {}; let total=0;
   for (let p of Object.values(global.plugins||{})) {
-    if (!p.tags||!p.help) continue;
+    if (!p || p.disabled || !p.tags || !p.help) continue;
     for (let t of p.tags) {
       if (!tags[t]) tags[t]=[];
       let h = Array.isArray(p.help)?p.help:[p.help];

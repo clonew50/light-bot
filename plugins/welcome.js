@@ -7,7 +7,8 @@ const DEV = '212674375708';
 const BG_URL = 'https://litter.catbox.moe/4evj2u.jpg';
 
 async function getBuffer(url) {
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return Buffer.from(await res.arrayBuffer());
 }
 
@@ -54,9 +55,7 @@ async function createWelcome(ppBuffer, number, bgBuffer) {
   return await bg.getBufferAsync(Jimp.MIME_JPEG);
 }
 
-let handler = async (m, { conn, usedPrefix, command }) => {
-  if (command!== 'one') return;
-
+let handler = async (m, { conn }) => {
   await conn.sendMessage(m.chat, { react: { text: '🔥', key: m.key } });
 
   try {
@@ -92,8 +91,8 @@ let handler = async (m, { conn, usedPrefix, command }) => {
   }
 };
 
-handler.help = ['one'];
+handler.help = ['testwelcome'];
 handler.tags = ['group'];
-handler.command = /^(one|welcome|testwelcome)$/i;
+handler.command = /^testwelcome$/i;
 handler.group = true;
 export default handler;

@@ -58,7 +58,7 @@ global.pakasir = {
 };
 
 global.stickpack = 'Created By';
-global.stickauth = namebot;
+global.stickauth = global.namebot;
 
 global.multiplier = 38;
 
@@ -108,7 +108,7 @@ global.rpg = {
 };
 
 let file = fileURLToPath(import.meta.url);
-watchFile(file, () => {
+watchFile(file, { persistent: false }, () => {
 	unwatchFile(file);
 	console.log(chalk.redBright("Update 'config.js'"));
 	import(`${file}?update=${Date.now()}`);

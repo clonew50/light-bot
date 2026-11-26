@@ -21,8 +21,8 @@ let baseImg = images[index]
 // رابط فريد باش واتساب ما يديرش cache
 let imgUrl = `${baseImg}?v=${Date.now()}`
 
-let allCommands = Object.values(global.plugins)
-.filter(v => v.help && v.tags)
+let allCommands = Object.values(global.plugins || {})
+.filter(v => v && !v.disabled && v.help && v.tags)
 .map(v => v.help)
 .flat()
 .map(cmd => `›🎀‹ ${usedPrefix}${cmd}`)
@@ -35,7 +35,11 @@ ${allCommands}
 𑁍𓂃.─ִ╾ׄ─ִ──ִ╾ ࣪🌷.─ִ╾ׄ──ִ─ִ╾ ࣪𓂃𑁍
 > Rem Bot 🌺`
 
-let thumbBuffer = await (await fetch(baseImg)).buffer()
+let thumbBuffer = Buffer.alloc(0)
+try {
+  const thumbRes = await fetch(baseImg, { signal: AbortSignal.timeout(10000) })
+  if (thumbRes.ok) thumbBuffer = Buffer.from(await thumbRes.arrayBuffer())
+} catch {}
 
 await conn.sendMessage(m.chat, { react: { text: '🌺', key: m.key } })
 

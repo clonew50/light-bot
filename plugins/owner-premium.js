@@ -1,16 +1,24 @@
-let handler = async (m, { args, usedPrefix, command }) => {
+let handler = async (m, { conn, args, usedPrefix, command }) => {
 	let who;
 	if (m.quoted) {
 		who = m.quoted.sender;
 	} else if (m.isGroup) {
-		who = m.mentionedJid[0] ? m.mentionedJid[0] : m.quoted ? m.quoted.sender : args[1] ? args[1] : false;
+		who = m.mentionedJid?.[0] ? m.mentionedJid[0] : args[1] ? args[1].replace(/[^0-9]/g, '') + '@s.whatsapp.net' : false;
 	} else if (args[1]) {
-		who = args[1] + '@s.whatsapp.net';
+		who = args[1].replace(/[^0-9]/g, '') + '@s.whatsapp.net';
 	}
 
-	if (!who) throw `Whose premium status do you want to change?`;
+	if (!who || who === '@s.whatsapp.net') throw `Whose premium status do you want to change?`;
 
-	let user = db.data.users[who];
+	if (!global.db.data.users[who]) {
+		global.db.data.users[who] = {
+			name: who.split('@')[0],
+			premium: false,
+			premiumTime: 0,
+		};
+	}
+	let user = global.db.data.users[who];
+	const displayName = user.name || who.split('@')[0];
 
 	switch (command) {
 		case 'addprem':
@@ -21,25 +29,25 @@ let handler = async (m, { args, usedPrefix, command }) => {
 			if (args[0] == 'permanen') {
 				user.premium = true;
 				user.premiumTime = null;
-				await m.reply(`✅ *Success* \n\n*Name:* ${user.name}\n*Premium Status:* Permanent\n*Date:* ${new Date().toLocaleDateString()}`);
-				await conn.reply(who, `✨ *Premium Info*\n\n*Name:* ${user.name}\n*Premium Status:* Permanent\n*Date:* ${new Date().toLocaleDateString()}`, null);
+				await m.reply(`✅ *Success* \n\n*Name:* ${displayName}\n*Premium Status:* Permanent\n*Date:* ${new Date().toLocaleDateString()}`);
+				await conn.reply(who, `✨ *Premium Info*\n\n*Name:* ${displayName}\n*Premium Status:* Permanent\n*Date:* ${new Date().toLocaleDateString()}`, null);
 			} else {
-				if (isNaN(args[0])) throw `⚠️ Number only!\n\nExample:\n${usedPrefix + command} 30 @${m.sender.split`@`[0]}`;
-				let txt = args[0];
+				if (isNaN(args[0]) || Number(args[0]) <= 0) throw `⚠️ Number only!\n\nExample:\n${usedPrefix + command} 30 @${m.sender.split`@`[0]}`;
+				let txt = Number(args[0]);
 				let jumlahHari = 86400000 * txt;
 
-				let now = new Date();
-				if (now < user.premiumTime) {
+				let now = Date.now();
+				if (user.premiumTime && now < user.premiumTime) {
 					user.premiumTime += jumlahHari;
 				} else {
-					user.premiumTime = now.getTime() + jumlahHari;
+					user.premiumTime = now + jumlahHari;
 				}
 				user.premium = true;
 
 				let tanggalBerakhir = new Date(user.premiumTime).toLocaleDateString();
 
-				await m.reply(`✅ *Success* \n\n*Name:* ${user.name}\n*Duration:* ${txt} Days\n*Starts:* ${now.toLocaleDateString()}\n*Ends:* ${tanggalBerakhir}`);
-				await conn.reply(who, `✨ *Premium Info*\n\n*Name:* ${user.name}\n*Duration:* ${txt} Days\n*Starts:* ${now.toLocaleDateString()}\n*Ends:* ${tanggalBerakhir}`, null);
+				await m.reply(`✅ *Success* \n\n*Name:* ${displayName}\n*Duration:* ${txt} Days\n*Starts:* ${new Date(now).toLocaleDateString()}\n*Ends:* ${tanggalBerakhir}`);
+				await conn.reply(who, `✨ *Premium Info*\n\n*Name:* ${displayName}\n*Duration:* ${txt} Days\n*Starts:* ${new Date(now).toLocaleDateString()}\n*Ends:* ${tanggalBerakhir}`, null);
 			}
 			break;
 
@@ -48,8 +56,8 @@ let handler = async (m, { args, usedPrefix, command }) => {
 		case '-prem':
 			user.premium = false;
 			user.premiumTime = 0;
-			await m.reply(`⚠️ *Success* \n\n*Name:* ${user.name}\nPremium status removed on ${new Date().toLocaleDateString()}.`);
-			await conn.reply(who, `✨ *Premium Info*\n\n*Name:* ${user.name}\nPremium status removed on ${new Date().toLocaleDateString()}.`, null);
+			await m.reply(`⚠️ *Success* \n\n*Name:* ${displayName}\nPremium status removed on ${new Date().toLocaleDateString()}.`);
+			await conn.reply(who, `✨ *Premium Info*\n\n*Name:* ${displayName}\nPremium status removed on ${new Date().toLocaleDateString()}.`, null);
 			break;
 
 		default:

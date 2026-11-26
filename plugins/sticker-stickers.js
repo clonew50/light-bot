@@ -1,4 +1,4 @@
-let handler = async (m, { text }) => {
+let handler = async (m, { conn, text }) => {
 	let q = m.quoted ? m.quoted : m;
 	let mime = (q.msg || q).mimetype || '';
 
@@ -13,9 +13,9 @@ let handler = async (m, { text }) => {
 			const [packname, author] = text.split(/[,|\-+&]/);
 			exif = { packName: packname || '', packPublish: author || '' };
 		}
-		conn.sendSticker(m.chat, media, m, exif);
+		await conn.sendSticker(m.chat, media, m, exif);
 	} else {
-		m.reply('Send or reply with media to make it a sticker.');
+		await m.reply('Send or reply with media to make it a sticker.');
 	}
 };
 

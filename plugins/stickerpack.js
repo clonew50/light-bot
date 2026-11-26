@@ -1,85 +1,65 @@
 import axios from 'axios';
 
-async function searchPack(query) {
-  try {
-    const res = await axios.post(
-      "https://getstickerpack.com/api/v1/stickerdb/search",
-      { query: query, page: 1, size: 20 },
-      {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Content-Type': 'application/json',
-          'Referer': 'https://getstickerpack.com/',
-          'Origin': 'https://getstickerpack.com'
-        },
-        timeout: 15000
-      }
-    );
-    if (res.data && res.data.data) return res.data.data;
-    return [];
-  } catch (e) {
-    console.log("[STICKERPACK] Search error:", e.response?.data || e.message);
-    return [];
-  }
-}
+export async function searchStickersTenor(query, limit = 8) {
+	const url = `https://tenor.com/search/${encodeURIComponent(query)}-stickers`;
+	const { data: html } = await axios.get(url, {
+		headers: {
+			'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+			Accept: 'text/html,application/xhtml+xml',
+		},
+		timeout: 15000,
+	});
 
-async function getDetail(slug) {
-  try {
-    const id = slug.includes('/') ? slug.split('/').pop() : slug;
-    const res = await axios.get(
-      `https://getstickerpack.com/api/v1/stickerdb/stickers/${id}`,
-      {
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-          'Referer': 'https://getstickerpack.com/'
-        }
-      }
-    );
-    let data = res.data.data;
-    return {
-      title: data.title,
-      stickers: data.images.map(i => `https://s3.getstickerpack.com/${i.url}`)
-    };
-  } catch (e) {
-    console.log("[STICKERPACK] Detail error:", e.message);
-    return null;
-  }
+	const matches = String(html).match(/https:\/\/media1?\.tenor\.com\/m\/[A-Za-z0-9_-]+\/[^"'\s<>]+\.(?:gif|png|webp|jpg)/gi) || [];
+	const unique = [...new Set(matches)].slice(0, limit);
+	return unique;
 }
 
 let handler = async (m, { conn, args, usedPrefix }) => {
-  let query = args.join(" ").trim();
-  if (!query) {
-    return conn.reply(m.chat, `*STICKER PACK*\n\nExample: ${usedPrefix}sp anime`, m);
-  }
+	const query = args.join(' ').trim();
+	if (!query) {
+		return conn.reply(m.chat, `*STICKER PACK*\n\nExample: ${usedPrefix}sp anime`, m);
+	}
 
-  await conn.sendMessage(m.chat, { react: { text: "⏳", key: m.key } });
+	await conn.sendMessage(m.chat, { react: { text: '⏳', key: m.key } });
 
-  let packs = await searchPack(query);
-  if (!packs.length) {
-    await conn.sendMessage(m.chat, { react: { text: "❌", key: m.key } });
-    return conn.reply(m.chat, `Search API failed. Try another query or try again later.\nQuery: ${query}`, m);
-  }
+	try {
+		const stickers = await searchStickersTenor(query, 6);
+		if (!stickers.length) {
+			await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } });
+			return conn.reply(m.chat, `No stickers found for query: *${query}*`, m);
+		}
 
-  let random = packs[Math.floor(Math.random() * packs.length)];
-  let detail = await getDetail(random.slug || random.title);
+		await conn.reply(m.chat, `> Query: *${query}*\n> Sending ${stickers.length} stickers...`, m);
 
-  if (!detail || !detail.stickers.length) {
-    return conn.reply(m.chat, `Failed to get pack detail ${random.title}`, m);
-  }
+		let sent = 0;
+		for (const url of stickers) {
+			try {
+				const res = await axios.get(url, {
+					responseType: 'arraybuffer',
+					timeout: 15000,
+					headers: { 'User-Agent': 'Mozilla/5.0' },
+				});
+				const buf = Buffer.from(res.data);
+				if (!buf.length) continue;
+				await conn.sendSticker(m.chat, buf, m);
+				sent++;
+				await new Promise((r) => setTimeout(r, 600));
+			} catch {
+				continue;
+			}
+		}
 
-  await conn.reply(m.chat, `> Pack: *${detail.title}*\n> Sending ${Math.min(detail.stickers.length, 10)} stickers...`, m);
+		if (sent === 0) {
+			await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } });
+			return conn.reply(m.chat, `Failed to process stickers for "${query}".`, m);
+		}
 
-  let sent = 0;
-  for (let url of detail.stickers.slice(0, 10)) {
-    try {
-      await conn.sendMessage(m.chat, { sticker: { url } }, { quoted: m });
-      sent++;
-      await new Promise(r => setTimeout(r, 1000));
-    } catch { continue; }
-  }
-
-  await conn.sendMessage(m.chat, { react: { text: "✅", key: m.key } });
-  if (sent == 0) conn.reply(m.chat, `Failed to send, maybe s3 is blocked by the host`, m);
+		await conn.sendMessage(m.chat, { react: { text: '✅', key: m.key } });
+	} catch (e) {
+		await conn.sendMessage(m.chat, { react: { text: '❌', key: m.key } });
+		return conn.reply(m.chat, `Sticker search failed: ${e.message}`, m);
+	}
 };
 
 handler.help = ['stickerpack'];

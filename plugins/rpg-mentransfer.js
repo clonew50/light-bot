@@ -1,224 +1,73 @@
+const TRANSFER_FIELDS = {
+	money: { field: 'money', label: 'Money' },
+	uang: { field: 'money', label: 'Money' },
+	tabungan: { field: 'atm', label: 'Bank Savings' },
+	atm: { field: 'atm', label: 'Bank Savings' },
+	limit: { field: 'limit', label: 'Limit' },
+	potion: { field: 'potion', label: 'Potion' },
+	sampah: { field: 'trash', label: 'Trash' },
+	trash: { field: 'trash', label: 'Trash' },
+	diamond: { field: 'diamond', label: 'Diamond' },
+	common: { field: 'common', label: 'Common Crate' },
+	uncommon: { field: 'uncommon', label: 'Uncommon Crate' },
+	mythic: { field: 'mythic', label: 'Mythic Crate' },
+	legendary: { field: 'legendary', label: 'Legendary Crate' },
+	string: { field: 'string', label: 'String' },
+	batu: { field: 'rock', label: 'Rock' },
+	rock: { field: 'rock', label: 'Rock' },
+	kayu: { field: 'wood', label: 'Wood' },
+	wood: { field: 'wood', label: 'Wood' },
+	iron: { field: 'iron', label: 'Iron' },
+};
+
+const USAGE_TEXT = (usedPrefix) =>
+	`Example: *${usedPrefix}transfer money 100 @tag*\n\n*Transferable List :*\n•》Money\n• Savings (atm)\n• Limit\n• Potion\n• Trash\n• Diamond\n• Common\n• Uncommon\n• Mythic\n• Legendary\n• String\n• Wood\n• Rock\n• Iron`.trim();
+
 let handler = async (m, { conn, args, usedPrefix }) => {
 	if (args.length < 3) {
-		return conn.reply(
-			m.chat,
-			`Example: *${usedPrefix}transfer money 100 @tag*\n\n*Transferable List :*\n•》Money\n• Savings\n• Potion\n• Trash\n• Diamond\n• Common\n• Uncommon\n• Mythic\n• Legendary\n• String\n🪵 Wood\n• Rock\n• Iron`.trim(),
-			m
-		);
-	} else
-		try {
-			let type = (args[0] || '').toLowerCase();
-			let count = args[1] && args[1].length > 0 ? Math.min(9999999, Math.max(parseInt(args[1]), 1)) : Math.min(1);
-			let who = m.mentionedJid ? m.mentionedJid[0] : args[2].replace(/[@ .+-]/g, '').replace(' ', '') + '@s.whatsapp.net';
-			if (!m.mentionedJid || !args[2]) throw 'Tag someone, or type their number!!';
-			switch (type) {
-				case 'money':
-				case 'uang':
-					if (global.db.data.users[m.sender].money >= count * 1) {
-						try {
-							global.db.data.users[m.sender].money -= count * 1;
-							global.db.data.users[who].money += count * 1;
-							conn.reply(m.chat, `Successfully transferred money of ${count}`.trim(), m);
-						} catch (e) {
-							global.db.data.users[m.sender].money += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-						}
-					} else conn.reply(m.chat, `Your money is not enough to transfer ${count}`.trim(), m);
-					break;
-				case 'tabungan':
-				case 'atm':
-					if (global.db.data.users[m.sender].atm >= count * 1) {
-						try {
-							global.db.data.users[m.sender].atm -= count * 1;
-							global.db.data.users[who].atm += count * 1;
-							conn.reply(m.chat, `Successfully transferred money from bank of ${count}`.trim(), m);
-						} catch (e) {
-							global.db.data.users[m.sender].atm += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-						}
-					} else conn.reply(m.chat, `Not enough to transfer money from bank of ${count}`.trim(), m);
-					break;
-				case 'limit':
-					if (global.db.data.users[m.sender].limit >= count * 1) {
-						try {
-							global.db.data.users[m.sender].limit -= count * 1;
-							global.db.data.users[who].limit += count * 1;
-							conn.reply(m.chat, `Successfully transferred limit of ${count}`.trim(), m);
-						} catch (e) {
-							[m.sender].limit += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-						}
-					} else conn.reply(m.chat, `Your limit is not enough to transfer ${count} limit`.trim(), m);
-					break;
-				case 'potion':
-					if (global.db.data.users[m.sender].potion >= count * 1) {
-						try {
-							global.db.data.users[m.sender].potion -= count * 1;
-							global.db.data.users[who].potion += count * 1;
-							conn.reply(m.chat, `Successfully transferred ${count} Potion`.trim(), m);
-						} catch (e) {
-							global.db.data.users[m.sender].potion += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-						}
-					} else conn.reply(m.chat, `Your potion is not enough`.trim(), m);
-					break;
-				case 'sampah':
-				case 'trash':
-					if (global.db.data.users[m.sender].sampah >= count * 1) {
-						try {
-							global.db.data.users[m.sender].sampah -= count * 1;
-							global.db.data.users[who].sampah += count * 1;
-							conn.reply(m.chat, `Successfully transferred ${count} Trash`.trim(), m);
-						} catch (e) {
-							global.db.data.users[m.sender].sampah += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-						}
-					} else conn.reply(m.chat, `Your trash is not enough`.trim(), m);
-					break;
-				case 'diamond':
-					if (global.db.data.users[m.sender].diamond >= count * 1) {
-						try {
-							global.db.data.users[m.sender].diamond -= count * 1;
-							global.db.data.users[who].diamond += count * 1;
-							conn.reply(m.chat, `Successfully transferred ${count} Diamond`.trim(), m);
-						} catch (e) {
-							global.db.data.users[m.sender].diamond += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-						}
-					} else conn.reply(m.chat, `Your diamond is not enough`.trim(), m);
-					break;
-				case 'common':
-					if (global.db.data.users[m.sender].common >= count * 1) {
-						try {
-							global.db.data.users[m.sender].common -= count * 1;
-							global.db.data.users[who].common += count * 1;
-							conn.reply(m.chat, `Successfully transferred ${count} Common Crate`.trim(), m);
-						} catch (e) {
-							global.db.data.users[m.sender].common += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-						}
-					} else conn.reply(m.chat, `Your common crate is not enough`.trim(), m);
-					break;
-				case 'uncommon':
-					if (global.db.data.users[m.sender].uncommon >= count * 1) {
-						try {
-							global.db.data.users[m.sender].uncommon -= count * 1;
-							global.db.data.users[who].uncommon += count * 1;
-							conn.reply(m.chat, `Successfully transferred ${count} Uncommon Crate`.trim(), m);
-						} catch (e) {
-							global.db.data.users[m.sender].uncommon += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-							if (DevMode) {
-								for (let jid of global.owner.map((v) => v.replace(/[^0-9]/g, '') + '@s.whatsapp.net').filter((v) => v != conn.user.jid)) {
-									conn.reply(jid, 'Transfer.js error\nNo: *' + m.sender.split`@`[0] + '*\nCommand: *' + m.text + '*\n\n*' + e + '*', m);
-								}
-							}
-						}
-					} else conn.reply(m.chat, `Your uncommon crate is not enough`.trim(), m);
-					break;
-				case 'mythic':
-					if (global.db.data.users[m.sender].mythic >= count * 1) {
-						try {
-							global.db.data.users[m.sender].mythic -= count * 1;
-							global.db.data.users[who].mythic += count * 1;
-							conn.reply(m.chat, `Successfully transferred ${count} Mythic Crate`.trim(), m);
-						} catch (e) {
-							global.db.data.users[m.sender].mythic += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-						}
-					} else conn.reply(m.chat, `Your mythic crate is not enough`.trim(), m);
-					break;
-				case 'legendary':
-					if (global.db.data.users[m.sender].legendary >= count * 1) {
-						try {
-							global.db.data.users[m.sender].legendary -= count * 1;
-							global.db.data.users[who].legendary += count * 1;
-							conn.reply(m.chat, `Successfully transferred ${count} Legendary Crate`.trim(), m);
-						} catch (e) {
-							global.db.data.users[m.sender].legendary += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-						}
-					} else conn.reply(m.chat, `Your legendary crate is not enough`.trim(), m);
-					break;
-				case 'string':
-					if (global.db.data.users[m.sender].string >= count * 1) {
-						try {
-							global.db.data.users[m.sender].string -= count * 1;
-							global.db.data.users[who].string += count * 1;
-							conn.reply(m.chat, `Successfully transferred string of ${count}`.trim(), m);
-						} catch (e) {
-							global.db.data.users[m.sender].string += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-						}
-					} else conn.reply(m.chat, `Your string is not enough to transfer string of ${count}`.trim(), m);
-					break;
-				case 'batu':
-				case 'rock':
-					if (global.db.data.users[m.sender].rock >= count * 1) {
-						try {
-							global.db.data.users[m.sender].rock -= count * 1;
-							global.db.data.users[who].rock += count * 1;
-							conn.reply(m.chat, `Successfully transferred rock of ${count}`.trim(), m);
-						} catch (e) {
-							global.db.data.users[m.sender].rock += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-						}
-					} else conn.reply(m.chat, `Your rock is not enough to transfer rock of ${count}`.trim(), m);
-					break;
-				case 'kayu':
-				case 'wood':
-					if (global.db.data.users[m.sender].wood >= count * 1) {
-						try {
-							global.db.data.users[m.sender].wood -= count * 1;
-							global.db.data.users[who].wood += count * 1;
-							conn.reply(m.chat, `Successfully transferred wood of ${count}`.trim(), m);
-						} catch (e) {
-							global.db.data.users[m.sender].wood += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-						}
-					} else conn.reply(m.chat, `Your wood is not enough to transfer wood of ${count}`.trim(), m);
-					break;
-				case 'iron':
-					if (global.db.data.users[m.sender].iron >= count * 1) {
-						try {
-							global.db.data.users[m.sender].iron -= count * 1;
-							global.db.data.users[who].iron += count * 1;
-							conn.reply(m.chat, `Successfully transferred iron of ${count}`.trim(), m);
-						} catch (e) {
-							global.db.data.users[m.sender].iron += count * 1;
-							m.reply('Failed to transfer');
-							console.log(e);
-						}
-					} else conn.reply(m.chat, `Your iron is not enough to transfer iron of ${count}`.trim(), m);
-					break;
-				default:
-					return conn.reply(
-						m.chat,
-						`Example: *${usedPrefix}transfer money 100 @tag*\n\n*Transferable List :*\n•》Money\n• Savings\n• Potion\n• Trash\n• Diamond\n• Common\n• Uncommon\n• Mythic\n• Legendary\n• String\n🪵 Wood\n• Rock\n• Iron`.trim(),
-						m
-					);
-			}
-		} catch (e) {
-			conn.reply(
-				m.chat,
-				`Example: *${usedPrefix}transfer money 100 @tag*\n\n*Transferable List :*\n•》Money\n• Savings\n• Potion\n• Trash\n• Diamond\n• Common\n• Uncommon\n• Mythic\n• Legendary\n• String\n🪵 Wood\n• Rock\n• Iron`.trim(),
-				m
-			);
-			console.log(e);
-		}
+		return conn.reply(m.chat, USAGE_TEXT(usedPrefix), m);
+	}
+
+	const type = (args[0] || '').toLowerCase();
+	const entry = TRANSFER_FIELDS[type];
+	if (!entry) {
+		return conn.reply(m.chat, USAGE_TEXT(usedPrefix), m);
+	}
+
+	const parsed = parseInt(args[1], 10);
+	if (!Number.isFinite(parsed) || parsed < 1) {
+		return conn.reply(m.chat, USAGE_TEXT(usedPrefix), m);
+	}
+	const count = Math.min(9999999, Math.max(parsed, 1));
+
+	const rawTarget = m.mentionedJid?.[0] || (args[2] ? `${args[2].replace(/[^0-9]/g, '')}@s.whatsapp.net` : '');
+	const digits = rawTarget.split('@')[0];
+	if (!rawTarget || !digits) {
+		throw 'Tag someone, or type their number!!';
+	}
+	const who = rawTarget.includes('@') ? rawTarget : `${digits}@s.whatsapp.net`;
+	if (who === m.sender) {
+		return conn.reply(m.chat, 'You cannot transfer to yourself.', m);
+	}
+
+	const users = global.db?.data?.users;
+	if (!users) throw 'Database is not ready.';
+
+	if (!users[m.sender]) users[m.sender] = {};
+	if (!users[who]) users[who] = {};
+
+	const senderUser = users[m.sender];
+	const targetUser = users[who];
+	const currentBalance = Number(senderUser[entry.field] || 0);
+
+	if (currentBalance < count) {
+		return conn.reply(m.chat, `Your ${entry.label} is not enough to transfer ${count}.`, m);
+	}
+
+	senderUser[entry.field] = currentBalance - count;
+	targetUser[entry.field] = Number(targetUser[entry.field] || 0) + count;
+
+	return conn.reply(m.chat, `Successfully transferred ${count} ${entry.label}.`, m);
 };
 
 handler.help = ['transfer'];

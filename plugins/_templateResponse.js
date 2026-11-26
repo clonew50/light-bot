@@ -29,7 +29,8 @@ export async function all(m, chatUpdate) {
 	}
 	if (!id) return;
 
-	let messages = await baileys.generateWAMessage(
+	const baileysMod = global.baileys;
+	let messages = await baileysMod.generateWAMessage(
 		m.chat,
 		{ text: id, mentions: m.mentionedJid },
 		{
@@ -38,13 +39,13 @@ export async function all(m, chatUpdate) {
 		}
 	);
 	messages.key.remoteJid = m.chat;
-	messages.key.fromMe = baileys.areJidsSameUser(m.sender, this.user?.id || this.user?.jid);
+	messages.key.fromMe = baileysMod.areJidsSameUser(m.sender, this.user?.id || this.user?.jid);
 	messages.key.id = m.key.id;
 	messages.pushName = m.pushName;
 	if (m.isGroup) messages.key.participant = messages.participant = m.sender;
 	let msg = {
 		...chatUpdate,
-		messages: [baileys.proto.WebMessageInfo.create(messages)].map((v) => ((v.conn = this), v)),
+		messages: [baileysMod.proto.WebMessageInfo.create(messages)].map((v) => ((v.conn = this), v)),
 		type: 'append',
 	};
 	this.ev.emit('messages.upsert', msg);

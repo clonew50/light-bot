@@ -128,49 +128,50 @@ async function processSingleMessage(botConn, rawMsg, chatUpdate) {
 				}
 			}
 
-			if (plugin.tags && plugin.tags.includes('admin')) {
-				continue;
-			}
-
 			const _prefix = plugin.customPrefix ? plugin.customPrefix : botConn.prefix ? botConn.prefix : subPrefix || global.prefix;
 			const match = resolveMatchedPrefix(_prefix, m.text, botConn);
 
 			if (typeof plugin.before === 'function') {
-				if (
-					await plugin.before.call(botConn, m, {
-						match,
-						conn: botConn,
-						sock: botConn,
-						satanic: botConn,
-						participants,
-						groupMetadata,
-						user,
-						bot,
-						isROwner,
-						isOwner,
-						isCreator: isROwner || isOwner,
-						isRAdmin,
-						isAdmin,
-						isBotAdmin,
-						isPrems,
-						config: global.config,
-						chatUpdate,
-						__dirname: ___dirname,
-						__filename,
-					})
-				) {
-					continue;
+				try {
+					if (
+						await plugin.before.call(botConn, m, {
+							match,
+							conn: botConn,
+							sock: botConn,
+							satanic: botConn,
+							participants,
+							groupMetadata,
+							user,
+							bot,
+							isROwner,
+							isOwner,
+							isCreator: isROwner || isOwner,
+							isRAdmin,
+							isAdmin,
+							isBotAdmin,
+							isPrems,
+							config: global.config,
+							chatUpdate,
+							__dirname: ___dirname,
+							__filename,
+						})
+					) {
+						continue;
+					}
+				} catch (e) {
+					console.error(`[Plugin before error: ${name}]`, e);
 				}
 			}
 
 			if (typeof plugin !== 'function') continue;
 			if ((usedPrefix = (match[0] || '')[0])) {
 				const noPrefix = m.text.replace(usedPrefix, '');
-				let [command, ...args] = noPrefix.trim().split` `.filter((v) => v);
-				args = args || [];
-				const _args = noPrefix.trim().split` `.slice(1);
-				const text = _args.join` `;
-				command = (command || '').toLowerCase();
+				const trimmedNoPrefix = noPrefix.trim();
+				const cmdMatch = /^(\S+)(?:\s+([\s\S]*))?$/.exec(trimmedNoPrefix);
+				let command = (cmdMatch?.[1] || '').toLowerCase();
+				const text = (cmdMatch?.[2] || '').trim();
+				const args = text ? text.split(/\s+/).filter(Boolean) : [];
+				const _args = args;
 				const fail = plugin.fail || global.dfail;
 				const isAccept =
 					plugin.command instanceof RegExp
@@ -186,7 +187,7 @@ async function processSingleMessage(botConn, rawMsg, chatUpdate) {
 
 				if (!isOwner && (m.chat in global.db.data.chats || m.sender in global.db.data.users)) {
 					const chat = global.db.data.chats[m.chat];
-					if (name != 'tools-delete.js' && chat?.isBanned) return;
+					if (name != 'tools-delete.js' && (chat?.isBanned || _user?.banned)) return;
 				}
 				if (plugin.rowner && plugin.owner && !(isROwner || isOwner)) {
 					fail('owner', m, botConn);
@@ -306,7 +307,7 @@ async function processSingleMessage(botConn, rawMsg, chatUpdate) {
 			const u = m.sender ? global.db.data.users[m.sender] : null;
 			if (u) {
 				u.exp += Number(m.exp || 0);
-				u.limit -= Number(m.limit || 0);
+				u.limit = Math.max(0, Number(u.limit || 0) - Number(m.limit || 0));
 			}
 
 			if (m.plugin) {
@@ -358,40 +359,41 @@ export async function handler(chatUpdate) {
  * @param {import('baileys').BaileysEventMap<unknown>['group-participants.update']} groupsUpdate
  */
 export async function participantsUpdate({ id, participants, action, simulate = false }) {
-	// if (id in conn.chats) return // First login will spam
 	if (this.isInit && !simulate) return;
-	if (global.db.data == null) await loadDatabase();
+	if (global.db.data == null) await global.loadDatabase();
 	let chat = global.db.data.chats[id] || {};
 	let text = '';
-	const groupMetadata = (conn.chats[id] || {}).metadata || (await this.groupMetadata(id));
+	const groupMetadata = (this.chats?.[id] || {}).metadata || (await this.groupMetadata(id).catch(() => ({}))) || {};
 	switch (action) {
 		case 'add':
 		case 'remove':
 			if (chat.welcome) {
-				for (let user of participants) {
-					user = this.getJid(user?.phoneNumber || user.id);
-					const tamnel = await this.profilePictureUrl(user, 'image', 'buffer');
-					text = (action === 'add' ? chat.sWelcome || this.welcome || conn.welcome || 'Welcome, @user!' : chat.sBye || this.bye || conn.bye || 'Bye, @user!')
+				for (let user of participants || []) {
+					user = this.getJid(user?.phoneNumber || user?.id || user);
+					if (!user) continue;
+					const tamnel = await this.profilePictureUrl(user, 'image', 'buffer').catch(() => 'https://telegra.ph/file/24fa902ead26340f3df2c.png');
+					text = (action === 'add' ? chat.sWelcome || this.welcome || 'Welcome, @user!' : chat.sBye || this.bye || 'Bye, @user!')
 						.replace('@user', `@${user.split('@')[0]}`)
 						.replace('@subject', this.getName(id))
 						.replace('@desc', groupMetadata.desc || '');
-					this.adReply(id, text, tamnel, null, { title: action == 'add' ? '💌 WELCOME' : '🐾 BYE', description: action == 'add' ? 'OH NO GROUP BURDEN INCREASED BY 1 :(' : 'BYE BURDEN! :)' });
+					await this.adReply(id, text, tamnel, null, { title: action == 'add' ? '💌 WELCOME' : '🐾 BYE', description: action == 'add' ? 'OH NO GROUP BURDEN INCREASED BY 1 :(' : 'BYE BURDEN! :)' });
 				}
 			}
 			break;
 		case 'promote':
 		case 'demote':
-			for (let users of participants) {
-				let user = this.getJid(users?.phoneNumber || users.id);
+			for (let users of participants || []) {
+				let user = this.getJid(users?.phoneNumber || users?.id || users);
+				if (!user) continue;
 				text = (
 					action === 'promote'
-						? chat.sPromote || this.spromote || conn.spromote || '@user ```is now Admin```'
-						: chat.sDemote || this.sdemote || conn.sdemote || '@user ```is no longer Admin```'
+						? chat.sPromote || this.spromote || '@user ```is now Admin```'
+						: chat.sDemote || this.sdemote || '@user ```is no longer Admin```'
 				)
 					.replace('@user', '@' + user.split('@')[0])
 					.replace('@subject', this.getName(id))
 					.replace('@desc', groupMetadata.desc || '');
-				if (chat.detect) this.sendMessage(id, { text, mentions: this.parseMention(text) });
+				if (chat.detect) await this.sendMessage(id, { text, mentions: this.parseMention(text) });
 			}
 			break;
 	}
@@ -401,16 +403,16 @@ export async function participantsUpdate({ id, participants, action, simulate = 
  * @param {import('baileys').BaileysEventMap<unknown>['groups.update']} groupsUpdate
  */
 export async function groupsUpdate(groupsUpdate) {
-	for (const groupUpdate of groupsUpdate) {
-		const id = groupUpdate.id;
+	for (const groupUpdate of groupsUpdate || []) {
+		const id = groupUpdate?.id;
 		if (!id) continue;
 		let chats = global.db.data.chats[id],
 			text = '';
 		if (!chats?.detect) continue;
-		if (groupUpdate.desc) text = (chats.sDesc || this.sDesc || conn.sDesc || '```Description has been changed to```\n@desc').replace('@desc', groupUpdate.desc);
-		if (groupUpdate.subject) text = (chats.sSubject || this.sSubject || conn.sSubject || '```Subject has been changed to```\n@subject').replace('@subject', groupUpdate.subject);
-		if (groupUpdate.icon) text = (chats.sIcon || this.sIcon || conn.sIcon || '```Icon has been changed to```').replace('@icon', groupUpdate.icon);
-		if (groupUpdate.revoke) text = (chats.sRevoke || this.sRevoke || conn.sRevoke || '```Group link has been changed to```\n@revoke').replace('@revoke', groupUpdate.revoke);
+		if (groupUpdate.desc) text = (chats.sDesc || this.sDesc || '```Description has been changed to```\n@desc').replace('@desc', groupUpdate.desc);
+		if (groupUpdate.subject) text = (chats.sSubject || this.sSubject || '```Subject has been changed to```\n@subject').replace('@subject', groupUpdate.subject);
+		if (groupUpdate.icon) text = (chats.sIcon || this.sIcon || '```Icon has been changed to```').replace('@icon', groupUpdate.icon);
+		if (groupUpdate.revoke) text = (chats.sRevoke || this.sRevoke || '```Group link has been changed to```\n@revoke').replace('@revoke', groupUpdate.revoke);
 		if (!text) continue;
 		await this.sendMessage(id, { text, mentions: this.parseMention(text) });
 	}
@@ -418,22 +420,25 @@ export async function groupsUpdate(groupsUpdate) {
 
 export async function deleteUpdate(message) {
 	try {
-		const { fromMe, id, participant } = message;
-		if (fromMe) return;
-		let msg = this.serializeM(this.loadMessage(id));
+		const { fromMe, id, participant } = message || {};
+		if (fromMe || !id) return;
+		const loaded = this.loadMessage(id);
+		if (!loaded) return;
+		let msg = this.serializeM(loaded);
 		if (!msg) return;
 		let chat = global.db.data.chats[msg.chat];
-		if (!chat.delete) return;
+		if (!chat?.delete) return;
+		const senderNum = participant ? participant.split('@')[0] : 'unknown';
 		await this.reply(
 			msg.chat,
 			`
-Detected @${participant.split`@`[0]} has deleted a message
+Detected @${senderNum} has deleted a message
 To disable this feature, type
 *.enable delete*
 `.trim(),
 			msg,
 			{
-				mentions: [participant],
+				mentions: participant ? [participant] : [],
 			}
 		);
 		this.copyNForward(msg.chat, msg).catch((e) => console.log(e, msg));
@@ -458,7 +463,7 @@ global.dfail = (type, m, conn) => {
 };
 
 let file = global.__filename(import.meta.url, true);
-watchFile(file, async () => {
+watchFile(file, { persistent: false }, async () => {
 	unwatchFile(file);
 	console.log(chalk.redBright("Update 'handler.js'"));
 	if (global.reloadHandler) console.log(await global.reloadHandler());

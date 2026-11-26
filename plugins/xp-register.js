@@ -1,15 +1,18 @@
 import { createHash } from 'crypto';
 
 let Reg = /\|?(.*)([.|] *?)([0-9]*)$/i;
-let handler = async function (m, { text, usedPrefix }) {
+let handler = async function (m, { conn, text, usedPrefix }) {
 	let user = global.db.data.users[m.sender];
-	const pp = await conn.profilePictureUrl(m.sender, 'image', 'buffer');
+	let pp = global.thumb || 'https://files.catbox.moe/96cm7n.jpeg';
+	try {
+		pp = (await conn.profilePictureUrl(m.sender, 'image')) || pp;
+	} catch {}
 	if (user.registered === true) throw `You Have Already Registered In The Database, Do You Want To Re-Register? *${usedPrefix}unreg*`;
 	if (!Reg.test(text)) throw `Enter Name.Age\nExample: .register Alex.17`;
-	let [_, name, _splitter, age] = text.match(Reg);
-	if (!name) throw 'Name cannot be empty';
+	let [, name, , age] = text.match(Reg);
+	if (!name || !name.trim()) throw 'Name cannot be empty';
 	if (!age) throw 'Age cannot be empty';
-	age = parseInt(age);
+	age = parseInt(age, 10);
 	if (age > 50) throw 'Too old';
 	if (age < 12) throw 'Minors are not allowed to join';
 	user.name = name.trim();
@@ -23,7 +26,7 @@ let handler = async function (m, { text, usedPrefix }) {
 	let sn = createHash('md5').update(m.sender).digest('hex');
 	let cap = `
 ─── USER INFO ───
-• Name: ${name}
+• Name: ${user.name}
 • Age: ${age} Years
 • Status: Success
 • Serial: ${sn}
@@ -32,9 +35,9 @@ let handler = async function (m, { text, usedPrefix }) {
 • Axe: 1 ( 30 Durability )
 • Pickaxe: 1 ( 40 Durability )
 `;
-	conn.adReply(m.chat, cap, pp, m, {
+	await conn.adReply(m.chat, cap, pp, m, {
 		title: 'Registration Successful',
-		body: 'You Are User Number ' + Object.values(db.data.users).filter((v) => v.registered == true).length,
+		description: 'You Are User Number ' + Object.values(global.db.data.users).filter((v) => v.registered == true).length,
 	});
 };
 handler.help = ['register <name>.<age>'];

@@ -72,19 +72,19 @@ Crate List:
 ${Object.keys(listCrate)
 	.map((v) =>
 		`
-${rpg.emoticon(v)}${v}
+${global.rpg?.emoticon?.(v) ?? ''}${v}
 `.trim()
 	)
 	.join('\n')}
 `.trim();
 	let type = (args[0] || '').toLowerCase();
-	let count = Math.floor(isNumber(args[1]) ? Math.min(Math.max(parseInt(args[1]), 1), Number.MAX_SAFE_INTEGER) : 1) * 1;
+	let count = Math.floor(isNumber(args[1]) ? Math.min(Math.max(parseInt(args[1], 10), 1), Number.MAX_SAFE_INTEGER) : 1) * 1;
 	if (!(type in listCrate)) return m.reply(info);
-	if (user[type] < count)
+	if ((user[type] || 0) < count)
 		return m.reply(
 			`
-Crates* none, you only have ${user[type]} *${type} Crate*
-Type *${usedPrefix}buy ${type} ${count - user[type]}* to buy
+Crates* none, you only have ${user[type] || 0} *${type} Crate*
+Type *${usedPrefix}buy ${type} ${count - (user[type] || 0)}* to buy
 `.trim()
 		);
 	// TODO: add pet crate
@@ -93,13 +93,13 @@ Type *${usedPrefix}buy ${type} ${count - user[type]}* to buy
 	for (let i = 0; i < count; i++)
 		for (let [reward, value] of Object.entries(listCrate[type]))
 			if (reward in user) {
-				const total = value.getRandom();
+				const total = Array.isArray(value) ? value[Math.floor(Math.random() * value.length)] : value;
 				if (total) {
-					user[reward] += total * 1;
+					user[reward] = Number(user[reward] || 0) + total * 1;
 					crateReward[reward] = (crateReward[reward] || 0) + total * 1;
 				}
 			}
-	user[type] -= count * 1;
+	user[type] = Number(user[type] || 0) - count * 1;
 	m.reply(
 		`
 You opened *${count}* ${type} Crate and got

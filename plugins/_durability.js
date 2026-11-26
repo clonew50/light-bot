@@ -1,9 +1,10 @@
 let handler = (m) => m;
 
 handler.before = async function (m) {
-	let user = db.data.users[m.sender];
+	let user = global.db?.data?.users?.[m.sender];
+	if (!user) return;
 
-	//Sword
+	// Sword
 	if (user.sword > 0) {
 		if (user.sworddurability < 1) {
 			user.sworddurability = 30;
@@ -14,7 +15,7 @@ handler.before = async function (m) {
 		user.sworddurability = 0;
 	}
 
-	//pickaxe
+	// Pickaxe
 	if (user.pickaxe > 0) {
 		if (user.pickaxedurability < 1) {
 			user.pickaxedurability = 30;
@@ -25,7 +26,7 @@ handler.before = async function (m) {
 		user.pickaxedurability = 0;
 	}
 
-	//armor
+	// Armor
 	if (user.armor > 0) {
 		if (user.armordurability < 1) {
 			user.armordurability = 30;
@@ -35,7 +36,7 @@ handler.before = async function (m) {
 	if (user.armor == 0) {
 		user.armordurability = 0;
 	}
-	//health
+	// Health
 	if (user.health > 100) {
 		user.health = 100;
 	}

@@ -1,23 +1,10 @@
-import { createDecipheriv, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import { spawn } from 'child_process';
 import yts from 'yt-search';
 import YTMusic from 'ytmusic-api';
 import sharp from 'sharp';
-import axios from 'axios';
-import https from 'https';
-import qs from 'querystring';
-import crypto from 'crypto';
+import { downloadYouTubeMedia } from '../lib/ytdl.js';
 
-const agent = new https.Agent({ rejectUnauthorized: false })
-
-/* ================================================== * CONFIG
- * ========================================================= */
-const METADATA_DECRYPTION_KEY = Buffer.from('C5D58EF67A7584E4A29F6C35BBC4EB12', 'hex');
-const HEADERS = {
-    'Content-Type': 'application/json',
-    'Origin': 'https://yt.savetube.me',
-    'User-Agent': 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36'
-};
 const FFMPEG_BITRATE = '16k';
 const FFMPEG_SAMPLE_RATE = '24000';
 const FFMPEG_CHANNELS = '1';
@@ -35,120 +22,6 @@ async function getYTMusic() {
         await ytMusicInstance.initialize();
     }
     return ytMusicInstance;
-}
-
-// ================= NEW API SYSTEM (من الكود ديالك) =================
-const SaveNow = {
-    _api: 'https://p.savenow.to',
-    _key: 'dfcb6d76f2f6a9894gjkege8a4ab232222',
-    _agent: agent,
-    poll: async (url, limit = 40) => {
-        for (let i = 0; i < limit; i++) {
-            try {
-                const { data } = await axios.get(url, { httpsAgent: SaveNow._agent, timeout: 60000 })
-                if (data.success === 1 && data.download_url) return data
-                if (data.success === -1) break
-            } catch {}
-            await new Promise(resolve => setTimeout(resolve, 2500))
-        }
-        return null
-    }
-}
-
-const savetube = {
-    api: { base: "https://media.savetube.me/api", cdn: "/random-cdn", info: "/v2/info", download: "/download" },
-    headers: { 'accept': '*/*', 'content-type': 'application/json', 'origin': 'https://yt.savetube.me', 'referer': 'https://yt.savetube.me/', 'user-agent': 'Postify/1.0.0' },
-    crypto: {
-        hexToBuffer: (hexString) => Buffer.from(hexString.match(/.{1,2}/g).join(''), 'hex'),
-        decrypt: async (enc) => {
-            const secretKey = 'C5D58EF67A7584E4A29F6C35BBC4EB12';
-            const data = Buffer.from(enc, 'base64');
-            const iv = data.slice(0, 16);
-            const content = data.slice(16);
-            const key = savetube.crypto.hexToBuffer(secretKey);
-            const decipher = crypto.createDecipheriv('aes-128-cbc', key, iv);
-            let decrypted = decipher.update(content);
-            decrypted = Buffer.concat([decrypted, decipher.final()]);
-            return JSON.parse(decrypted.toString());
-        }
-    },
-    youtube: url => {
-        if (!url) return null;
-        const a = [/youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/, /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/, /youtube\.com\/v\/([a-zA-Z0-9_-]{11})/, /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/, /youtu\.be\/([a-zA-Z0-9_-]{11})/];
-        for (let b of a) if (b.test(url)) return url.match(b)[1];
-        return null;
-    },
-    request: async (endpoint, data = {}, method = 'post') => {
-        try {
-            const { data: response } = await axios({ method, url: `${endpoint.startsWith('http')? '' : savetube.api.base}${endpoint}`, data: method === 'post'? data : undefined, params: method === 'get'? data : undefined, headers: savetube.headers });
-            return { status: true, code: 200, data: response };
-        } catch (error) { return { status: false, code: error.response?.status || 500, error: error.message }; }
-    },
-    getCDN: async () => {
-        const response = await savetube.request(savetube.api.cdn, {}, 'get');
-        if (!response.status) return response;
-        return { status: true, code: 200, data: response.data.cdn };
-    },
-    download: async (link, format) => {
-        const id = savetube.youtube(link); if (!id) return { status: false };
-        try {
-            const cdnx = await savetube.getCDN(); if (!cdnx.status) return cdnx;
-            const cdn = cdnx.data;
-            const result = await savetube.request(`https://${cdn}${savetube.api.info}`, { url: `https://www.youtube.com/watch?v=${id}` });
-            if (!result.status) return result;
-            const decrypted = await savetube.crypto.decrypt(result.data.data);
-            const dl = await savetube.request(`https://${cdn}${savetube.api.download}`, { id, downloadType: 'audio', quality: '128', key: decrypted.key });
-            return { status: true, title: decrypted.title || "YouTube Media", download_url: dl.data.data.downloadUrl };
-        } catch { return { status: false }; }
-    }
-};
-
-async function ytdlv1(url, type) {
-    try {
-        const endpoint = type === 'audio'? `https://ytdlpyton.nvlgroup.my.id/download/audio?url=${encodeURIComponent(url)}&mode=url` : `https://ytdlpyton.nvlgroup.my.id/download/?url=${encodeURIComponent(url)}&resolution=${type}&mode=url`
-        const { data } = await axios.get(endpoint, { timeout: 60000 })
-        if (!data ||!data.download_url) return { status: false }
-        return { title: data.title || 'YouTube Media', download_url: data.download_url, status: true }
-    } catch { return { status: false } }
-}
-async function ytdlv2(url, res) {
-    try {
-        const { data } = await axios.post("https://app.ytdown.to/proxy.php", qs.stringify({ url }), { headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", "Accept": "*/*", "X-Requested-With": "XMLHttpRequest", "User-Agent": "Mozilla/5.0", "Referer": "https://app.ytdown.to/id12/" } })
-        let api = data.api; if (!api ||!api.mediaItems) return { status: false }
-        let target = api.mediaItems.find(v => v.type === 'Audio')
-        if (!target) return { status: false }
-        let download_url = null
-        for (let i = 0; i < 20; i++) {
-            try { let { data: check } = await axios.get(target.mediaUrl, { headers: { "User-Agent": "Mozilla/5.0" } }); if (check.status === "completed") { download_url = check.fileUrl; break } } catch {}
-            await new Promise(r => setTimeout(r, 3000))
-        }
-        if (!download_url) return { status: false }
-        return { status: true, title: api.title, download_url }
-    } catch { return { status: false } }
-}
-async function ytdlv3(url, res) {
-    try {
-        const format = res === 'audio'? 'mp3' : res
-        const { data: init } = await axios.get(`${SaveNow._api}/ajax/download.php`, { params: { copyright: 0, format, url, api: SaveNow._key }, httpsAgent: SaveNow._agent, timeout: 60000 })
-        if (!init ||!init.success ||!init.progress_url) return { status: false }
-        const result = await SaveNow.poll(init.progress_url)
-        if (result && result.download_url) return { status: true, title: init.info?.title || 'YouTube Media', download_url: result.download_url }
-        return { status: false }
-    } catch { return { status: false } }
-}
-async function ytdlv4(url, res) {
-    try {
-        const data = await savetube.download(url, 'mp3');
-        if (data && data.status && data.download_url) return { status: true, title: data.title || 'YouTube Media', download_url: data.download_url }
-        return { status: false }
-    } catch { return { status: false } }
-}
-async function ytdlAuto(url, res) {
-    let data = await ytdlv1(url, res)
-    if (!data ||!data.status ||!data.download_url) data = await ytdlv3(url, res)
-    if (!data ||!data.status ||!data.download_url) data = await ytdlv4(url, res)
-    if (!data ||!data.status ||!data.download_url) data = await ytdlv2(url, res)
-    return data
 }
 
 // ================= LYRICS & PLAYER LOGIC (نفس القديم) =================
@@ -208,13 +81,7 @@ function secondsFromTimestamp(timestamp = '') {
     return 0;
 }
 
-async function downloadAudioBuffer(url) {
-    const res = await fetch(url, { headers: { 'User-Agent': HEADERS['User-Agent'] } });
-    if (!res.ok) throw new Error(`Failed to download audio (${res.status})`);
-    const buffer = Buffer.from(await res.arrayBuffer());
-    if (buffer.length > MAX_ORIGINAL_AUDIO_SIZE) throw new Error('Audio size is too large (Max 25MB)');
-    return buffer;
-}
+
 async function compressAudio(inputBuffer) {
     return new Promise((resolve, reject) => {
         const ffmpeg = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-vn', '-c:a', FFMPEG_CODEC, '-b:a', FFMPEG_BITRATE, '-ar', FFMPEG_SAMPLE_RATE, '-ac', FFMPEG_CHANNELS, '-application', 'audio', '-f', FFMPEG_FORMAT, 'pipe:1']);
@@ -383,12 +250,11 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
         const thumb = await getThumb(thumbUrl);
         const imageSrc = thumb?.length? `data:image/jpeg;base64,${thumb.toString('base64')}` : '';
 
-        // ===== هنا التغيير المهم: استخدام ytdlAuto الجديد =====
-        const audioData = await ytdlAuto(ytUrl, 'audio');
-        if (!audioData?.download_url) throw new Error('Audio download link is not available from any server');
+        const audioData = await downloadYouTubeMedia(ytUrl, 'audio');
+        if (!audioData?.buffer?.length) throw new Error('Audio download is not available');
+        if (audioData.buffer.length > MAX_ORIGINAL_AUDIO_SIZE) throw new Error('Audio size is too large (Max 25MB)');
 
-        const originalBuffer = await downloadAudioBuffer(audioData.download_url);
-        const compressedBuffer = await compressAudio(originalBuffer);
+        const compressedBuffer = await compressAudio(audioData.buffer);
         const audioSrc = `data:audio/ogg;base64,${compressedBuffer.toString('base64')}`;
 
         if (Buffer.byteLength(audioSrc, 'utf8') > 8 * 1024 * 1024) throw new Error('Audio size after compression is too large');

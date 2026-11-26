@@ -1,24 +1,32 @@
-let handler = async (m, { text, usedPrefix, command }) => {
+let handler = async (m, { conn, text, usedPrefix, command }) => {
 	try {
-		const input = m.quoted ? m.quoted.text : text;
-		const regex = /(https:\/\/(vt|vm)\.tiktok\.com\/[^\s]+|https:\/\/www\.tiktok\.com\/@[\w.-]+\/video\/\d+)/;
+		const input = (m.quoted ? m.quoted.text : text) || '';
+		const regex = /(https?:\/\/(?:vt|vm|www)\.tiktok\.com\/[^\s]+)/i;
 
 		const parseUrl = input.match(regex)?.[0];
 		if (parseUrl) {
 			m.react('🔁');
-			let res = await (await fetch(`https://www.tikwm.com/api/?url=${parseUrl}&hd=1`)).json();
-			if (!res || !res.data) 'Failed to fetch data from TikTok.';
+			const resp = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(parseUrl)}&hd=1`);
+			const rawText = await resp.text();
+			let res;
+			try {
+				res = JSON.parse(rawText);
+			} catch {
+				throw new Error(`TikWM returned non-JSON response (HTTP ${resp.status})`);
+			}
+			if (!res || !res.data) throw new Error(res?.msg || 'Failed to fetch data from TikTok.');
 
 			let data = res.data;
+			const authorName = data.author?.nickname || data.author?.unique_id || 'Unknown';
 			await m.reply(`# *TIKTOK DOWNLOADER*
 
-> *Title*: ${data.title}
-> *Region*: ${data.region}
-> *Durasi*: ${formatDuration(data.duration)}
+> *Title*: ${data.title || '-'}
+> *Region*: ${data.region || '-'}
+> *Duration*: ${formatDuration(data.duration)}
 > *Views*: ${formatNumber(data.play_count)}
 > *Comments*: ${formatNumber(data.comment_count)}
 > *Share*: ${formatNumber(data.share_count)}
-> *Uploader*: ${data.author.nickname || data.author.unique_id}
+> *Uploader*: ${authorName}
 
 Sending.....`);
 
@@ -33,42 +41,48 @@ Sending.....`);
 					}));
 					await conn.sendAlbumMessage(m.chat, media, { quoted: m });
 				}
-			} else {
+			} else if (data.play) {
 				await conn.sendFile(m.chat, data.play, '', '', m);
 			}
 
-			if (data.music_info.play) {
+			if (data.music_info?.play) {
 				await conn.sendMessage(
 					m.chat,
 					{
 						audio: { url: data.music_info.play },
 						mimetype: 'audio/mpeg',
-						fileName: `${data.title}.mp3`,
+						fileName: `${data.title || 'tiktok'}.mp3`,
 					},
 					{ quoted: m }
 				);
-			} else {
-				m.reply('Music not found, will only send the media.');
 			}
-		} else if (input) {
-			let search = await (await fetch(`https://www.tikwm.com/api/feed/search?keywords=${input}&count=1&cursor=0&web=1&hd=1`)).json();
-			let video = search?.data?.videos[0];
-			if (!video) throw `Video not found for the search "${input}".`;
+		} else if (input.trim()) {
+			const resp = await fetch(`https://www.tikwm.com/api/feed/search?keywords=${encodeURIComponent(input.trim())}&count=1&cursor=0&web=1&hd=1`);
+			const rawText = await resp.text();
+			let search;
+			try {
+				search = JSON.parse(rawText);
+			} catch {
+				throw new Error('TikTok search is temporarily unavailable, please send a direct TikTok link instead.');
+			}
+			let video = search?.data?.videos?.[0];
+			if (!video) throw new Error(`Video not found for the search "${input}".`);
 
 			let caption = `# *TIKTOK PLAYER*
 
-> *Title:* ${video.title}
-> *Region:* ${video.region}
-> *Durasi:* ${formatDuration(video.duration)}
+> *Title:* ${video.title || '-'}
+> *Region:* ${video.region || '-'}
+> *Duration:* ${formatDuration(video.duration)}
 > *Views:* ${formatNumber(video.play_count)}
 > *Comments:* ${formatNumber(video.comment_count)}
 > *Share:* ${formatNumber(video.share_count)}
-> *Uploader:* ${video.author.nickname || video.author.unique_id}
+> *Uploader:* ${video.author?.nickname || video.author?.unique_id || 'Unknown'}
 `.trim();
-			conn.sendFile(m.chat, 'https://www.tikwm.com' + video.play, '', caption, m);
+			const videoUrl = String(video.play || '').startsWith('http') ? video.play : 'https://www.tikwm.com' + video.play;
+			await conn.sendFile(m.chat, videoUrl, '', caption, m);
 		} else {
 			let cmd = usedPrefix + command;
-			m.reply(`*TIKTOK DOWNLOADER*
+			await m.reply(`*TIKTOK DOWNLOADER*
 > _*• Search:*_ \`${cmd} [query]\`
 > _*• Download:*_ \`${cmd} [link]\`
 
@@ -78,7 +92,7 @@ Sending.....`);
 		}
 	} catch (err) {
 		console.error(err);
-		return m.reply('An error occurred while processing the request');
+		return m.reply(err?.message || 'An error occurred while processing the request');
 	}
 };
 
@@ -90,7 +104,7 @@ handler.limit = true;
 export default handler;
 
 function formatNumber(number) {
-	return number.toLocaleString();
+	return Number(number || 0).toLocaleString();
 }
 
 function formatDuration(seconds) {

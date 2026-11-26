@@ -41,5 +41,4 @@ await conn.relayMessage(
 handler.help = ['ping2']
 handler.tags = ['main']
 handler.command = /^(ping2)$/i
-handler.customPrefix = /./
 export default handler

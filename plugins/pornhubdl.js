@@ -4,7 +4,8 @@ import axios from 'axios';
 async function searchPornhub(search) {
   try {
     const response = await axios.get(`https://www.pornhub.com/video/search?search=${encodeURIComponent(search)}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      timeout: 15000,
     });
     const html = response.data;
     const $ = cheerio.load(html);
@@ -24,10 +25,10 @@ async function searchPornhub(search) {
 }
 
 let handler = async (m, { conn, args, usedPrefix }) => {
-  if (!db.data.chats[m.chat].nsfw && m.isGroup) {
-    return conn.reply(m.chat, `*NSFW is off*\nEnable it with ${usedPrefix}nsfw on`, m);
+  if (!global.db?.data?.chats?.[m.chat]?.nsfw && m.isGroup) {
+    return conn.reply(m.chat, `*NSFW is off*\nEnable it with ${usedPrefix}enable nsfw`, m);
   }
-  if (!args[0]) return conn.reply(m.chat, `Example: ${usedPrefix}ph mia`, m);
+  if (!args[0]) return conn.reply(m.chat, `Example: ${usedPrefix}phub music`, m);
 
   let res = await searchPornhub(args.join(' '));
   if (!res.result.length) return conn.reply(m.chat, `No results for ${args.join(' ')}`, m);
@@ -39,12 +40,12 @@ let handler = async (m, { conn, args, usedPrefix }) => {
 🔗 ${v.url}
 `).join('\n----------------\n');
 
-  conn.reply(m.chat, teks, m);
+  await conn.reply(m.chat, teks, m);
 };
 
-handler.help = ['pornhub'];
+handler.help = ['pornhubdl'];
 handler.tags = ['+18'];
-handler.command = /^(ph|pornhub|pornhubsearch|phsearch|phub|porn|pornsearch|pornhubdl)$/i;
+handler.command = /^(phub|porn|pornsearch|pornhubdl)$/i;
 handler.nsfw = true;
 
 export default handler;

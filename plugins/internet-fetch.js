@@ -1,9 +1,10 @@
 import path from 'path';
 
 let handler = async (m, { conn }) => {
-	let text = m.quoted ? m.quoted?.text : m?.text;
+	let text = (m.quoted ? m.quoted?.text : m?.text) || '';
 	if (!text) throw 'Url?';
 	if (!/^https?:\/\//i.test(text)) text = text.match(/https?:\/\/\S+/i)?.[0];
+	if (!text) throw 'Invalid URL!';
 
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), 15000);

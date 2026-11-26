@@ -1,6 +1,6 @@
 import { ytdown } from './down-ytmp3.js';
 
-let handler = async (m, { usedPrefix, command, text }) => {
+let handler = async (m, { conn, usedPrefix, command, text }) => {
 	if (!text) throw `Usage: ${usedPrefix + command} <YouTube Video URL>`;
 	m.react('🔁');
 	try {
@@ -8,7 +8,7 @@ let handler = async (m, { usedPrefix, command, text }) => {
 		const info = dl.info;
 		const sthumb = await conn.adReply(
 			m.chat,
-			`– 乂 *YouTube - Video*\n> *- Judul :* ${info.title}\n> *- Channel :* ${info.uploader}\n> *- Durasi :* ${info.duration}\n> *- Views :* ${info.views}\n> *- Size :* ${info.size}`,
+			`– 乂 *YouTube - Video*\n> *- Title :* ${info.title}\n> *- Channel :* ${info.uploader}\n> *- Duration :* ${info.duration}\n> *- Views :* ${info.views}\n> *- Size :* ${info.size}`,
 			info.thumbnail,
 			m,
 			{ title: info.title, source: text }
@@ -17,8 +17,9 @@ let handler = async (m, { usedPrefix, command, text }) => {
 		await conn.sendMessage(
 			m.chat,
 			{
-				video: { url: dl.download },
+				video: dl.buffer,
 				fileName: `${info.title}.mp4`,
+				mimetype: 'video/mp4',
 			},
 			{ quoted: sthumb }
 		);
@@ -26,6 +27,7 @@ let handler = async (m, { usedPrefix, command, text }) => {
 		return m.reply(e.message);
 	}
 };
+
 handler.help = ['ytmp4'];
 handler.tags = ['downloader'];
 handler.command = /^(ytv|ytmp4|ytvideo)$/i;

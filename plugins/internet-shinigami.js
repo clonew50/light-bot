@@ -16,29 +16,30 @@ let handler = async (m, { conn, text, args, usedPrefix, command }) => {
 		const detail = await getJSON(`${BASE}/manga/detail/${id}`);
 		const chapters = await getJSON(`${BASE}/chapter/${id}/list?page=${page}&page_size=10&sort_by=chapter_number&sort_order=asc`);
 
-		const d = detail.data;
-		const getNames = (key) => d.taxonomy[key].map((v) => v.name).join(', ') || '-';
+		const d = detail?.data;
+		if (!d) throw new Error('Manhwa details not found');
+		const getNames = (key) => (d.taxonomy?.[key] || []).map((v) => v.name).join(', ') || '-';
 
 		const detailText = `
 📘 *${d.title}*
 🈶 ${d.alternative_title || '-'}
 
-⭐ Rating: *${d.user_rate}*
-👀 Views: *${d.view_count.toLocaleString()}*
-🏆 Rank: *${d.rank}*
+⭐ Rating: *${d.user_rate ?? '-'}*
+👀 Views: *${Number(d.view_count || 0).toLocaleString()}*
+🏆 Rank: *${d.rank ?? '-'}*
 
-📅 Released: *${d.release_year}*
-🌍 Country: *${d.country_id}*
+📅 Released: *${d.release_year ?? '-'}*
+🌍 Country: *${d.country_id ?? '-'}*
 
 👤 Author: *${getNames('Author')}*
 🎨 Artist: *${getNames('Artist')}*
 🏷️ Genre: *${getNames('Genre')}*
 
 📝 *Sinopsis*:
-${d.description}
+${d.description || '-'}
 `.trim();
 
-		let rows = chapters?.data?.map((v) => ({
+		let rows = (chapters?.data || []).map((v) => ({
 			title: `Chapter ${v.chapter_number}`,
 			description: new Date(v.release_date).toLocaleDateString('id-ID'),
 			id: `${cmd} read ${v.chapter_id}`,
@@ -52,7 +53,7 @@ ${d.description}
 			});
 		}
 
-		if (page < chapters.meta.total_page) {
+		if (page < (chapters?.meta?.total_page || 1)) {
 			rows.push({
 				title: '➡️ Next Page',
 				description: `Page ${page + 1}`,
@@ -107,15 +108,20 @@ ${d.description}
 	}
 
 	let [query, page = 1] = text.split('|');
-	page = Number(page);
+	page = Number(page) || 1;
 
-	const res = await getJSON(`${BASE}/manga/list?page=${page}&page_size=15&q=${encodeURIComponent(query)}`);
+	let res;
+	try {
+		res = await getJSON(`${BASE}/manga/list?page=${page}&page_size=15&q=${encodeURIComponent(query.trim())}`);
+	} catch (e) {
+		return m.reply(`⚠️ Shinigami API is currently unavailable (${e.message}).`);
+	}
 
-	if (!res.data?.length) throw `"${query}" not found`;
+	if (!res?.data?.length) throw `"${query}" not found`;
 
 	let rows = res.data.map((v) => ({
 		title: v.title,
-		description: `⭐ ${v.user_rate} | 👀 ${v.view_count.toLocaleString()}`,
+		description: `⭐ ${v.user_rate ?? '-'} | 👀 ${Number(v.view_count || 0).toLocaleString()}`,
 		id: `${cmd} detail ${v.manga_id}|1`,
 	}));
 
@@ -127,7 +133,7 @@ ${d.description}
 		});
 	}
 
-	if (page < res.meta.total_page) {
+	if (page < (res?.meta?.total_page || 1)) {
 		rows.push({
 			title: '➡️ Next Page',
 			description: `Page ${page + 1}`,
@@ -140,7 +146,7 @@ ${d.description}
 		{
 			text: `🔎 *Search Results* "${query}"\n${res.data.length} found`,
 			title: 'MANHWA SEARCH',
-			footer: `Page ${page}/${res.meta.total_page}`,
+			footer: `Page ${page}/${res?.meta?.total_page || 1}`,
 			buttons: [
 				{
 					name: 'single_select',
@@ -161,8 +167,8 @@ handler.command = ['shinigami'];
 export default handler;
 
 async function getJSON(url) {
-	const res = await fetch(url);
-	if (!res.ok) throw new Error(`Fetch error ${res.status} ${res.statusText}`);
+	const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+	if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
 	return res.json();
 }
 

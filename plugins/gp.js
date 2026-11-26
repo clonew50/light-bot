@@ -1,9 +1,8 @@
 // plugins/gp.js - Yono BOT - 2 MESSAGES - COPY FROM ABOVE
-import cp, { exec as _exec } from 'child_process';
-import { promisify } from 'util';
+import fs from 'fs';
+import path from 'path';
 import { generateWAMessageFromContent, generateMessageIDV2 } from 'baileys';
 import crypto from 'crypto';
-let exec = promisify(_exec).bind(cp);
 
 class AIRich {
    #client
@@ -73,12 +72,12 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
    let devPp = 'https://litter.catbox.moe/4evj2u.jpg';
    try{ devPp = await conn.profilePictureUrl(dev+'@s.whatsapp.net','image') }catch{}
 
-   let ar = Object.keys(plugins);
+   let ar = Object.keys(global.plugins || {});
    let ar1 = ar.map(v=>v.replace('.js',''));
 
    if (!text) {
      let rows = ar1.map((name,i)=>{
-       let p = plugins[name+'.js'] || {};
+       let p = (global.plugins || {})[name+'.js'] || {};
        let tag = p.tags? p.tags[0] : 'tools';
        let own = p.owner? 'Owner' : 'Public';
        return [(i+1).toString(), name, tag, own];
@@ -100,7 +99,10 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
      return await r.send(m.chat,{quoted:m});
    }
 
-   if (!ar1.includes(text)) {
+   const trimmed = text.trim();
+   if (/[/\\]|\.\./.test(trimmed)) throw 'Invalid plugin name';
+   const safeName = path.basename(trimmed, '.js');
+   if (!ar1.includes(safeName)) {
      const rnf = new AIRich(conn)
     .setTitle('NOT FOUND')
     .setFooter(`Yono BOT - ${dev}`)
@@ -111,8 +113,8 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
    }
 
    try{
-     let o = await exec('cat plugins/' + text + '.js');
-     let content = (o.stdout || '').trim();
+     const filePath = path.join(process.cwd(), 'plugins', safeName + '.js');
+     let content = fs.readFileSync(filePath, 'utf8').trim();
      let lines = content.split('\n').length;
      let size = content.length;
 

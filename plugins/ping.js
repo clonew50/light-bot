@@ -7,8 +7,8 @@ let handler = async (m, { conn }) => {
   const freeRam = (os.freemem()/1024/1024).toFixed(0)
   const usedRam = (process.memoryUsage().heapUsed/1024/1024).toFixed(1)
   const cpuModel = (os.cpus()[0]?.model || 'CPU').split(' ').slice(0,2).join(' ')
-  const userCount = Object.keys(db?.data?.users || {}).length
-  const chatCount = Object.keys(db?.data?.chats || {}).length
+  const userCount = Object.keys(global.db?.data?.users || {}).length
+  const chatCount = Object.keys(global.db?.data?.chats || {}).length
 
   const pingHTML = `
 <style>

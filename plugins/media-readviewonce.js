@@ -45,6 +45,7 @@ function findMediaEntry(container) {
 
 function normalizeBinaryKey(val) {
     if (!val) return val
+    if (typeof val === 'string') return Buffer.from(val, 'base64')
     if (Buffer.isBuffer(val) || val instanceof Uint8Array) return Buffer.from(val)
     if (Array.isArray(val?.data)) return Buffer.from(val.data)
     if (typeof val === 'object') {

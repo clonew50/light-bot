@@ -477,6 +477,35 @@ test('plugins/media-readviewonce.js and smsg handle viewOnce replies (.فضح / 
 	assert.equal(restartedSent.length, 1);
 	assert.deepEqual(restartedSent[0].content.image, fakeBuf);
 	assert.ok(restartedSent[0].content.caption.includes('device sent secret'));
+
+	// Quote stub stored in participant chat must NEVER shadow full message stored in global.db.data.msgs
+	restartedSock.chats['999888777@s.whatsapp.net'] = {
+		id: '999888777@s.whatsapp.net',
+		messages: {
+			SHADOW_VO_1: {
+				_isQuoteStub: true,
+				key: { remoteJid: '999888777@s.whatsapp.net', id: 'SHADOW_VO_1' },
+				message: { viewOnceMessageV2: { message: { imageMessage: { mimetype: 'image/jpeg', viewOnce: true } } } },
+			},
+		},
+	};
+	global.db.data.msgs.SHADOW_VO_1 = {
+		key: { remoteJid: '120363999@g.us', id: 'SHADOW_VO_1', participant: '999888777@s.whatsapp.net' },
+		message: {
+			viewOnceMessageV2: {
+				message: {
+					imageMessage: {
+						directPath: '/v/t62/unshadowed_path',
+						mimetype: 'image/jpeg',
+						mediaKey: Buffer.alloc(32, 3).toString('base64'),
+						viewOnce: true,
+					},
+				},
+			},
+		},
+	};
+	const loadedBest = restartedSock.loadMessage('SHADOW_VO_1');
+	assert.equal(loadedBest?.message?.viewOnceMessageV2?.message?.imageMessage?.directPath, '/v/t62/unshadowed_path');
 });
 
 test('plugins/main-menu.js runs cleanly for list, category, and unknown menu without protobuf or TypeError', async () => {
@@ -676,9 +705,253 @@ test('webPanel routes: /admin login, /api/public/status, sub-bot pairing, and se
 		}
 	} finally {
 		server.close();
+		server.closeAllConnections?.();
 		try {
 			fs.rmSync(tmpCfg, { force: true });
 		} catch {}
 		delete process.env.PANEL_CONFIG_FILE;
 	}
 });
+
+test('handler isolates plugin.before errors, blocks banned users, parses multiline args, clamps limits, and binds this in events', async () => {
+	const { sock, sent } = createConnectedFakeSock();
+	global.db = {
+		data: {
+			users: {},
+			chats: {},
+			stats: {},
+			msgs: {},
+			sticker: {},
+			settings: { '201505362172@s.whatsapp.net': { public: true, gconly: false, autoread: false, anticall: false } },
+		},
+	};
+	global.loadDatabase = async () => {};
+	global.prefix = /^[.]/;
+
+	const calls = [];
+	const origPlugins = global.plugins;
+	try {
+		global.plugins = {
+			'broken-before.js': Object.assign(async () => {}, {
+				before() {
+					throw new Error('hook boom');
+				},
+			}),
+			'echo-cmd.js': Object.assign(
+				async (msg, extra) => {
+					msg.limit = 5;
+					calls.push({ command: extra.command, args: extra.args, text: extra.text });
+				},
+				{ help: ['echo'], tags: ['tools'], command: /^echo$/i, limit: 1 }
+			),
+		};
+
+		// Seed user with limit = 2 -> limit=5 must clamp to 0 (never negative)
+		const userJid = '201099887766@s.whatsapp.net';
+		global.db.data.users[userJid] = { banned: false, limit: 2, exp: 0 };
+
+		await handler.call(sock, {
+			messages: [
+				{
+					key: { remoteJid: userJid, fromMe: false, id: 'USER_MULTILINE_CMD1' },
+					message: { conversation: '.echo first line\nsecond line' },
+					pushName: 'Alice',
+				},
+			],
+		});
+
+		assert.equal(calls.length, 1);
+		assert.equal(calls[0].command, 'echo');
+		assert.equal(calls[0].text, 'first line\nsecond line');
+		assert.equal(global.db.data.users[userJid].limit, 0);
+
+		// Banned user is ignored cleanly
+		global.db.data.users[userJid].banned = true;
+		await handler.call(sock, {
+			messages: [
+				{
+					key: { remoteJid: userJid, fromMe: false, id: 'USER_BANNED_CMD2' },
+					message: { conversation: '.echo blocked' },
+					pushName: 'Alice',
+				},
+			],
+		});
+		assert.equal(calls.length, 1);
+
+		// participantsUpdate & deleteUpdate bind `this` instead of failing on undefined `conn`
+		const { participantsUpdate, deleteUpdate } = await import('../handler.js');
+		const grpJid = '120363000111222@g.us';
+		global.db.data.chats[grpJid] = { detect: true, delete: true, welcome: false };
+		await participantsUpdate.call(sock, {
+			id: grpJid,
+			participants: ['201099887766@s.whatsapp.net'],
+			action: 'promote',
+			simulate: true,
+		});
+		assert.ok(sent.some((s) => s.jid === grpJid && /Admin/i.test(s.content?.text || '')));
+
+		sock.chats[grpJid] = {
+			id: grpJid,
+			messages: {
+				DEL_MSG_1: {
+					key: { remoteJid: grpJid, fromMe: false, id: 'DEL_MSG_1', participant: userJid },
+					message: { conversation: 'deleted hello' },
+				},
+			},
+		};
+		await deleteUpdate.call(sock, { fromMe: false, id: 'DEL_MSG_1', participant: userJid });
+		assert.ok(sent.some((s) => s.jid === grpJid && /deleted a message/i.test(s.content?.text || '')));
+	} finally {
+		global.plugins = origPlugins;
+	}
+});
+
+test('fixed RPG, owner, fun, menu, welcome, and fakecall plugins execute without undefined globals or crashes', async () => {
+	const { sock, sent } = createConnectedFakeSock();
+	const userJid = '201099887766@s.whatsapp.net';
+	const otherJid = '201011223344@s.whatsapp.net';
+	const grpJid = '120363000333444@g.us';
+
+	global.db = {
+		data: {
+			users: {
+				[userJid]: {
+					name: 'Tester',
+					money: 500,
+					atm: 0,
+					limit: 10,
+					potion: 2,
+					trash: 5,
+					diamond: 1,
+					common: 2,
+					uncommon: 0,
+					mythic: 0,
+					legendary: 0,
+					string: 0,
+					rock: 0,
+					wood: 0,
+					iron: 0,
+					steak: 2,
+					stamina: 90,
+					level: 1,
+					exp: 0,
+					registered: false,
+					lastrampok: 0,
+					afk: -1,
+					afkReason: '',
+					spam: 0,
+					lastspam: 0,
+					premium: true,
+					premiumTime: Date.now() - 1000,
+				},
+			},
+			chats: { [grpJid]: { welcome: false, nsfw: false } },
+			stats: {},
+			msgs: {},
+			sticker: {},
+			settings: {},
+		},
+	};
+
+	// 1. _premium.js expires expired premiumTime cleanly
+	const { default: premiumHook } = await import('../plugins/_premium.js');
+	const mBase = smsg(sock, {
+		key: { remoteJid: grpJid, fromMe: false, id: 'USER_FIXES_0001', participant: userJid },
+		message: { conversation: 'hi' },
+		pushName: 'Tester',
+	});
+	await premiumHook.before.call(sock, mBase);
+	assert.equal(global.db.data.users[userJid].premium, false);
+	assert.equal(global.db.data.users[userJid].premiumTime, 0);
+
+	// 2. rpg-eat.js consumes steak and clamps stamina <= 100
+	const { default: rpgEat } = await import('../plugins/rpg-eat.js');
+	await rpgEat.call(sock, mBase, { conn: sock, args: ['steak', '1'], usedPrefix: '.', command: 'eat' });
+	assert.equal(global.db.data.users[userJid].steak, 1);
+	assert.equal(global.db.data.users[userJid].stamina, 100);
+
+	// 3. rpg-mentransfer.js initializes missing receiver & transfers trash cleanly
+	const { default: rpgTransfer } = await import('../plugins/rpg-mentransfer.js');
+	await rpgTransfer.call(sock, mBase, { conn: sock, args: ['trash', '3', '201011223344'], usedPrefix: '.' });
+	assert.equal(global.db.data.users[userJid].trash, 2);
+	assert.equal(global.db.data.users[otherJid].trash, 3);
+
+	// 4. rpg-open.js opens common crate cleanly
+	const { default: rpgOpen } = await import('../plugins/rpg-open.js');
+	await rpgOpen.call(sock, mBase, { conn: sock, args: ['common', '1'], usedPrefix: '.', command: 'open' });
+	assert.ok(global.db.data.users[userJid].money >= 101);
+	assert.ok(global.db.data.users[userJid].exp >= 201);
+	assert.ok(global.db.data.users[userJid].common === 1 || global.db.data.users[userJid].common === 2);
+
+	// 5. xp-levelup.js & xp-register.js work without ReferenceError
+	const { default: xpLevelUp } = await import('../plugins/xp-levelup.js');
+	await xpLevelUp.call(sock, mBase, { conn: sock });
+	assert.ok(sent.some((s) => /more EXP needed|Level Up/i.test(s.content?.text || '')));
+
+	// 6. gp.js & owner-dfp.js reject path traversal
+	const { default: gpPlugin } = await import('../plugins/gp.js');
+	await assert.rejects(() => gpPlugin.call(sock, mBase, { conn: sock, text: '../config.js', usedPrefix: '.', command: 'gp' }), /Invalid/i);
+	const { default: dfpPlugin } = await import('../plugins/owner-dfp.js');
+	await assert.rejects(() => dfpPlugin.call(sock, mBase, { conn: sock, args: ['../config.js'], usedPrefix: '.', command: 'dfp' }), /Invalid/i);
+
+	// 7. fakecall.js renders valid PNG locally via @napi-rs/canvas
+	const { renderFakeCallImage } = await import('../plugins/fakecall.js');
+	const callPng = await renderFakeCallImage({ name: 'Test User', duration: '01:23', avatarBuffer: null, ios: true });
+	assert.ok(Buffer.isBuffer(callPng) && callPng.length > 1000);
+	const callDims = sizeOf(callPng);
+	assert.equal(callDims.type, 'png');
+	assert.equal(callDims.width, 720);
+	assert.equal(callDims.height, 1280);
+
+	// 8. welcome.js & ترحيب.js do not shadow each other; ترحيب.js handles .welcome on and empty stubParameters
+	const { default: welcomeTestPlugin } = await import('../plugins/welcome.js');
+	const { default: arWelcomePlugin } = await import('../plugins/ترحيب.js');
+	assert.equal(welcomeTestPlugin.command.test('welcome'), false);
+	assert.equal(welcomeTestPlugin.command.test('one'), false);
+	assert.equal(welcomeTestPlugin.command.test('testwelcome'), true);
+	assert.equal(arWelcomePlugin.command.test('welcome'), true);
+	assert.equal(arWelcomePlugin.command.test('one'), true);
+	await arWelcomePlugin.call(sock, mBase, { conn: sock, usedPrefix: '.', command: 'welcome', args: ['on'] });
+	assert.equal(global.db.data.chats[grpJid].welcome, true);
+	await assert.doesNotReject(() => arWelcomePlugin.before.call(sock, { chat: grpJid, messageStubType: 27, messageStubParameters: undefined }, { conn: sock }));
+
+	// 9. fun-dare & down-tiktok handle valid array JSON and non-JSON upstream errors cleanly
+	const origFetch = global.fetch;
+	try {
+		global.fetch = async (url) => {
+			if (String(url).includes('dare.json')) {
+				return new Response(JSON.stringify(['Test dare prompt']), { status: 200, headers: { 'Content-Type': 'application/json' } });
+			}
+			return new Response('<html>502 Bad Gateway</html>', { status: 502 });
+		};
+		const { default: darePlugin } = await import('../plugins/fun-dare.js');
+		await darePlugin.call(sock, mBase);
+		assert.ok(sent.some((s) => s.content?.text === 'Test dare prompt'));
+
+		const { default: ttPlugin } = await import('../plugins/down-tiktok.js');
+		await ttPlugin.call(sock, mBase, { conn: sock, text: 'https://vt.tiktok.com/ZTest123/', usedPrefix: '.', command: 'tt' });
+		assert.ok(sent.some((s) => /non-JSON response/i.test(s.content?.text || '')));
+	} finally {
+		global.fetch = origFetch;
+	}
+
+	// 10. جميع_الاوامر.js skips disabled plugins and uses arrayBuffer cleanly
+	const origFetchAllCmds = global.fetch;
+	const origPluginsRef = global.plugins;
+	try {
+		global.plugins = {
+			'active.js': { help: ['activecmd'], tags: ['tools'], disabled: false },
+			'disabled.js': { help: ['hiddencmd'], tags: ['tools'], disabled: true },
+		};
+		global.fetch = async () => new Response(Buffer.from('thumb'), { status: 200 });
+		const { default: allCmdsAr } = await import('../plugins/جميع_الاوامر.js');
+		await allCmdsAr.call(sock, mBase, { conn: sock, usedPrefix: '.' });
+		const menuOut = sent[sent.length - 1]?.content?.text || '';
+		assert.ok(menuOut.includes('.activecmd'));
+		assert.ok(!menuOut.includes('.hiddencmd'));
+	} finally {
+		global.fetch = origFetchAllCmds;
+		global.plugins = origPluginsRef;
+	}
+});
+

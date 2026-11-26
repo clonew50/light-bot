@@ -7,11 +7,32 @@ const MAX_BYTES = 500 * 1024
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 const UA = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'
 
+async function getPinterestSession(query) {
+  const pageUrl = `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`
+  const res = await fetch(pageUrl, {
+    headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml' },
+    signal: AbortSignal.timeout(15000)
+  })
+  const setCookies = typeof res.headers.getSetCookie === 'function'
+    ? res.headers.getSetCookie()
+    : (res.headers.get('set-cookie') ? [res.headers.get('set-cookie')] : [])
+  const pairs = []
+  let csrftoken = ''
+  for (const c of setCookies) {
+    const kv = String(c).split(';')[0].trim()
+    if (!kv) continue
+    pairs.push(kv)
+    if (kv.startsWith('csrftoken=')) csrftoken = kv.slice('csrftoken='.length)
+  }
+  return { cookieHeader: pairs.join('; '), csrftoken }
+}
+
 async function searchPinterest(query) {
   const all = []
   const seen = new Set()
+  const { cookieHeader, csrftoken } = await getPinterestSession(query)
   let bookmark = null
-  for (let page = 0; page < 8 && all.length < POOL; page++) {
+  for (let page = 0; page < 4 && all.length < POOL; page++) {
     const options = { query, scope: 'pins', page_size: 50, ...(bookmark ? { bookmarks: [bookmark] } : {}) }
     const params = new URLSearchParams({
       source_url: `/search/pins/?q=${encodeURIComponent(query)}`,
@@ -19,9 +40,18 @@ async function searchPinterest(query) {
       _: String(Date.now())
     })
     const res = await fetch(`https://www.pinterest.com/resource/BaseSearchResource/get/?${params}`, {
-      headers: { 'User-Agent': UA, 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-Pinterest-PWS-Handler': 'www/search/[scope].js' },
+      headers: {
+        'User-Agent': UA,
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-Pinterest-PWS-Handler': 'www/search/[scope].js',
+        ...(csrftoken ? { 'X-CSRFToken': csrftoken } : {}),
+        ...(cookieHeader ? { 'Cookie': cookieHeader } : {}),
+        'Referer': `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`
+      },
       signal: AbortSignal.timeout(15000)
     })
+    if (!res.ok) throw new Error(`Pinterest HTTP ${res.status}`)
     const json = await res.json()
     const rr = json?.resource_response
     const results = rr?.data?.results || []

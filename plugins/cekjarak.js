@@ -270,19 +270,18 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
         const koordinat = darat? rute.geometry.coordinates : lengkung(a, b);
         const jam = Math.floor(durasi / 3600);
         const menit = Math.round((durasi % 3600) / 60);
-        let resultUrl = '';
+        let mapBuffer = null;
         let petaError;
         try {
-            const gambar = await buatPeta(a, b, koordinat, darat? [30, 136, 229] : [251, 140, 0]);
-            resultUrl = await uploadGambar(gambar);
+            mapBuffer = await buatPeta(a, b, koordinat, darat? [30, 136, 229] : [251, 140, 0]);
         } catch (e) { petaError = e.message; }
         const modeStr = darat? '🚗 *Land (OSRM Routing)*' : '✈️ *Air (Straight Line)*';
         const waktuStr = jam? `${jam} hours ${menit} minutes` : `${menit} minutes`;
         let caption = `📍 *ROUTE & DISTANCE MAPS INFO* 📍\n\n🏢 *Origin:* ${a.nama}\n🏁 *Destination:* ${b.nama}\n🛣️ *Route:* ${modeStr}\n📏 *Distance:* ${jarakKm.toFixed(1)} KM\n⏳ *Estimated Time:* ${waktuStr}\n\n`;
         if (!darat) caption += `_Note: Estimated air exploration speed 800 km/h, not actual flight route._\n\n`;
         caption += `💻 *Script by:* ${baseRes.author_skrep} (${baseRes.kesayangan})`;
-        if (resultUrl) {
-            await conn.sendMessage(m.chat, { image: { url: resultUrl }, caption: caption }, { quoted: m });
+        if (mapBuffer) {
+            await conn.sendMessage(m.chat, { image: mapBuffer, caption }, { quoted: m });
         } else {
             caption = `⚠️ *Failed to render map image:* ${petaError}\n\n` + caption;
             await conn.sendMessage(m.chat, { text: caption }, { quoted: m });

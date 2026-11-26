@@ -14,12 +14,15 @@ let handler = async (m, { conn, usedPrefix: _p }) => {
 
     // Thumbnail
     let thumbUrl = `https://wsrv.nl/?url=${encodeURIComponent(imgUrl)}&w=300&h=300&fit=cover&output=jpg`
-    let thumbRes = await fetch(thumbUrl)
-    let thumbBuffer = Buffer.from(await thumbRes.arrayBuffer())
+    let thumbBuffer = Buffer.alloc(0)
+    try {
+      let thumbRes = await fetch(thumbUrl, { signal: AbortSignal.timeout(10000) })
+      if (thumbRes.ok) thumbBuffer = Buffer.from(await thumbRes.arrayBuffer())
+    } catch {}
 
     let botName = 'Rem Bot 🌺'
     let userName = m.pushName || 'User'
-    let senderName = db.data.users[m.sender]?.name || userName
+    let senderName = global.db?.data?.users?.[m.sender]?.name || userName
 
     let teks = `❀.─━━━━🌷━━━━─.❀
    ⌊🌺 | ${botName} | 🌺⌋

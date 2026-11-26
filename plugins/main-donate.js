@@ -1,12 +1,14 @@
-let handler = async (m, { text }) => {
+let handler = async (m, { conn, text }) => {
 	const nominal = parseInt(text);
 	if (!nominal) throw 'How much?';
 	if (nominal < 1000) throw 'Minimum 1,000.';
 	if (nominal > 1000000) throw 'Are you serious?';
 
-	if (!global.pakasir || !pakasir.slug || !pakasir.apikey) throw '`pakasir.slug` and `pakasir.apikey` are not filled yet.';
+	if (!global.pakasir || !global.pakasir.slug || !global.pakasir.apikey) {
+		throw '`pakasir.slug` and `pakasir.apikey` are not configured yet.';
+	}
 
-	const cqris = await createQris(pakasir.slug, pakasir.apikey, nominal);
+	const cqris = await createQris(global.pakasir.slug, global.pakasir.apikey, nominal);
 	const expiredAt = new Date(cqris.expired_at);
 	expiredAt.setHours(expiredAt.getHours() - 1);
 	expiredAt.setMinutes(expiredAt.getMinutes() + (global.pakasir.expired || 1));
@@ -32,21 +34,24 @@ let handler = async (m, { text }) => {
 	);
 
 	let status = '';
-	while (status !== 'completed') {
+	const maxPolls = 60;
+	for (let i = 0; i < maxPolls && status !== 'completed'; i++) {
 		if (new Date() >= expiredAt) {
-			await conn.sendMessage(m.chat, { delete: sQris.key });
+			await conn.sendMessage(m.chat, { delete: sQris.key }).catch(() => {});
 			return m.reply('⚠️ QRIS has *expired*, please create again.');
 		}
 
-		const res = await checkStatus(pakasir.slug, pakasir.apikey, cqris.order_id, nominal);
-		if (res && res.status === 'completed') {
-			status = 'completed';
-			await conn.sendMessage(m.chat, { delete: sQris.key });
-			m.reply('✅ Payment successful!\nThank you for the donation 🙏');
-			break;
-		}
+		try {
+			const res = await checkStatus(global.pakasir.slug, global.pakasir.apikey, cqris.order_id, nominal);
+			if (res && res.status === 'completed') {
+				status = 'completed';
+				await conn.sendMessage(m.chat, { delete: sQris.key }).catch(() => {});
+				await m.reply('✅ Payment successful!\nThank you for the donation 🙏');
+				break;
+			}
+		} catch {}
 
-		await baileys.delay(10000);
+		await global.baileys.delay(10000);
 	}
 };
 

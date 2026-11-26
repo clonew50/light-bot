@@ -31,7 +31,7 @@ ${usedPrefix + command} demote @user`.trim(),
 			act = 'demote';
 			break;
 		default:
-			throw eror;
+			throw global.eror || 'Invalid simulate event';
 	}
 	if (act)
 		return conn.participantsUpdate({

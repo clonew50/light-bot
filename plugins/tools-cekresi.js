@@ -81,40 +81,48 @@ const el_api = 'f76b9f991fe424356b9c6da407792b1d1fbf33ad7a197bd0755b557a05461262
 
   try {
 
-    let res = await fetch(`https://api.binderbyte.com/v1/track?api_key=${el_api}&courier=${courier}&awb=${resi}`)
+    let res = await fetch(`https://api.binderbyte.com/v1/track?api_key=${el_api}&courier=${encodeURIComponent(courier)}&awb=${encodeURIComponent(resi)}`, { signal: AbortSignal.timeout(15000) })
     let elres = await res.json()
+
+    if (!res.ok || elres?.status !== 200 || !elres?.data?.summary) {
+      return m.reply(`⚠️ ${elres?.message || 'Tracking number not found or API limit reached'}`)
+    }
+
+    const s = elres.data.summary || {}
+    const d = elres.data.detail || {}
+    const hist = elres.data.history || []
 
     let teks = `📦 *TRACKING RESULT*\n\n`
     teks += `Status: ${elres.status}\n`
-    teks += `Message: ${elres.message}\n\n`
+    teks += `Message: ${elres.message || '-'}\n\n`
 
     teks += `*Summary*\n`
-    teks += `AWB: ${elres.data.summary.awb}\n`
-    teks += `Courier: ${elres.data.summary.courier}\n`
-    teks += `Service: ${elres.data.summary.service}\n`
-    teks += `Status: ${elres.data.summary.status}\n`
-    teks += `Date: ${elres.data.summary.date}\n`
-    teks += `Description: ${elres.data.summary.desc}\n`
-    teks += `Cost: ${elres.data.summary.amount}\n`
-    teks += `Weight: ${elres.data.summary.weight}\n\n`
+    teks += `AWB: ${s.awb || resi}\n`
+    teks += `Courier: ${s.courier || courier}\n`
+    teks += `Service: ${s.service || '-'}\n`
+    teks += `Status: ${s.status || '-'}\n`
+    teks += `Date: ${s.date || '-'}\n`
+    teks += `Description: ${s.desc || '-'}\n`
+    teks += `Cost: ${s.amount || '-'}\n`
+    teks += `Weight: ${s.weight || '-'}\n\n`
 
     teks += `*Detail*\n`
-    teks += `Origin: ${elres.data.detail.origin}\n`
-    teks += `Destination: ${elres.data.detail.destination}\n`
-    teks += `Shipper: ${elres.data.detail.shipper}\n`
-    teks += `Receiver: ${elres.data.detail.receiver}\n\n`
+    teks += `Origin: ${d.origin || '-'}\n`
+    teks += `Destination: ${d.destination || '-'}\n`
+    teks += `Shipper: ${d.shipper || '-'}\n`
+    teks += `Receiver: ${d.receiver || '-'}\n\n`
 
     teks += `*History*\n`
-    elres.data.history.forEach((v, i) => {
-      teks += `${i + 1}. ${v.date}\n`
-      teks += `   ${v.desc}\n`
-      teks += `   ${v.location}\n\n`
+    hist.forEach((v, i) => {
+      teks += `${i + 1}. ${v.date || '-'}\n`
+      teks += `   ${v.desc || '-'}\n`
+      teks += `   ${v.location || '-'}\n\n`
     })
 
-    conn.sendMessage(m.chat, { text: teks }, { quoted: m })
+    await conn.sendMessage(m.chat, { text: teks }, { quoted: m })
 
   } catch {
-    m.reply('Tracking number not found or API error')
+    await m.reply('Tracking number not found or API error')
   }
 
 }

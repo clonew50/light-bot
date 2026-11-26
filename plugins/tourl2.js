@@ -13,6 +13,7 @@ let handler = async (m, { conn }) => {
         let mime = (q.msg || q).mimetype || q.mediaType || '';
         if (!mime || mime == 'conversation') return m.reply('What do you want to upload?');
         let media = await q.download();
+        if (!media?.length) return m.reply('Failed to download media.');
         let link = await uploadFile(media);
         if (!link) throw 'Failed to upload media.';
 
@@ -25,16 +26,21 @@ let handler = async (m, { conn }) => {
 📌 Expired: Unknown
 ╰───────────────`;
 
-        let thumbnail = await prepareWAMessageMedia(
-            { image: { url: link } },
-            { upload: conn.waUploadToServer }
-        );
+        let thumbnail = null;
+        if (/image/i.test(mime)) {
+            try {
+                thumbnail = await prepareWAMessageMedia(
+                    { image: { url: link } },
+                    { upload: conn.waUploadToServer }
+                );
+            } catch {}
+        }
 
         let msg = {
             interactiveMessage: proto.Message.InteractiveMessage.create({
                 header: proto.Message.InteractiveMessage.Header.create({
-                    hasMediaAttachment: true,
-                    ...thumbnail
+                    hasMediaAttachment: Boolean(thumbnail),
+                    ...(thumbnail || {})
                 }),
                 body: proto.Message.InteractiveMessage.Body.create({ text: caption }),
                 footer: proto.Message.InteractiveMessage.Footer.create({
@@ -164,7 +170,7 @@ async function telegraph(buffer) {
  * @returns {Promise<string>}
  */
 async function tmpfiles(buffer) {
-    const { ext, mime } = await fileTypeFromBuffer(buffer);
+    const { ext, mime } = (await fileTypeFromBuffer(buffer)) || { ext: 'bin', mime: 'application/octet-stream' };
     let form = new FormData();
     form.append('file', buffer, { filename: `tmp.${ext}`, contentType: mime });
 
@@ -172,8 +178,8 @@ async function tmpfiles(buffer) {
         method: 'POST',
         body: form
     });
-
+    if (!res.ok) throw new Error();
     let json = await res.json();
     if (!json.data || !json.data.url) throw new Error();
     return json.data.url;
-      }
+}
