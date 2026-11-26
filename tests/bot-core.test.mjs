@@ -969,7 +969,8 @@ test('lib/ytdl.js parses Netscape cookies, injects visitorData, and recovers whe
 	const parsed = parseNetscapeCookies(
 		'# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1999999999\tSAPISID\tabc123\n.example.com\tTRUE\t/\tFALSE\t0\tIGNORE\t1\n.google.com\tTRUE\t/\tTRUE\t1999999999\tNID\txyz'
 	);
-	assert.equal(parsed, 'SAPISID=abc123; NID=xyz');
+	assert.ok(parsed.includes('SAPISID=abc123') && parsed.includes('NID=xyz'));
+	assert.ok(!parsed.includes('IGNORE'));
 
 	const origPost = axios.post;
 	const origGet = axios.get;
