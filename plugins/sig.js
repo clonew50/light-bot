@@ -1,3 +1,7 @@
+import fs from 'fs'
+import path from 'path'
+import { parseNetscapeCookies } from '../lib/ytdl.js'
+
 let handler = async (m, { conn, args, usedPrefix, command }) => {
     const username = args[0]
     if (!username) {
@@ -16,11 +20,24 @@ let handler = async (m, { conn, args, usedPrefix, command }) => {
     let isPrivate = false
 
     try {
-        const res = await fetch(`https://www.instagram.com/api/v1/users/web_profile_info/?username=${cleanUser}`, {
-            headers: {
-                'X-IG-App-ID': '936619743392459',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        const igHeaders = {
+            'X-IG-App-ID': '936619743392459',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        try {
+            const cookiePath = path.join(process.cwd(), 'data', 'instagram-cookies.txt')
+            if (fs.existsSync(cookiePath)) {
+                const cookieHeader = parseNetscapeCookies(fs.readFileSync(cookiePath, 'utf8'), ['instagram.com'])
+                if (cookieHeader) {
+                    igHeaders.Cookie = cookieHeader
+                    const csrf = cookieHeader.match(/(?:^|;\s*)csrftoken=([^;]+)/)?.[1]
+                    if (csrf) igHeaders['X-CSRFToken'] = csrf
+                }
             }
+        } catch {}
+
+        const res = await fetch(`https://www.instagram.com/api/v1/users/web_profile_info/?username=${cleanUser}`, {
+            headers: igHeaders
         })
         const json = await res.json()
         const user = json?.data?.user

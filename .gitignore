@@ -17,6 +17,8 @@ system/panel-config.json
 
 # Env & secrets
 .env
+cookies.txt
+data/*-cookies.txt
 
 # OS / editor
 .DS_Store

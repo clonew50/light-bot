@@ -1,4 +1,7 @@
 import { randomUUID } from 'crypto'
+import fs from 'fs'
+import path from 'path'
+import { parseNetscapeCookies } from '../lib/ytdl.js'
 
 const MAX_IMAGES = 20
 const POOL = 50
@@ -8,6 +11,20 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;'
 const UA = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'
 
 async function getPinterestSession(query) {
+  let savedHeader = ''
+  let csrftoken = ''
+  try {
+    const cookiePath = path.join(process.cwd(), 'data', 'pinterest-cookies.txt')
+    if (fs.existsSync(cookiePath)) {
+      savedHeader = parseNetscapeCookies(fs.readFileSync(cookiePath, 'utf8'), ['pinterest.com'])
+      const csrfMatch = savedHeader.match(/(?:^|;\s*)csrftoken=([^;]+)/)
+      if (csrfMatch?.[1]) csrftoken = csrfMatch[1]
+    }
+  } catch {}
+  if (savedHeader && csrftoken) {
+    return { cookieHeader: savedHeader, csrftoken }
+  }
+
   const pageUrl = `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`
   const res = await fetch(pageUrl, {
     headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml' },
@@ -17,14 +34,13 @@ async function getPinterestSession(query) {
     ? res.headers.getSetCookie()
     : (res.headers.get('set-cookie') ? [res.headers.get('set-cookie')] : [])
   const pairs = []
-  let csrftoken = ''
   for (const c of setCookies) {
     const kv = String(c).split(';')[0].trim()
     if (!kv) continue
     pairs.push(kv)
     if (kv.startsWith('csrftoken=')) csrftoken = kv.slice('csrftoken='.length)
   }
-  return { cookieHeader: pairs.join('; '), csrftoken }
+  return { cookieHeader: [savedHeader, pairs.join('; ')].filter(Boolean).join('; '), csrftoken }
 }
 
 async function searchPinterest(query) {
