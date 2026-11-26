@@ -59,7 +59,9 @@ export function excluded(rel) {
   if (rel.includes('\\')) return true;                       // مخاريط الفول للسلاش = مسار مشبوه
   const parts = rel.split('/');
   if (parts.some((p) => p === '..' || p === '.')) return true; // path traversal
-  if (parts.some((p) => EXCLUDE_DIRS.includes(p))) return true;
+  // استثناء ملفات الكوكيز في data/ وجذر المشروع بحيث تتنزل وتتحدث مع التحديثات
+  const isAllowedCookie = rel === 'cookies.txt' || /^data\/[a-zA-Z0-9_-]+-cookies\.txt$/.test(rel);
+  if (!isAllowedCookie && parts.some((p) => EXCLUDE_DIRS.includes(p))) return true;
   if (EXCLUDE_FILES.has(parts[parts.length - 1])) return true;
   if (EXCLUDE_REL.has(rel)) return true;
   if (rel.endsWith('.zip') || rel.endsWith('.log')) return true;

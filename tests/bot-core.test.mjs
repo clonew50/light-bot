@@ -1022,4 +1022,19 @@ test('lib/ytdl.js parses Netscape cookies, injects visitorData, and recovers whe
 	}
 });
 
+test('system/autoUpdate.mjs protects databases while permitting cookie files and bin executables', async () => {
+	const { excluded } = await import('../system/autoUpdate.mjs');
+	assert.equal(excluded('data/youtube-cookies.txt'), false, 'data/youtube-cookies.txt must be permitted for autoUpdate');
+	assert.equal(excluded('data/pinterest-cookies.txt'), false, 'data/pinterest-cookies.txt must be permitted for autoUpdate');
+	assert.equal(excluded('data/instagram-cookies.txt'), false, 'data/instagram-cookies.txt must be permitted for autoUpdate');
+	assert.equal(excluded('cookies.txt'), false, 'cookies.txt in root must be permitted for autoUpdate');
+	assert.equal(excluded('bin/yt-dlp'), false, 'bin/yt-dlp must be permitted for autoUpdate');
+
+	assert.equal(excluded('data/database.db'), true, 'data/database.db must be protected from overwrite');
+	assert.equal(excluded('data/crmdb.db'), true, 'data/crmdb.db must be protected from overwrite');
+	assert.equal(excluded('session/creds.json'), true, 'session files must be excluded');
+	assert.equal(excluded('../etc/passwd'), true, 'path traversal must be rejected');
+});
+
+
 
