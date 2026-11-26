@@ -220,16 +220,23 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
             if (track.thumbnails?.length) thumbUrl = track.thumbnails[track.thumbnails.length - 1].url;
             album = track.album?.name || track.album?.title || '';
         } else {
-            const detail = await yts(ytUrl);
-            const vid = detail?.videos?.[0];
-            if (!vid) throw new Error('Video not found');
-            title = vid.title || 'Unknown';
-            artist = vid.author?.name || 'YouTube';
-            duration = vid.timestamp || '0:00';
-            durationSec = secondsFromTimestamp(duration);
-            thumbUrl = vid.thumbnail;
-            const match = ytUrl.match(/(?:v=|shorts\/|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{11})/);
+            const match = ytUrl.match(/(?:v=|shorts\/|youtu\.be\/|embed\/|live\/)([a-zA-Z0-9_-]{11})/);
             if (match) trackIdForLyrics = match[1];
+            let vid = null;
+            try {
+                vid = trackIdForLyrics ? await yts({ videoId: trackIdForLyrics }) : (await yts(ytUrl))?.videos?.[0];
+            } catch {}
+            if (vid && (vid.title || vid.videoId)) {
+                title = vid.title || 'Unknown';
+                artist = vid.author?.name || 'YouTube';
+                duration = vid.timestamp || '0:00';
+                durationSec = vid.seconds || secondsFromTimestamp(duration);
+                thumbUrl = vid.thumbnail || (trackIdForLyrics ? `https://i.ytimg.com/vi/${trackIdForLyrics}/hqdefault.jpg` : '');
+            } else if (trackIdForLyrics) {
+                thumbUrl = `https://i.ytimg.com/vi/${trackIdForLyrics}/hqdefault.jpg`;
+            } else {
+                throw new Error('Video not found');
+            }
         }
 
         let syncedLyrics = [];

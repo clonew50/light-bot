@@ -165,6 +165,8 @@ export const PANEL_CSS = `
   .btn.ghost{background:transparent;border-color:var(--line)}
   .btn.ghost:hover{border-color:var(--line-strong);background:var(--surface)}
   .btn.sm{min-height:34px;padding:6px 12px;font-size:12px}
+  .btn.copied{border-color:var(--acc-border);color:#6ee7b7;background:var(--acc-soft)}
+  .btn.primary.copied{background:#22c58e;border-color:#22c58e;color:#04150e}
   .btn:disabled, button.primary:disabled{opacity:.45;cursor:not-allowed;transform:none}
 
   @media(max-width:600px){
@@ -320,6 +322,7 @@ export const PANEL_CSS = `
     transition:border-color .15s var(--ease),transform .15s var(--ease);
   }
   .code-tiles:hover .code-tile{border-color:var(--acc);transform:translateY(-1px)}
+  .code-tiles.copied .code-tile{border-color:var(--acc);background:var(--acc-soft);color:#6ee7b7}
   .code-dash{
     font-family:'IBM Plex Mono',monospace;font-size:20px;color:var(--dim);padding:0 2px;
   }
@@ -377,6 +380,8 @@ export const PANEL_CSS = `
     transition:border-color .15s var(--ease),transform .15s var(--ease),background-color .15s var(--ease);
   }
   .cmd-card:hover{border-color:var(--acc-border);background:#10151d;transform:translateY(-1px)}
+  .cmd-card.copied{border-color:var(--acc);background:var(--acc-soft)}
+  .cmd-card.copied .cmd-meta{color:#6ee7b7;font-weight:600}
   .cmd-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
   .cmd-code{
     font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;
@@ -431,7 +436,12 @@ export const PANEL_CSS = `
     animation:toastIn .2s var(--ease) both;
   }
   .toast.ok{border-color:var(--acc-border)}
+  .toast.warn{border-color:rgba(212,162,76,.5)}
   .toast.err{border-color:rgba(229,72,77,.5)}
+  .manual-copy-input{
+    flex:1;min-width:0;min-height:34px;padding:5px 9px;border-radius:var(--radius-sm);
+    background:var(--bg);border:1px solid var(--line-strong);color:var(--acc);font-size:12.5px;
+  }
 
   /* ---------- Admin Workspace Sidebar Layout ---------- */
   .admin-shell{display:flex;min-height:100vh}

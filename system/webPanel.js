@@ -681,13 +681,19 @@ export async function handleWebRequest(req, res, client, options = {}) {
 			'Cache-Control': 'no-store',
 		});
 		const botData = serializeSubBot(phone, store);
+		const mergedPairingCode = pairResult?.pairingCode || botData?.pairingCode || null;
+		const mergedQr = pairResult?.qr || botData?.qr || null;
+		if (botData) {
+			botData.pairingCode = mergedPairingCode;
+			botData.qr = mergedQr;
+		}
 		return res.end(
 			JSON.stringify({
 				ok: true,
 				phone,
 				controlCode: rec.controlCode,
-				pairingCode: pairResult?.pairingCode || botData?.pairingCode || null,
-				qr: pairResult?.qr || botData?.qr || null,
+				pairingCode: mergedPairingCode,
+				qr: mergedQr,
 				pairError: botData?.pairError || null,
 				message: pairResult?.connected
 					? 'هذا الرقم مربوط ومتصل بالفعل'

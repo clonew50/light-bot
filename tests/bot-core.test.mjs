@@ -697,12 +697,18 @@ test('webPanel routes: /admin login, /api/public/status, sub-bot pairing, and se
 			['public', publicHtml],
 			['admin', adminHtml],
 		]) {
+			assert.ok(html.includes('execCopySync('), `Expected execCopySync fallback in ${label}`);
+			assert.ok(html.includes('showManualCopyToast('), `Expected manual copy fallback in ${label}`);
+			assert.ok(html.includes('showCopyFeedback('), `Expected inline copy feedback in ${label}`);
 			const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
 			assert.ok(scripts.length >= 1, `Expected inline script in ${label}`);
 			for (const code of scripts) {
 				assert.doesNotThrow(() => new Function(code), `Syntax error in ${label} inline script`);
 			}
 		}
+		assert.ok(publicHtml.includes('copyCodeValue(prefix + cmd, el)'), 'Expected public cmd card to pass element');
+		assert.ok(adminHtml.includes('copyCodeValue(this.dataset.cmd, this)'), 'Expected admin cmd card to pass element');
+		assert.ok(publicHtml.includes('copyCodeValue(this.dataset.code, this)'), 'Expected code tiles to pass element');
 	} finally {
 		server.close();
 		server.closeAllConnections?.();
@@ -954,4 +960,65 @@ test('fixed RPG, owner, fun, menu, welcome, and fakecall plugins execute without
 		global.plugins = origPluginsRef;
 	}
 });
+
+test('lib/ytdl.js parses Netscape cookies, injects visitorData, and recovers when clients hit bot-check', async () => {
+	const { default: axios } = await import('axios');
+	const { downloadYouTubeMedia, parseNetscapeCookies, extractYouTubeId } = await import('../lib/ytdl.js');
+
+	assert.equal(extractYouTubeId('https://youtube.com/shorts/dQw4w9WgXcQ?feature=share'), 'dQw4w9WgXcQ');
+	const parsed = parseNetscapeCookies(
+		'# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1999999999\tSAPISID\tabc123\n.example.com\tTRUE\t/\tFALSE\t0\tIGNORE\t1\n.google.com\tTRUE\t/\tTRUE\t1999999999\tNID\txyz'
+	);
+	assert.equal(parsed, 'SAPISID=abc123; NID=xyz');
+
+	const origPost = axios.post;
+	const origGet = axios.get;
+	const seenClients = [];
+	try {
+		axios.post = async (url, body) => {
+			if (String(url).includes('visitor_id')) {
+				return { data: { responseContext: { visitorData: 'TEST_VISITOR_DATA_123' } } };
+			}
+			const cName = body?.context?.client?.clientName;
+			seenClients.push({ cName, visitorData: body?.context?.client?.visitorData });
+			// First client (ANDROID_VR 1.60.19) simulates transient bot-check, second (ANDROID_VR_ALT 1.57.29) succeeds
+			if (body?.context?.client?.clientVersion === '1.60.19') {
+				return {
+					data: {
+						playabilityStatus: { status: 'LOGIN_REQUIRED', reason: "Sign in to confirm you're not a bot" },
+					},
+				};
+			}
+			return {
+				data: {
+					playabilityStatus: { status: 'OK' },
+					videoDetails: { title: 'Recovered Track', author: 'Artist', lengthSeconds: '180', viewCount: '5000' },
+					streamingData: {
+						adaptiveFormats: [
+							{ url: 'https://cdn.example.test/audio.m4a', mimeType: 'audio/mp4; codecs="mp4a.40.2"', bitrate: 128000 },
+						],
+						formats: [],
+					},
+				},
+			};
+		};
+		axios.get = async (url) => {
+			assert.equal(url, 'https://cdn.example.test/audio.m4a');
+			return { data: Buffer.from('FAKE_M4A_AUDIO_BYTES') };
+		};
+
+		const dl = await downloadYouTubeMedia('https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'audio');
+		assert.equal(dl.status, true);
+		assert.equal(dl.title, 'Recovered Track');
+		assert.equal(dl.ext, 'm4a');
+		assert.equal(dl.buffer.toString(), 'FAKE_M4A_AUDIO_BYTES');
+		assert.ok(seenClients.length >= 2);
+		assert.equal(seenClients[0].cName, 'ANDROID_VR');
+		assert.equal(seenClients[0].visitorData, 'TEST_VISITOR_DATA_123');
+	} finally {
+		axios.post = origPost;
+		axios.get = origGet;
+	}
+});
+
 

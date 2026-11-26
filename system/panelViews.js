@@ -23,7 +23,7 @@ const CODE_TILES_HELPER_JS = `function buildCodeTilesHtml(code, targetId){
   const raw = String(code || '').trim();
   if(!raw) return '';
   const parts = raw.split('-');
-  let html = '<div class="code-tiles" role="button" tabindex="0" title="اضغط لنسخ الكود" data-code="' + esc(raw) + '" onclick="copyCodeValue(this.dataset.code)" onkeydown="if(event.key===\\'Enter\\'||event.key===\\' \\'){event.preventDefault();copyCodeValue(this.dataset.code)}">';
+  let html = '<div class="code-tiles" role="button" tabindex="0" title="اضغط لنسخ الكود" data-code="' + esc(raw) + '" onclick="copyCodeValue(this.dataset.code, this)" onkeydown="if(event.key===\\'Enter\\'||event.key===\\' \\'){event.preventDefault();copyCodeValue(this.dataset.code, this)}">';
   parts.forEach((part, pIdx) => {
     for(let i = 0; i < part.length; i++){
       const delay = ((pIdx * 4 + i) * 35);
@@ -36,6 +36,131 @@ const CODE_TILES_HELPER_JS = `function buildCodeTilesHtml(code, targetId){
   html += '</div>';
   if(targetId) html += '<span class="hidden" id="' + esc(targetId) + '">' + esc(raw) + '</span>';
   return html;
+}`;
+
+const COPY_HELPER_JS = `function execCopySync(text){
+  try{
+    const prevActive = document.activeElement;
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.setAttribute('aria-hidden', 'true');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.width = '2em';
+    ta.style.height = '2em';
+    ta.style.padding = '0';
+    ta.style.border = 'none';
+    ta.style.outline = 'none';
+    ta.style.boxShadow = 'none';
+    ta.style.background = 'transparent';
+    ta.style.opacity = '0.01';
+    ta.style.fontSize = '16px';
+    document.body.appendChild(ta);
+    ta.focus({ preventScroll: true });
+    ta.select();
+    try{ ta.setSelectionRange(0, text.length); }catch{}
+    let ok = false;
+    try{ ok = document.execCommand('copy'); }catch{ ok = false; }
+    ta.remove();
+    if(prevActive && typeof prevActive.focus === 'function' && prevActive !== document.body){
+      try{ prevActive.focus({ preventScroll: true }); }catch{}
+    }
+    return !!ok;
+  }catch{ return false; }
+}
+
+function showCopyFeedback(el){
+  if(!el) return;
+  if(el._copyTimer){ clearTimeout(el._copyTimer); el._copyTimer = null; }
+  if(el.classList && el.classList.contains('cmd-card')){
+    const meta = el.querySelector('.cmd-meta');
+    if(meta){
+      if(!meta.dataset.origText) meta.dataset.origText = meta.textContent;
+      meta.textContent = 'تم النسخ ✓';
+    }
+    el.classList.add('copied');
+    el._copyTimer = setTimeout(() => {
+      el.classList.remove('copied');
+      if(meta && meta.dataset.origText){
+        meta.textContent = meta.dataset.origText;
+      }
+      el._copyTimer = null;
+    }, 1400);
+    return;
+  }
+  if(el.classList && el.classList.contains('code-tiles')){
+    el.classList.add('copied');
+    el._copyTimer = setTimeout(() => {
+      el.classList.remove('copied');
+      el._copyTimer = null;
+    }, 1400);
+    return;
+  }
+  if(el.children && el.children.length === 0){
+    if(!el.dataset.origText) el.dataset.origText = el.textContent;
+    el.textContent = 'تم النسخ ✓';
+    el.classList.add('copied');
+    el._copyTimer = setTimeout(() => {
+      el.textContent = el.dataset.origText || 'نسخ';
+      el.classList.remove('copied');
+      el._copyTimer = null;
+    }, 1400);
+  }
+}
+
+function showManualCopyToast(clean){
+  const wrap = $('toasts');
+  if(!wrap) return;
+  const old = wrap.querySelector('.manual-copy-toast');
+  if(old) old.remove();
+  const box = document.createElement('div');
+  box.className = 'toast warn manual-copy-toast';
+  const lbl = document.createElement('div');
+  lbl.textContent = 'تعذر النسخ التلقائي — حدد النص وانسخه يدوياً:';
+  lbl.style.marginBottom = '6px';
+  const row = document.createElement('div');
+  row.style.display = 'flex';
+  row.style.gap = '6px';
+  row.style.alignItems = 'center';
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.readOnly = true;
+  inp.value = clean;
+  inp.className = 'mono ltr manual-copy-input';
+  inp.onclick = () => { inp.focus(); inp.select(); try{ inp.setSelectionRange(0, clean.length); }catch{} };
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'btn sm ghost';
+  closeBtn.textContent = 'إغلاق';
+  closeBtn.onclick = () => box.remove();
+  row.appendChild(inp);
+  row.appendChild(closeBtn);
+  box.appendChild(lbl);
+  box.appendChild(row);
+  wrap.appendChild(box);
+  setTimeout(() => { inp.focus({ preventScroll: true }); inp.select(); try{ inp.setSelectionRange(0, clean.length); }catch{} }, 10);
+  setTimeout(() => { if(box.isConnected) box.remove(); }, 9000);
+}
+
+async function copyCodeValue(text, el){
+  const clean = String(text || '').trim();
+  if(!clean || clean === '-') return false;
+  let copied = execCopySync(clean);
+  if(!copied && window.isSecureContext && navigator.clipboard && typeof navigator.clipboard.writeText === 'function'){
+    try{
+      await navigator.clipboard.writeText(clean);
+      copied = true;
+    }catch{ copied = false; }
+  }
+  if(copied){
+    toast('تم نسخ: ' + clean, 'ok');
+    showCopyFeedback(el);
+    return true;
+  }
+  showManualCopyToast(clean);
+  return false;
 }`;
 
 /* =====================================================================
@@ -164,7 +289,7 @@ export function renderPublicPortalHtml(err) {
           <div id="sbPairCodeWrap"></div>
           <div id="sbQrBox" class="qr-frame hidden"></div>
           <div style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:10px" id="sbCopyCodeWrap">
-            <button type="button" class="btn sm primary" id="sbCopyCodeBtn" onclick="copyCodeValue(currentSubPairCode, this)">نسخ كود واتساب</button>
+            <button type="button" class="btn sm primary" id="sbCopyCodeBtn" onclick="copyCodeValue(currentSubPairCode || ($('sbPairCodeWrap')?.querySelector('.code-tiles')?.dataset?.code || ''), this)">نسخ كود واتساب</button>
             <button type="button" class="btn sm" onclick="subAction('repair','code')">إصدار كود جديد</button>
             <button type="button" class="btn sm" onclick="subAction('repair','qr')">عرض QR بدلاً من الكود</button>
           </div>
@@ -361,18 +486,7 @@ function showMsg(el, text, isErr){
   el.className = isErr ? 'err-banner' : 'ok-banner';
 }
 
-function copyCodeValue(text, btn){
-  const clean = String(text || '').trim();
-  if(!clean || clean === '-') return;
-  navigator.clipboard?.writeText(clean).then(() => {
-    toast('تم نسخ: ' + clean, 'ok');
-    if(btn){
-      const old = btn.textContent;
-      btn.textContent = 'تم النسخ ✓';
-      setTimeout(() => { btn.textContent = old; }, 1400);
-    }
-  }).catch(() => {});
-}
+${COPY_HELPER_JS}
 
 function switchTab(name){
   const isNew = name === 'new';
@@ -502,7 +616,7 @@ async function pairSubBot(){
     if(r.ok && r.bot){
       showMsg(msg, r.message || 'تم إصدار بيانات الربط', false);
       toast('تم إنشاء جلسة البوت الفرعي', 'ok');
-      applySubBotView(r.bot);
+      applySubBotView({ ...r.bot, pairingCode: r.bot.pairingCode || r.pairingCode || null, qr: r.bot.qr || r.qr || null });
     } else {
       showMsg(msg, r.error || 'تعذر بدء الربط', true);
     }
@@ -576,7 +690,7 @@ async function subAction(action, mode){
     if(r.ok){
       showMsg(msg, r.message || 'تم التنفيذ', false);
       toast(r.message || 'تم التنفيذ', 'ok');
-      if(r.bot) applySubBotView(r.bot);
+      if(r.bot) applySubBotView({ ...r.bot, pairingCode: r.bot.pairingCode || r.pairingCode || null, qr: r.bot.qr || r.qr || null });
     } else {
       showMsg(msg, r.error || 'تعذر تنفيذ الطلب', true);
     }
@@ -633,7 +747,7 @@ function pickPublicCommandEl(el){
   const cmd = el?.dataset?.cmd || '';
   if(!cmd) return;
   const prefix = ($('sbPrefix') && $('sbPrefix').value.trim()) || '.';
-  copyCodeValue(prefix + cmd);
+  copyCodeValue(prefix + cmd, el);
 }
 
 function renderCategoryBars(cats){
@@ -782,7 +896,7 @@ function renderInstall(d){
     html += '<div class="pair-stage">'
       + '<div class="hint" style="text-align:center">افتح واتساب ← الأجهزة المرتبطة ← الربط برقم الهاتف ثم أدخل الكود:</div>'
       + buildCodeTilesHtml(d.pairingCode, 'mainPairCodeVal')
-      + '<div style="display:flex;justify-content:center;gap:8px;margin-top:8px"><button type="button" class="btn sm primary" onclick="copyCodeValue(document.getElementById(\\'mainPairCodeVal\\').textContent, this)">نسخ كود الربط</button></div>'
+      + '<div style="display:flex;justify-content:center;gap:8px;margin-top:8px"><button type="button" class="btn sm primary" onclick="copyCodeValue(document.getElementById(\\'mainPairCodeVal\\')?.textContent, this)">نسخ كود الربط</button></div>'
       + '</div>';
   }
   if(showQr){
@@ -1147,18 +1261,7 @@ function esc(s){
   return String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
-function copyCodeValue(text, btn){
-  const clean = String(text || '').trim();
-  if(!clean || clean === '-') return;
-  navigator.clipboard?.writeText(clean).then(() => {
-    toast('تم نسخ: ' + clean, 'ok');
-    if(btn){
-      const old = btn.textContent;
-      btn.textContent = 'تم النسخ ✓';
-      setTimeout(() => { btn.textContent = old; }, 1400);
-    }
-  }).catch(() => {});
-}
+${COPY_HELPER_JS}
 
 async function logout(){
   await api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'logout'})});
@@ -1255,7 +1358,13 @@ async function rotatePw(){
   if(!confirm('توليد كلمة مرور جديدة وإنهاء الجلسات الأخرى؟')) return;
   const r = await api('/api/rotate-password',{method:'POST'});
   const el=$('pwMsg');
-  if(el) el.textContent = r.password ? ('كلمة المرور الجديدة: ' + r.password) : 'فشل التوليد';
+  if(el){
+    if(r.password){
+      el.innerHTML = 'كلمة المرور الجديدة: <span class="mono ltr" style="color:var(--acc)">' + esc(r.password) + '</span> <button type="button" class="btn sm ghost" data-pw="' + esc(r.password) + '" onclick="copyCodeValue(this.dataset.pw, this)">نسخ</button>';
+    } else {
+      el.textContent = 'فشل التوليد';
+    }
+  }
   if(r.password) toast('تم توليد كلمة مرور جديدة', 'ok');
 }
 
@@ -1272,7 +1381,7 @@ async function loadCommands(){
   if(sig === lastCmdSig) return; lastCmdSig = sig;
   const list = $('cmdList');
   if(list) list.innerHTML = r.commands.map(c =>
-    '<button type="button" class="cmd-card" data-cmd="' + esc('.' + c.primary) + '" onclick="copyCodeValue(this.dataset.cmd)">'
+    '<button type="button" class="cmd-card" title="اضغط لنسخ الأمر" data-cmd="' + esc('.' + c.primary) + '" onclick="copyCodeValue(this.dataset.cmd, this)">'
     + '<div class="cmd-card-top"><span class="cmd-code">.' + esc(c.primary) + '</span><span class="cmd-meta">' + esc(c.categoryLabel) + '</span></div>'
     + '<div class="cmd-desc">' + esc(c.description || c.primary) + '</div>'
     + '</button>'
