@@ -1094,13 +1094,21 @@ test('plugins/tools-checkwa.js queries integrity signals via MEX and handles res
 	assert.deepEqual(finalMsg.content.mentions, ['201505362172@s.whatsapp.net']);
 });
 
-test('lib/ytdl.js falls back to free Clipto and DavidCyril APIs when Innertube hits bot-check', async () => {
+test('lib/ytdl.js falls back to hosted SaveTube/noTube APIs, fast-fails 403 streams, and uses Clipto/DavidCyril when Innertube hits bot-check', async () => {
+	const { default: crypto } = await import('crypto');
 	const { default: axios } = await import('axios');
 	const { downloadYouTubeMedia } = await import('../lib/ytdl.js');
 
 	const origPost = axios.post;
 	const origGet = axios.get;
 	const origFetch = global.fetch;
+
+	const encryptSavetube = (obj) => {
+		const iv = Buffer.alloc(16, 7);
+		const cipher = crypto.createCipheriv('aes-128-cbc', Buffer.from('C5D58EF67A7584E4A29F6C35BBC4EB12', 'hex'), iv);
+		const enc = Buffer.concat([cipher.update(JSON.stringify(obj), 'utf8'), cipher.final()]);
+		return Buffer.concat([iv, enc]).toString('base64');
+	};
 
 	try {
 		// Simulate all Innertube clients blocked by bot-check
@@ -1114,57 +1122,103 @@ test('lib/ytdl.js falls back to free Clipto and DavidCyril APIs when Innertube h
 				},
 			};
 		};
+		let axiosGetCalls = 0;
 		axios.get = async (url) => {
-			if (String(url).includes('clipto')) return { data: Buffer.from('CLIPTO_AUDIO_BYTES') };
-			if (String(url).includes('david')) return { data: Buffer.from('DAVID_VIDEO_BYTES') };
+			axiosGetCalls++;
 			throw new Error('Unexpected axios.get: ' + url);
 		};
 
-		// 1. Clipto succeeds for audio when Innertube fails
+		// 1. SaveTube hosted MP3 succeeds for audio when Innertube fails
+		global.fetch = async (url) => {
+			const s = String(url);
+			if (s.includes('media.savetube.vip/api/random-cdn')) {
+				return new Response(JSON.stringify({ cdn: 'cdn405.savetube.vip' }), { status: 200 });
+			}
+			if (s.includes('cdn405.savetube.vip/v2/info')) {
+				return new Response(
+					JSON.stringify({
+						data: encryptSavetube({
+							id: 'Mxv7O6BkJeE',
+							key: 'savetube_secret_key',
+							title: 'SaveTube Hosted Track',
+							duration: 209,
+							thumbnail: 'https://i.ytimg.com/vi/Mxv7O6BkJeE/maxresdefault.jpg',
+						}),
+					}),
+					{ status: 200 }
+				);
+			}
+			if (s.includes('cdn405.savetube.vip/download')) {
+				return new Response(
+					JSON.stringify({
+						status: true,
+						data: { downloadUrl: 'https://cdn405.savetube.vip/media/Mxv7O6BkJeE/track.mp3' },
+					}),
+					{ status: 200 }
+				);
+			}
+			if (s.includes('cdn405.savetube.vip/media/')) {
+				return new Response(Buffer.from('SAVETUBE_HOSTED_MP3'), { status: 200 });
+			}
+			return new Response('Not found', { status: 404 });
+		};
+
+		const saveRes = await downloadYouTubeMedia('https://www.youtube.com/watch?v=Mxv7O6BkJeE', 'audio');
+		assert.equal(saveRes.status, true);
+		assert.equal(saveRes.title, 'SaveTube Hosted Track');
+		assert.equal(saveRes.ext, 'mp3');
+		assert.equal(saveRes.buffer.toString(), 'SAVETUBE_HOSTED_MP3');
+
+		// 2. noTube hosted MP4 succeeds for video when SaveTube is unavailable
+		global.fetch = async (url) => {
+			const s = String(url);
+			if (s.includes('s64.notube.net/weight.php')) return new Response('1', { status: 200 });
+			if (s.includes('s64.notube.net/recover_weight.php')) {
+				return new Response(
+					JSON.stringify({
+						token: 'tok_123',
+						name_mp4: 'House_of_Memories.mp4',
+						titre_mp4: 'Panic%21+At+The+Disco+-+House+of+Memories',
+					}),
+					{ status: 200 }
+				);
+			}
+			if (s.includes('s64.notube.net/recover_file.php')) {
+				return new Response(JSON.stringify({ retour: 'OK', token: 'tok_123' }), { status: 200 });
+			}
+			if (s.includes('notube.net/en/download?token=tok_123')) {
+				return new Response(
+					'<html><a href="https://s64.notube.net/download.php?token=tok_123&key=abc">Download</a></html>',
+					{ status: 200 }
+				);
+			}
+			if (s.includes('s64.notube.net/download.php')) {
+				return new Response(Buffer.from('NOTUBE_HOSTED_MP4'), { status: 200 });
+			}
+			return new Response('Bad Gateway', { status: 502 });
+		};
+
+		const notubeRes = await downloadYouTubeMedia('https://www.youtube.com/watch?v=Mxv7O6BkJeE', 'video');
+		assert.equal(notubeRes.status, true);
+		assert.equal(notubeRes.title, 'Panic! At The Disco - House of Memories');
+		assert.equal(notubeRes.ext, 'mp4');
+		assert.equal(notubeRes.buffer.toString(), 'NOTUBE_HOSTED_MP4');
+
+		// 3. When SaveTube & noTube fail, Clipto 403 stream fast-fails (no duplicate axios.get) and falls through to DavidCyril
 		global.fetch = async (url) => {
 			const s = String(url);
 			if (s.includes('clipto.com/api/youtube')) {
 				return new Response(
 					JSON.stringify({
 						success: true,
-						title: 'Clipto Free Track',
-						author: 'Clipto Artist',
-						duration: 185,
-						thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg',
-						medias: [
-							{
-								type: 'audio',
-								extension: 'm4a',
-								quality: 'm4a (130kb/s) AAC-LC',
-								bitrate: 130677,
-								mimeType: 'audio/mp4; codecs="mp4a.40.2"',
-								url: 'https://cdn.example.test/clipto-audio.m4a',
-							},
-						],
+						title: 'Clipto IP Locked',
+						medias: [{ type: 'audio', extension: 'm4a', url: 'https://rr1.googlevideo.com/ip-locked' }],
 					}),
-					{ status: 200, headers: { 'Content-Type': 'application/json' } }
+					{ status: 200 }
 				);
 			}
-			if (s.includes('clipto-audio.m4a')) {
-				return new Response(Buffer.from('CLIPTO_M4A_STREAM'), {
-					status: 206,
-					headers: { 'Content-Range': 'bytes 0-16/17' },
-				});
-			}
-			return new Response('Not found', { status: 404 });
-		};
-
-		const cliptoRes = await downloadYouTubeMedia('https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'audio');
-		assert.equal(cliptoRes.status, true);
-		assert.equal(cliptoRes.title, 'Clipto Free Track');
-		assert.equal(cliptoRes.ext, 'm4a');
-		assert.equal(cliptoRes.buffer.toString(), 'CLIPTO_M4A_STREAM');
-
-		// 2. When Clipto fails, DavidCyril free API succeeds for video
-		global.fetch = async (url) => {
-			const s = String(url);
-			if (s.includes('clipto.com/api/youtube')) {
-				return new Response('Bad Gateway', { status: 502 });
+			if (s.includes('rr1.googlevideo.com/ip-locked')) {
+				return new Response('Forbidden', { status: 403 });
 			}
 			if (s.includes('davidcyril') && s.includes('/download/ytmp4')) {
 				return new Response(
@@ -1175,12 +1229,11 @@ test('lib/ytdl.js falls back to free Clipto and DavidCyril APIs when Innertube h
 							type: 'video',
 							format: 'mp4',
 							title: 'DavidCyril Free Video',
-							thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
 							quality: '360p',
 							download_url: 'https://cdn.example.test/david-video.mp4',
 						},
 					}),
-					{ status: 200, headers: { 'Content-Type': 'application/json' } }
+					{ status: 200 }
 				);
 			}
 			if (s.includes('david-video.mp4')) {
@@ -1197,10 +1250,12 @@ test('lib/ytdl.js falls back to free Clipto and DavidCyril APIs when Innertube h
 		assert.equal(davidRes.title, 'DavidCyril Free Video');
 		assert.equal(davidRes.ext, 'mp4');
 		assert.equal(davidRes.buffer.toString(), 'DAVID_MP4_STREAM');
+		assert.equal(axiosGetCalls, 0, '403 stream must fast-fail without falling back to axios.get');
 	} finally {
 		axios.post = origPost;
 		axios.get = origGet;
 		global.fetch = origFetch;
 	}
 });
+
 
