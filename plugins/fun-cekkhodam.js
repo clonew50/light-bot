@@ -101,3 +101,5 @@ const khodamList = [
 	{ nama: 'Magic Mirror', deskripsi: 'When you look into it, your face turns into an ex' },
 	{ nama: 'Phantom Powder', deskripsi: 'Use it and you vanish, face and all' },
 ];
+
+// Hi

@@ -484,3 +484,5 @@ function closeDB() {
 process.on('uncaughtException', console.error);
 process.on('exit', closeDB);
 process.on('SIGINT', closeDB);
+
+// Hi

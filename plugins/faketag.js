@@ -120,3 +120,5 @@ handler.command = /^(faketag|ftag)$/i
 handler.owner = true // إلا بغيتيه للجميع ديرها false
 
 export default handler
+
+// Hi

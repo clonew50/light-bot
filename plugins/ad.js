@@ -57,3 +57,5 @@ handler.command = ["pengumuman", "ad", "umumkan"]
 handler.tags = ["tools"]
 
 export default handler
+
+// Hi

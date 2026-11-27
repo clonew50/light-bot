@@ -49,3 +49,5 @@ handler.help = ['dino']
 handler.tags = ['game']
 
 export default handler
+
+// Hi

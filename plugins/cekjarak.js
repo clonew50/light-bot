@@ -296,3 +296,5 @@ handler.tags = ['search'];
 handler.command = ['cekjarak', 'jarak', 'rute', 'maps'];
 
 export default handler;
+
+// Hi

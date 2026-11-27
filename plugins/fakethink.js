@@ -51,3 +51,5 @@ let handler = async (m, { conn, text }) => {
 handler.command = ['think','mikir','fakethink']
 handler.tags = ['fun']
 export default handler
+
+// Hi

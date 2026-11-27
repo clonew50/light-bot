@@ -100,3 +100,5 @@ handler.help = ['aicheck'];
 handler.command = ['aicheck','cekai','aidetect'];
 handler.tags = ['tools','ai'];
 export default handler;
+
+// Hi

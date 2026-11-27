@@ -141,3 +141,5 @@ handler.help=['allmenu']
 handler.tags=['main']
 handler.command=/^(allmenu)$/i
 export default handler
+
+// Hi

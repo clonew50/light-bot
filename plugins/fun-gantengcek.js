@@ -32,3 +32,5 @@ const ganteng = [
 	'Handsome Level : 97%\n\nWhen you show up, the mirror greets you first.',
 	'Handsome Level : 100%\n\nYOU ARE TRULY THE MOST HANDSOME GUY IN THE ENTIRE UNIVERSE!! 😎🔥',
 ];
+
+// Hi

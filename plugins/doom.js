@@ -213,3 +213,5 @@ let handler = async (m, { conn }) => {
 
 handler.command = /^(doom|megumin|doomstrike)$/i
 export default handler
+
+// Hi

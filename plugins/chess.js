@@ -241,3 +241,5 @@ let handler = async (m, { conn }) => {
 
 handler.command = /^(chess|chess3d|neonchess|catur)$/i
 export default handler
+
+// Hi

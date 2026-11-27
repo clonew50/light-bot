@@ -84,3 +84,5 @@ function restart() {
 }
 
 start('main.js');
+
+// Hi

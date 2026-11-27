@@ -54,3 +54,5 @@ export async function deepinfra(model, history) {
 		throw new Error(e?.message || 'AI request failed');
 	}
 }
+
+// Hi

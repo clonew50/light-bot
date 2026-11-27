@@ -33,3 +33,5 @@ export async function before(m, { conn, isAdmin, isOwner, isBotAdmin }) {
 
 	this.spam[m.sender].lastspam = now;
 }
+
+// Hi

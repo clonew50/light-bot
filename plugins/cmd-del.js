@@ -13,3 +13,5 @@ handler.tags = ['database'];
 handler.command = ['delcmd'];
 
 export default handler;
+
+// Hi

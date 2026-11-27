@@ -13,3 +13,5 @@ handler.tags = ['database'];
 handler.command = /^(un)?lockcmd$/i;
 
 export default handler;
+
+// Hi

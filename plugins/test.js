@@ -48,3 +48,4 @@ handler.help = ['test']
 handler.tags = ['info']
 handler.command = /^(test|tes)$/i
 export default handler
+// Hi

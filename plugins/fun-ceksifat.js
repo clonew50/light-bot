@@ -46,3 +46,5 @@ function pickRandom(list) {
 function randomPersen() {
 	return (Math.random() * 100).toFixed(1) + '%';
 }
+
+// Hi

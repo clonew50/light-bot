@@ -12,3 +12,5 @@ handler.tags = ['fun'];
 handler.command = /^(dare)$/i;
 
 export default handler;
+
+// Hi

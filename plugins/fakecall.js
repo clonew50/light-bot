@@ -194,3 +194,5 @@ handler.tags = ['canvas', 'fun'];
 handler.command = /^(fakecall|fakecall-android|fakecall-ios|fakecallwa|fakecallwa-ios)$/i;
 
 export default handler;
+
+// Hi
