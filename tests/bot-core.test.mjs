@@ -1093,3 +1093,114 @@ test('plugins/tools-checkwa.js queries integrity signals via MEX and handles res
 	assert.ok(finalMsg.content.text.includes('*حساب جديد:* لا ✅'));
 	assert.deepEqual(finalMsg.content.mentions, ['201505362172@s.whatsapp.net']);
 });
+
+test('lib/ytdl.js falls back to free Clipto and DavidCyril APIs when Innertube hits bot-check', async () => {
+	const { default: axios } = await import('axios');
+	const { downloadYouTubeMedia } = await import('../lib/ytdl.js');
+
+	const origPost = axios.post;
+	const origGet = axios.get;
+	const origFetch = global.fetch;
+
+	try {
+		// Simulate all Innertube clients blocked by bot-check
+		axios.post = async (url) => {
+			if (String(url).includes('visitor_id')) {
+				return { data: { responseContext: { visitorData: 'BLOCKED_VD' } } };
+			}
+			return {
+				data: {
+					playabilityStatus: { status: 'LOGIN_REQUIRED', reason: "Sign in to confirm you're not a bot" },
+				},
+			};
+		};
+		axios.get = async (url) => {
+			if (String(url).includes('clipto')) return { data: Buffer.from('CLIPTO_AUDIO_BYTES') };
+			if (String(url).includes('david')) return { data: Buffer.from('DAVID_VIDEO_BYTES') };
+			throw new Error('Unexpected axios.get: ' + url);
+		};
+
+		// 1. Clipto succeeds for audio when Innertube fails
+		global.fetch = async (url) => {
+			const s = String(url);
+			if (s.includes('clipto.com/api/youtube')) {
+				return new Response(
+					JSON.stringify({
+						success: true,
+						title: 'Clipto Free Track',
+						author: 'Clipto Artist',
+						duration: 185,
+						thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg',
+						medias: [
+							{
+								type: 'audio',
+								extension: 'm4a',
+								quality: 'm4a (130kb/s) AAC-LC',
+								bitrate: 130677,
+								mimeType: 'audio/mp4; codecs="mp4a.40.2"',
+								url: 'https://cdn.example.test/clipto-audio.m4a',
+							},
+						],
+					}),
+					{ status: 200, headers: { 'Content-Type': 'application/json' } }
+				);
+			}
+			if (s.includes('clipto-audio.m4a')) {
+				return new Response(Buffer.from('CLIPTO_M4A_STREAM'), {
+					status: 206,
+					headers: { 'Content-Range': 'bytes 0-16/17' },
+				});
+			}
+			return new Response('Not found', { status: 404 });
+		};
+
+		const cliptoRes = await downloadYouTubeMedia('https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'audio');
+		assert.equal(cliptoRes.status, true);
+		assert.equal(cliptoRes.title, 'Clipto Free Track');
+		assert.equal(cliptoRes.ext, 'm4a');
+		assert.equal(cliptoRes.buffer.toString(), 'CLIPTO_M4A_STREAM');
+
+		// 2. When Clipto fails, DavidCyril free API succeeds for video
+		global.fetch = async (url) => {
+			const s = String(url);
+			if (s.includes('clipto.com/api/youtube')) {
+				return new Response('Bad Gateway', { status: 502 });
+			}
+			if (s.includes('davidcyril') && s.includes('/download/ytmp4')) {
+				return new Response(
+					JSON.stringify({
+						status: 200,
+						success: true,
+						result: {
+							type: 'video',
+							format: 'mp4',
+							title: 'DavidCyril Free Video',
+							thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
+							quality: '360p',
+							download_url: 'https://cdn.example.test/david-video.mp4',
+						},
+					}),
+					{ status: 200, headers: { 'Content-Type': 'application/json' } }
+				);
+			}
+			if (s.includes('david-video.mp4')) {
+				return new Response(Buffer.from('DAVID_MP4_STREAM'), {
+					status: 206,
+					headers: { 'Content-Range': 'bytes 0-15/16' },
+				});
+			}
+			return new Response('Not found', { status: 404 });
+		};
+
+		const davidRes = await downloadYouTubeMedia('https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'video');
+		assert.equal(davidRes.status, true);
+		assert.equal(davidRes.title, 'DavidCyril Free Video');
+		assert.equal(davidRes.ext, 'mp4');
+		assert.equal(davidRes.buffer.toString(), 'DAVID_MP4_STREAM');
+	} finally {
+		axios.post = origPost;
+		axios.get = origGet;
+		global.fetch = origFetch;
+	}
+});
+
