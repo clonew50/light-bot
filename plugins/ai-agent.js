@@ -105,7 +105,7 @@ handler.before = async function (m, extra) {
 	trackHandledMessage(msgId);
 
 	try {
-		const result = await runAiAgent(text, m, { ...extra, conn: this, sock: this }, { maxTurns: 4 });
+		const result = await runAiAgent(text, m, { ...extra, conn: this, sock: this }, { maxTurns: 10 });
 		if (result?.text) {
 			await m.reply(result.text);
 		}

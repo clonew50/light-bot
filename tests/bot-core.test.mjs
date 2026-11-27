@@ -1915,6 +1915,222 @@ test('lib/aiAgent.js suppresses a refusal when temporary code already replied (n
 	}
 });
 
+test('KEYLESS_AI_PROVIDERS includes diverse verified hosts without URL typos and skips IP-blocked hosts', async () => {
+	const { KEYLESS_AI_PROVIDERS, runAiAgent, clearAiAgentMemory } = await import('../lib/aiAgent.js');
+
+	assert.ok(KEYLESS_AI_PROVIDERS.length >= 15, 'expected large catalog of keyless providers');
+	const hosts = new Set(KEYLESS_AI_PROVIDERS.map((p) => new URL(p.url).hostname));
+	assert.ok(hosts.has('api.kilo.ai'));
+	assert.ok(hosts.has('text.pollinations.ai'));
+	assert.ok(hosts.has('api.llm7.io'));
+	assert.ok(hosts.has('ch.at'));
+	assert.ok(hosts.has('api.binjie.fun'));
+	// Regression check: typo hostname must never reappear
+	assert.ok(!KEYLESS_AI_PROVIDERS.some((p) => p.url.includes('pollinctions')));
+
+	const { sock } = createConnectedFakeSock();
+	global.db = { data: { users: {}, chats: {}, settings: {}, stats: {} } };
+	const origApiKey = process.env.GEMINI_API_KEY;
+	clearAiAgentMemory();
+
+	try {
+		delete process.env.GEMINI_API_KEY;
+		const hitHosts = [];
+		const mockFetch = async (url) => {
+			const u = new URL(String(url));
+			hitHosts.push(u.hostname);
+			if (u.hostname === 'api.kilo.ai') {
+				return new Response(JSON.stringify({ error: { message: 'rate limit' } }), { status: 429 });
+			}
+			if (u.hostname === 'text.pollinations.ai') {
+				return new Response(JSON.stringify({ error: { code: 'FREE_LIMIT', message: '100 replies a day per IP' } }), { status: 402 });
+			}
+			if (u.hostname === 'api.llm7.io') {
+				return new Response(JSON.stringify({ error: { message: 'quota exceeded' } }), { status: 429 });
+			}
+			if (u.hostname === 'ch.at') {
+				return new Response(
+					JSON.stringify({ choices: [{ message: { role: 'assistant', content: JSON.stringify({ final_answer: 'MULTI_HOST_OK' }) } }] }),
+					{ status: 200 }
+				);
+			}
+			return new Response('err', { status: 500 });
+		};
+
+		const res = await runAiAgent(
+			'مرحبا',
+			{ chat: '1203630001@g.us', sender: '201011@s.whatsapp.net', isGroup: true },
+			{ conn: sock, isOwner: false },
+			{ fetchFn: mockFetch }
+		);
+		assert.equal(res.text, 'MULTI_HOST_OK');
+		// Pollinations FREE_LIMIT per IP should be hit at most once during the same run
+		assert.equal(hitHosts.filter((h) => h === 'text.pollinations.ai').length, 1);
+	} finally {
+		clearAiAgentMemory();
+		if (origApiKey === undefined) delete process.env.GEMINI_API_KEY;
+		else process.env.GEMINI_API_KEY = origApiKey;
+	}
+});
+
+test('lib/aiAgent.js handles compound multi-task requests cleanly (groupCreate + invite link for owner, and parallel ReAct tool batching)', async () => {
+	const { runAiAgent, clearAiAgentMemory } = await import('../lib/aiAgent.js');
+	const { sock, sent } = createConnectedFakeSock();
+
+	const createdGroups = [];
+	sock.groupCreate = async (subject, participants) => {
+		createdGroups.push({ subject, participants });
+		return { id: '120363999777666@g.us', subject };
+	};
+	sock.groupInviteCode = async (jid) => (jid === '120363999777666@g.us' ? 'INVITE_MULTI_777' : '');
+
+	const grpJid = '120363555000111@g.us';
+	const ownerJid = '201212446299@s.whatsapp.net';
+	const memberJid = '201055443322@s.whatsapp.net';
+	global.db = { data: { users: { [ownerJid]: { registered: true, limit: 10 }, [memberJid]: { registered: true, limit: 10 } }, chats: { [grpJid]: {} }, settings: {}, stats: {} } };
+
+	const origPlugins = global.plugins;
+	const origApiKey = process.env.GEMINI_API_KEY;
+	const origFetch = global.fetch;
+	clearAiAgentMemory();
+
+	try {
+		delete process.env.GEMINI_API_KEY;
+		global.plugins = {
+			'ping-cmd.js': Object.assign(async (m) => m.reply('PONG_MULTI'), {
+				help: ['ping'],
+				tags: ['info'],
+				command: /^ping$/i,
+			}),
+		};
+
+		// Part A: Owner asks for 2 chained actions ("اعمل جروب باسم AI Group وهات اللينك") via native tool calls
+		let ownerTurn = 0;
+		const ownerFetch = async (url) => {
+			if (String(url).includes('api.kilo.ai')) {
+				ownerTurn++;
+				if (ownerTurn === 1) {
+					return new Response(
+						JSON.stringify({
+							choices: [
+								{
+									message: {
+										role: 'assistant',
+										content: '',
+										tool_calls: [
+											{
+												id: 'tc_grp',
+												type: 'function',
+												function: {
+													name: 'execute_custom_code',
+													arguments: JSON.stringify({
+														purpose: 'create group and get invite link',
+														code: 'const g = await conn.groupCreate("AI Group", [m.sender]); const code = await conn.groupInviteCode(g.id); await reply("GROUP_LINK:https://chat.whatsapp.com/" + code); return g.id;',
+													}),
+												},
+											},
+										],
+									},
+								},
+							],
+						}),
+						{ status: 200 }
+					);
+				}
+				return new Response(
+					JSON.stringify({
+						choices: [{ message: { role: 'assistant', content: '✅ تم إنشاء الجروب وإرسال اللينك.' } }],
+					}),
+					{ status: 200 }
+				);
+			}
+			return new Response('nope', { status: 500 });
+		};
+
+		const ownerRes = await runAiAgent(
+			'اعمل جروب باسم AI Group وهات اللينك بتاعه',
+			{ chat: grpJid, sender: ownerJid, isGroup: true },
+			{ conn: sock, isOwner: true, isROwner: true },
+			{ fetchFn: ownerFetch }
+		);
+		assert.equal(createdGroups.length, 1);
+		assert.equal(createdGroups[0].subject, 'AI Group');
+		assert.ok(sent.some((s) => s.content?.text === 'GROUP_LINK:https://chat.whatsapp.com/INVITE_MULTI_777'));
+		assert.match(ownerRes.text, /تم إنشاء الجروب/);
+
+		// Part B: Regular user asks compound task -> ReAct provider emits 2 parallel tool_calls (plugin + custom code),
+		// and flattenMessagesForReact merges consecutive tool results cleanly into one user turn.
+		let reactStep = 0;
+		let sawMergedToolTurn = false;
+		const reactFetch = async (url, opts) => {
+			const s = String(url);
+			if (s.includes('ch.at/v1/chat/completions')) {
+				reactStep++;
+				const body = JSON.parse(opts?.body || '{}');
+				if (reactStep === 1) {
+					return new Response(
+						JSON.stringify({
+							choices: [
+								{
+									message: {
+										role: 'assistant',
+										content: JSON.stringify({
+											tool_calls: [
+												{ name: 'run_bot_plugin', args: { pluginFile: 'ping-cmd.js', commandName: 'ping', text: '' } },
+												{
+													name: 'execute_custom_code',
+													args: {
+														purpose: 'weather + time + news',
+														code: 'const w = await (await fetch("https://wttr.in/Cairo?format=j1")).json(); const n = await (await fetch("https://feeds.bbci.co.uk/arabic/rss.xml")).text(); await reply("COMPOUND_OK:" + w.temp + ":" + (n.includes("NEWS_ITEM") ? "NEWS" : "NO"));',
+													},
+												},
+											],
+										}),
+									},
+								},
+							],
+						}),
+						{ status: 200 }
+					);
+				}
+				const lastMsg = body.messages?.[body.messages.length - 1];
+				if (lastMsg?.role === 'user' && lastMsg.content.includes('Tool result #1') && lastMsg.content.includes('Tool result #2')) {
+					sawMergedToolTurn = true;
+				}
+				return new Response(
+					JSON.stringify({
+						choices: [{ message: { role: 'assistant', content: JSON.stringify({ final_answer: '✅ تم تنفيذ البينج والطقس والأخبار.' }) } }],
+					}),
+					{ status: 200 }
+				);
+			}
+			if (s.includes('wttr.in')) return new Response(JSON.stringify({ temp: '27C' }), { status: 200 });
+			if (s.includes('feeds.bbci.co.uk')) return new Response('<rss><channel><item><title>NEWS_ITEM</title></item></channel></rss>', { status: 200 });
+			return new Response('fail', { status: 500 });
+		};
+		global.fetch = reactFetch;
+
+		const memberRes = await runAiAgent(
+			'شوف سرعة البوت وهات الطقس مع الساعة وآخر الأخبار',
+			{ chat: grpJid, sender: memberJid, isGroup: true },
+			{ conn: sock, isOwner: false, isROwner: false },
+			{ fetchFn: reactFetch }
+		);
+		assert.ok(sawMergedToolTurn, 'ReAct flattener should merge consecutive tool results into one turn');
+		assert.ok(sent.some((s) => s.content?.text === 'PONG_MULTI'));
+		assert.ok(sent.some((s) => s.content?.text === 'COMPOUND_OK:27C:NEWS'));
+		assert.equal(memberRes.actions.length, 2);
+		assert.match(memberRes.text, /تم تنفيذ/);
+	} finally {
+		global.plugins = origPlugins;
+		global.fetch = origFetch;
+		clearAiAgentMemory();
+		if (origApiKey === undefined) delete process.env.GEMINI_API_KEY;
+		else process.env.GEMINI_API_KEY = origApiKey;
+	}
+});
+
+
 
 
 
