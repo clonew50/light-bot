@@ -1711,10 +1711,15 @@ test('lib/aiAgent.js isBotGeneratedMessage detects bot/forwarded/reply-to-bot me
 	const { isBotGeneratedMessage } = await import('../lib/aiAgent.js');
 	const conn = { user: { jid: '111000111@s.whatsapp.net' } };
 
-	// Normal user text message is NOT a bot.
+	// Normal user text message is NOT a bot (real users use e.g. ACF2... ids).
 	assert.equal(
-		isBotGeneratedMessage({ isBaileys: false, sender: '201055443322@s.whatsapp.net', message: { conversation: 'hello' } }, conn),
+		isBotGeneratedMessage({ isBaileys: false, key: { id: 'ACF2C2360AD74AAF7434CB0773CA6F22' }, sender: '201055443322@s.whatsapp.net', message: { conversation: 'hello' } }, conn),
 		false
+	);
+	// Another bot's message (3EB0... id, not from us) IS a bot.
+	assert.equal(
+		isBotGeneratedMessage({ isBaileys: false, key: { id: '3EB0D8A33938282D991CA6' }, sender: '201055443322@s.whatsapp.net', message: { conversation: 'hi' } }, conn),
+		true
 	);
 	// Forwarded AI/bot marker.
 	assert.equal(
