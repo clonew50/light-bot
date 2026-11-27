@@ -105,8 +105,7 @@ handler.before = async function (m, extra) {
 	trackHandledMessage(msgId);
 
 	try {
-		await this.sendMessage(m.chat, { react: { text: '🤖', key: m.key } }).catch(() => {});
-		const result = await runAiAgent(text, m, { ...extra, conn: this, sock: this });
+		const result = await runAiAgent(text, m, { ...extra, conn: this, sock: this }, { maxTurns: 4 });
 		if (result?.text) {
 			await m.reply(result.text);
 		}
