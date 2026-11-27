@@ -1419,11 +1419,27 @@ test('lib/aiAgent.js dynamically discovers live plugins, enforces permissions & 
 		assert.equal(safeUserCode.result, '60');
 		assert.ok(safeUserCode.repliesSent.includes('SAFE_MATH:60'));
 
-		// Dangerous temporary code (touching conn/db/fetch/importLib) is blocked for non-owner
+		// Safe network access (fetch) IS allowed for regular users — e.g. weather/public APIs
+		const origFetch = global.fetch;
+		try {
+			global.fetch = async () => new Response(JSON.stringify({ temp: '22C clear' }), { status: 200 });
+			const weatherCode = await executeGeneratedCode({
+				purpose: 'Fetch weather for normal user',
+				code: 'const r = await fetch("https://wttr.in/Hurghada?format=j1"); const j = await r.json(); await reply("WEATHER:" + j.temp); return j.temp;',
+				m: memberMsg,
+				ctx: { conn: sock, isOwner: false, isROwner: false },
+			});
+			assert.equal(weatherCode.ok, true);
+			assert.equal(weatherCode.mode, 'safe_user');
+			assert.ok(weatherCode.repliesSent.includes('WEATHER:22C clear'));
+		} finally {
+			global.fetch = origFetch;
+		}
+
+		// Dangerous temporary code (touching conn/db/importLib) is blocked for non-owner
 		for (const badSnippet of [
 			'await conn.groupSettingUpdate(m.chat, "announcement");',
 			'db.data.users[m.sender].money = 999999;',
-			'await fetch("https://example.com");',
 			'await importLib("ytdl");',
 		]) {
 			const deniedDangerous = await executeGeneratedCode({
