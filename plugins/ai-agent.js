@@ -80,7 +80,12 @@ handler.before = async function (m, extra) {
 	if (!chat?.aiAgent) return false;
 
 	// Never reply to another bot's message — prevents bot-to-bot echo loops in the group.
-	if (isBotGeneratedMessage(m, this)) return false;
+	// Fail-safe: if detection errors for any reason, treat as a normal user message.
+	try {
+		if (isBotGeneratedMessage(m, this)) return false;
+	} catch {
+		// ignore detection errors and continue
+	}
 
 	const msgId = m.key?.id;
 	if (msgId && handledAutoMsgIds.has(msgId)) return false;

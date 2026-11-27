@@ -1724,13 +1724,16 @@ test('lib/aiAgent.js isBotGeneratedMessage detects bot/forwarded/reply-to-bot me
 		),
 		true
 	);
-	// messageContextInfo (some business/other bots).
+	// messageContextInfo alone is NOT enough (some clients attach it) — must not block users.
 	assert.equal(
 		isBotGeneratedMessage({ isBaileys: false, sender: '201055443322@s.whatsapp.net', message: { messageContextInfo: { messageSecret: 'x' } } }, conn),
-		true
+		false
 	);
-	// Replying to one of our own messages (bot-to-bot loop signal).
-	assert.equal(isBotGeneratedMessage({ isBaileys: false, sender: '201055443322@s.whatsapp.net', quoted: { fromMe: true } }, conn), true);
+	// A real user replying (quoting) one of our messages must NOT be treated as a bot.
+	assert.equal(
+		isBotGeneratedMessage({ isBaileys: false, sender: '201055443322@s.whatsapp.net', quoted: { fromMe: true, isBaileys: true }, message: { conversation: 'hello' } }, conn),
+		false
+	);
 	// Our own Baileys message.
 	assert.equal(isBotGeneratedMessage({ isBaileys: true, sender: '111000111@s.whatsapp.net' }, conn), true);
 
