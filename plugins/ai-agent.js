@@ -1,4 +1,4 @@
-import { runAiAgent } from '../lib/aiAgent.js';
+import { runAiAgent, isBotGeneratedMessage } from '../lib/aiAgent.js';
 
 const handledAutoMsgIds = new Set();
 
@@ -78,6 +78,9 @@ handler.before = async function (m, extra) {
 
 	const chat = global.db?.data?.chats?.[m.chat];
 	if (!chat?.aiAgent) return false;
+
+	// Never reply to another bot's message — prevents bot-to-bot echo loops in the group.
+	if (isBotGeneratedMessage(m, this)) return false;
 
 	const msgId = m.key?.id;
 	if (msgId && handledAutoMsgIds.has(msgId)) return false;

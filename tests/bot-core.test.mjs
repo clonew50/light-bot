@@ -1707,6 +1707,127 @@ test('lib/aiAgent.js works with ZERO API key via keyless provider fallback & plu
 	}
 });
 
+test('lib/aiAgent.js isBotGeneratedMessage detects bot/forwarded/reply-to-bot messages but not normal users', async () => {
+	const { isBotGeneratedMessage } = await import('../lib/aiAgent.js');
+	const conn = { user: { jid: '111000111@s.whatsapp.net' } };
+
+	// Normal user text message is NOT a bot.
+	assert.equal(
+		isBotGeneratedMessage({ isBaileys: false, sender: '201055443322@s.whatsapp.net', message: { conversation: 'hello' } }, conn),
+		false
+	);
+	// Forwarded AI/bot marker.
+	assert.equal(
+		isBotGeneratedMessage(
+			{ isBaileys: false, sender: '201055443322@s.whatsapp.net', message: { extendedTextMessage: { text: 'x', contextInfo: { forwardedAiBotMessageInfo: { botJid: '867051314767696@bot' } } } } },
+			conn
+		),
+		true
+	);
+	// messageContextInfo (some business/other bots).
+	assert.equal(
+		isBotGeneratedMessage({ isBaileys: false, sender: '201055443322@s.whatsapp.net', message: { messageContextInfo: { messageSecret: 'x' } } }, conn),
+		true
+	);
+	// Replying to one of our own messages (bot-to-bot loop signal).
+	assert.equal(isBotGeneratedMessage({ isBaileys: false, sender: '201055443322@s.whatsapp.net', quoted: { fromMe: true } }, conn), true);
+	// Our own Baileys message.
+	assert.equal(isBotGeneratedMessage({ isBaileys: true, sender: '111000111@s.whatsapp.net' }, conn), true);
+
+	// Known-bot registry.
+	global.knownBotJids = ['999000999@s.whatsapp.net'];
+	try {
+		assert.equal(isBotGeneratedMessage({ isBaileys: false, sender: '999000999@s.whatsapp.net', message: { conversation: 'hi' } }, conn), true);
+	} finally {
+		delete global.knownBotJids;
+	}
+});
+
+test('lib/aiAgent.js corrective pass forces a tool call when the first reply refuses', async () => {
+	const { runAiAgent, clearAiAgentMemory } = await import('../lib/aiAgent.js');
+	const { sock, sent } = createConnectedFakeSock();
+
+	const grpJid = '120363777000444@g.us';
+	const memberJid = '201055443322@s.whatsapp.net';
+	global.db = { data: { users: { [memberJid]: { registered: true, limit: 10 } }, chats: { [grpJid]: {} }, settings: {}, stats: {} } };
+
+	const origPlugins = global.plugins;
+	const origFetch = global.fetch;
+	const origApiKey = process.env.GEMINI_API_KEY;
+	clearAiAgentMemory();
+
+	try {
+		delete process.env.GEMINI_API_KEY;
+		global.plugins = {};
+
+		let step = 0;
+		let sawForceTool = false;
+		global.fetch = async (url, opts) => {
+			const s = String(url);
+			if (s.includes('ch.at/v1/chat/completions')) {
+				try {
+					const body = JSON.parse(opts?.body || '{}');
+					const sys = Array.isArray(body.messages) ? body.messages.find((x) => x.role === 'system')?.content : '';
+					if (String(sys).includes('FORCE-TOOL MODE')) sawForceTool = true;
+				} catch {}
+				step++;
+				if (step === 1) {
+					// First pass: model refuses without using any tool.
+					return new Response(
+						JSON.stringify({ choices: [{ message: { role: 'assistant', content: JSON.stringify({ final_answer: 'عذرًا، لا أستطيع جلب الطقس.' }) } }] }),
+						{ status: 200 }
+					);
+				}
+				if (step === 2) {
+					// Corrective pass: model finally calls execute_custom_code.
+					return new Response(
+						JSON.stringify({
+							choices: [
+								{
+									message: {
+										role: 'assistant',
+										content: JSON.stringify({
+											tool_calls: [
+												{ name: 'execute_custom_code', args: { purpose: 'weather', code: 'const r = await fetch("https://wttr.in/Hurghada?format=j1"); const j = await r.json(); await reply("WEATHER:" + j.current_condition[0].temp_C);' } },
+											],
+										}),
+									},
+								},
+							],
+						}),
+						{ status: 200 }
+					);
+				}
+				// After the tool ran, wrap up with a short final answer.
+				return new Response(
+					JSON.stringify({ choices: [{ message: { role: 'assistant', content: JSON.stringify({ final_answer: '✅ تم.' }) } }] }),
+					{ status: 200 }
+				);
+			}
+			if (s.includes('wttr.in')) return new Response(JSON.stringify({ current_condition: [{ temp_C: '25' }] }), { status: 200 });
+			return new Response('not found', { status: 404 });
+		};
+
+		const res = await runAiAgent(
+			'ايه اخبار الجو في الغردقه',
+			{ chat: grpJid, sender: memberJid, isGroup: true },
+			{ conn: sock, isOwner: false, isROwner: false },
+			{ fetchFn: global.fetch }
+		);
+
+		assert.ok(sawForceTool, 'corrective pass should use FORCE-TOOL mode');
+		assert.ok(sent.some((x) => /WEATHER:25/.test(x.content?.text || '')));
+		assert.ok(!sent.some((x) => /لا أستطيع/.test(x.content?.text || '')));
+		assert.ok(res.actions.some((a) => a.type === 'custom_code' && a.ok));
+	} finally {
+		global.plugins = origPlugins;
+		global.fetch = origFetch;
+		clearAiAgentMemory();
+		if (origApiKey === undefined) delete process.env.GEMINI_API_KEY;
+		else process.env.GEMINI_API_KEY = origApiKey;
+	}
+});
+
 test('lib/aiAgent.js suppresses a refusal when temporary code already replied (no double message)', async () => {
 	const { runAiAgent, clearAiAgentMemory } = await import('../lib/aiAgent.js');
 
