@@ -1036,5 +1036,60 @@ test('system/autoUpdate.mjs protects databases while permitting cookie files and
 	assert.equal(excluded('../etc/passwd'), true, 'path traversal must be rejected');
 });
 
+test('plugins/tools-checkwa.js queries integrity signals via MEX and handles responses cleanly', async () => {
+	const { sock, sent } = createConnectedFakeSock();
+	const { default: checkwaPlugin } = await import('../plugins/tools-checkwa.js');
 
+	assert.ok(checkwaPlugin.command.test('استعلام'));
+	assert.ok(checkwaPlugin.command.test('فحص'));
+	assert.ok(checkwaPlugin.command.test('checkwa'));
 
+	const queries = [];
+	sock.query = async (q) => {
+		queries.push(q);
+		const payload = {
+			data: {
+				xwa2_fetch_wa_users: [
+					{
+						integrity_signals_info: {
+							is_suspicious_start_chat: false,
+							join_date_ms: '1700000000000',
+							is_new_account: false,
+						},
+					},
+				],
+			},
+			errors: [],
+		};
+		return {
+			content: [
+				{
+					tag: 'result',
+					content: Buffer.from(JSON.stringify(payload)),
+				},
+			],
+		};
+	};
+
+	const replies = [];
+	const fakeM = {
+		chat: '201099887766@s.whatsapp.net',
+		sender: '201099887766@s.whatsapp.net',
+		mentionedJid: [],
+		reply: async (text) => replies.push(text),
+		key: { id: 'M_CHK_1' },
+	};
+
+	await checkwaPlugin.call(sock, fakeM, { conn: sock, text: '201505362172' });
+
+	assert.equal(queries.length, 1);
+	assert.equal(replies.length, 1);
+	assert.ok(replies[0].includes('جاري الاستعلام'));
+
+	const finalMsg = sent[sent.length - 1];
+	assert.ok(finalMsg);
+	assert.ok(finalMsg.content.text.includes('نتيجة الاستعلام عن الحساب'));
+	assert.ok(finalMsg.content.text.includes('*حساب مشبوه:* لا ✅'));
+	assert.ok(finalMsg.content.text.includes('*حساب جديد:* لا ✅'));
+	assert.deepEqual(finalMsg.content.mentions, ['201505362172@s.whatsapp.net']);
+});
