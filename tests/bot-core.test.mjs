@@ -1317,5 +1317,380 @@ test('lib/AIRich.js and lib/airich.js expose AIRich.newLayout, full MessageBuild
 	assert.equal(relayed[2].message.messageContextInfo.messageSecret, 'abcSecret==');
 });
 
+test('lib/aiAgent.js dynamically discovers live plugins, enforces permissions & read-only safeguards, and allows safe user temp code while gating dangerous code to owner', async () => {
+	const {
+		discoverBotPlugins,
+		readBotSourceFile,
+		searchBotSourceCode,
+		executeBotPlugin,
+		executeGeneratedCode,
+	} = await import('../lib/aiAgent.js');
+	const { default: groupManagePlugin } = await import('../plugins/group-manage.js');
+
+	const { sock, sent } = createConnectedFakeSock();
+	const grpActions = [];
+	sock.groupSettingUpdate = async (jid, setting) => {
+		grpActions.push({ jid, setting });
+	};
+	sock.groupUpdateDescription = async (jid, desc) => {
+		grpActions.push({ jid, desc });
+	};
+
+	const grpJid = '120363999000111@g.us';
+	const adminJid = '201099887766@s.whatsapp.net';
+	const memberJid = '201055443322@s.whatsapp.net';
+	global.db = { data: { users: { [adminJid]: { registered: true, limit: 10 }, [memberJid]: { registered: true, limit: 10 } }, chats: { [grpJid]: {} }, settings: {}, stats: {} } };
+
+	const dynamicPlugin = Object.assign(
+		async (m, { text }) => {
+			await m.reply(`DYNAMIC_OK:${text || 'empty'}`);
+		},
+		{ help: ['brandnewcmd'], tags: ['custom'], command: /^(brandnewcmd|أمر_جديد)$/i }
+	);
+
+	const origPlugins = global.plugins;
+	try {
+		global.plugins = {
+			'group-manage.js': groupManagePlugin,
+			'brand-new-dynamic.js': dynamicPlugin,
+			'owner-secret.js': Object.assign(async (m) => m.reply('SECRET_OWNER_OK'), {
+				help: ['ownertest'],
+				tags: ['owner'],
+				command: /^ownertest$/i,
+				owner: true,
+			}),
+		};
+
+		// 1. Live plugin discovery finds newly added plugin with zero hardcoding
+		const adminMsg = { chat: grpJid, sender: adminJid, isGroup: true };
+		const discovered = discoverBotPlugins({
+			plugins: global.plugins,
+			m: adminMsg,
+			ctx: { conn: sock, isAdmin: true, isBotAdmin: true, isOwner: false },
+			query: 'brandnewcmd closegc',
+		});
+		assert.ok(discovered.commands.some((c) => c.file === 'brand-new-dynamic.js' && c.commands.includes('أمر_جديد')));
+		assert.ok(discovered.commands.some((c) => c.file === 'group-manage.js' && c.canRunNow === true));
+
+		// 2. Read-only source inspection works for allowed bot dirs & blocks sensitive files / traversal
+		const readOk = readBotSourceFile('plugins/group-manage.js', { startLine: 50, endLine: 76 });
+		assert.equal(readOk.ok, true);
+		assert.ok(readOk.content.includes('closegc'));
+		assert.equal(readBotSourceFile('../etc/passwd').ok, false);
+		assert.equal(readBotSourceFile('.env').ok, false);
+		assert.equal(readBotSourceFile('cookies.txt').ok, false);
+		assert.equal(readBotSourceFile('session/creds.json').ok, false);
+
+		const searchOk = searchBotSourceCode('groupSettingUpdate', { scope: 'plugins' });
+		assert.equal(searchOk.ok, true);
+		assert.ok(searchOk.matches.some((hit) => hit.file === 'plugins/group-manage.js'));
+
+		// 3. Non-admin is blocked from admin plugin; non-owner is blocked from owner plugin & dangerous temp code
+		const memberMsg = { chat: grpJid, sender: memberJid, isGroup: true };
+		const deniedAdmin = await executeBotPlugin({
+			pluginFile: 'group-manage.js',
+			commandName: 'closegc',
+			m: memberMsg,
+			ctx: { conn: sock, isAdmin: false, isBotAdmin: true, isOwner: false },
+		});
+		assert.equal(deniedAdmin.ok, false);
+		assert.equal(deniedAdmin.blocked, true);
+		assert.equal(deniedAdmin.reason, 'admin');
+
+		const deniedOwnerPlugin = await executeBotPlugin({
+			pluginFile: 'owner-secret.js',
+			commandName: 'ownertest',
+			m: memberMsg,
+			ctx: { conn: sock, isAdmin: true, isBotAdmin: true, isOwner: false },
+		});
+		assert.equal(deniedOwnerPlugin.ok, false);
+		assert.equal(deniedOwnerPlugin.blocked, true);
+		assert.equal(deniedOwnerPlugin.reason, 'owner');
+
+		// Safe temporary math/text code IS allowed for regular users
+		const safeUserCode = await executeGeneratedCode({
+			purpose: 'Safe math & reply for normal user',
+			code: 'const total = 15 * 4; await reply("SAFE_MATH:" + total); return total;',
+			m: memberMsg,
+			ctx: { conn: sock, isOwner: false, isROwner: false },
+		});
+		assert.equal(safeUserCode.ok, true);
+		assert.equal(safeUserCode.mode, 'safe_user');
+		assert.equal(safeUserCode.result, '60');
+		assert.ok(safeUserCode.repliesSent.includes('SAFE_MATH:60'));
+
+		// Dangerous temporary code (touching conn/db/fetch/importLib) is blocked for non-owner
+		for (const badSnippet of [
+			'await conn.groupSettingUpdate(m.chat, "announcement");',
+			'db.data.users[m.sender].money = 999999;',
+			'await fetch("https://example.com");',
+			'await importLib("ytdl");',
+		]) {
+			const deniedDangerous = await executeGeneratedCode({
+				purpose: 'Attempt privileged operation as non-owner',
+				code: badSnippet,
+				m: memberMsg,
+				ctx: { conn: sock, isOwner: false, isROwner: false },
+			});
+			assert.equal(deniedDangerous.ok, false);
+			assert.equal(deniedDangerous.blocked, true);
+			assert.equal(deniedDangerous.reason, 'owner');
+		}
+
+		// 4. Group admin can invoke closegc cleanly via executeBotPlugin
+		const allowedClose = await executeBotPlugin({
+			pluginFile: 'group-manage.js',
+			commandName: 'closegc',
+			m: adminMsg,
+			ctx: { conn: sock, isAdmin: true, isBotAdmin: true, isOwner: false },
+		});
+		assert.equal(allowedClose.ok, true);
+		assert.deepEqual(grpActions[0], { jid: grpJid, setting: 'announcement' });
+		assert.ok(sent.some((s) => /Group successfully closed/i.test(s.content?.text || '')));
+
+		// 5. Even for owner, temporary code cannot write/modify bot files or touch process/shell
+		const blockedWrite = await executeGeneratedCode({
+			purpose: 'Try editing plugin file',
+			code: 'await writeFileSync("plugins/evil.js", "bad");',
+			m: adminMsg,
+			ctx: { conn: sock, isOwner: true },
+		});
+		assert.equal(blockedWrite.ok, false);
+		assert.equal(blockedWrite.blocked, true);
+		assert.equal(blockedWrite.reason, 'policy');
+
+		const blockedEnv = await executeGeneratedCode({
+			purpose: 'Try reading env',
+			code: 'return process.env.GEMINI_API_KEY;',
+			m: adminMsg,
+			ctx: { conn: sock, isOwner: true },
+		});
+		assert.equal(blockedEnv.ok, false);
+		assert.equal(blockedEnv.blocked, true);
+
+		// 6. Owner CAN run privileged temporary in-memory code using conn & importLib
+		const tempCodeOk = await executeGeneratedCode({
+			purpose: 'Update group description & inspect lib',
+			code: `
+				const ytdl = await importLib('ytdl');
+				await conn.groupUpdateDescription(m.chat, 'Updated via temp code');
+				await reply('TEMP_CODE_DONE');
+				return { hasExtractor: typeof ytdl.extractYouTubeId === 'function' };
+			`,
+			m: adminMsg,
+			ctx: { conn: sock, isOwner: true },
+		});
+		assert.equal(tempCodeOk.ok, true);
+		assert.equal(tempCodeOk.mode, 'owner');
+		assert.deepEqual(grpActions[1], { jid: grpJid, desc: 'Updated via temp code' });
+		assert.ok(tempCodeOk.repliesSent.includes('TEMP_CODE_DONE'));
+	} finally {
+		global.plugins = origPlugins;
+	}
+});
+
+test('lib/aiAgent.js works with ZERO API key via keyless provider fallback & plugins/ai-agent.js supports per-chat toggle mode', async () => {
+	const { runAiAgent, clearAiAgentMemory } = await import('../lib/aiAgent.js');
+	const { default: aiAgentPlugin } = await import('../plugins/ai-agent.js');
+	const { default: groupManagePlugin } = await import('../plugins/group-manage.js');
+
+	assert.ok(aiAgentPlugin.command.test('ai'));
+	assert.ok(aiAgentPlugin.command.test('ذكي'));
+	assert.ok(aiAgentPlugin.command.test('وكيل'));
+
+	const { sock, sent } = createConnectedFakeSock();
+	const grpActions = [];
+	sock.groupSettingUpdate = async (jid, setting) => grpActions.push({ type: 'setting', jid, setting });
+	sock.groupUpdateDescription = async (jid, desc) => grpActions.push({ type: 'desc', jid, desc });
+
+	const grpJid = '120363888000222@g.us';
+	const ownerJid = '201212446299@s.whatsapp.net';
+	const regularMemberJid = '201055443322@s.whatsapp.net';
+	global.db = {
+		data: {
+			users: { [ownerJid]: { registered: true, limit: 10 }, [regularMemberJid]: { registered: true, limit: 10 } },
+			chats: { [grpJid]: {} },
+			settings: { '201505362172@s.whatsapp.net': { public: true, gconly: false } },
+			stats: {},
+		},
+	};
+	global.loadDatabase = async () => {};
+	global.prefix = /^[.]/;
+
+	const origPlugins = global.plugins;
+	const origApiKey = process.env.GEMINI_API_KEY;
+	const origFetch = global.fetch;
+	clearAiAgentMemory();
+
+	try {
+		global.plugins = {
+			'group-manage.js': groupManagePlugin,
+			'ai-agent.js': aiAgentPlugin,
+			'ping-cmd.js': Object.assign(async (m) => m.reply('PONG_NORMAL'), {
+				help: ['ping'],
+				tags: ['info'],
+				command: /^ping$/i,
+			}),
+		};
+
+		// Scenario 1: Keyless mode (NO GEMINI_API_KEY) — Pollinations returns 402, falls back to ch-at ReAct JSON loop cleanly
+		delete process.env.GEMINI_API_KEY;
+		let keylessStep = 0;
+		const mockKeylessFetch = async (url) => {
+			const s = String(url);
+			if (s.includes('text.pollinations.ai')) {
+				return new Response(JSON.stringify({ error: { code: 'FREE_LIMIT' } }), { status: 402 });
+			}
+			if (s.includes('api.llm7.io')) {
+				return new Response(JSON.stringify({ error: { message: 'rate limit' } }), { status: 429 });
+			}
+			if (s.includes('ch.at/v1/chat/completions')) {
+				keylessStep++;
+				if (keylessStep === 1) {
+					return new Response(
+						JSON.stringify({
+							choices: [
+								{
+									message: {
+										role: 'assistant',
+										content: JSON.stringify({
+											tool_calls: [{ name: 'list_bot_commands', args: { query: 'group' } }],
+										}),
+									},
+								},
+							],
+						}),
+						{ status: 200 }
+					);
+				}
+				if (keylessStep === 2) {
+					return new Response(
+						JSON.stringify({
+							choices: [
+								{
+									message: {
+										role: 'assistant',
+										content: JSON.stringify({
+											tool_calls: [{ name: 'run_bot_plugin', args: { pluginFile: 'group-manage.js', commandName: 'closegc', text: '' } }],
+										}),
+									},
+								},
+							],
+						}),
+						{ status: 200 }
+					);
+				}
+				return new Response(
+					JSON.stringify({
+						choices: [{ message: { role: 'assistant', content: JSON.stringify({ final_answer: '✅ تم قفل الجروب بدون مفتاح API.' }) } }],
+					}),
+					{ status: 200 }
+				);
+			}
+			return new Response('Not found', { status: 404 });
+		};
+
+		const keylessRes = await runAiAgent(
+			'اقفل الجروب',
+			{ chat: grpJid, sender: ownerJid, isGroup: true },
+			{ conn: sock, isAdmin: true, isBotAdmin: true, isOwner: true, isROwner: true },
+			{ fetchFn: mockKeylessFetch }
+		);
+		assert.equal(keylessRes.text, '✅ تم قفل الجروب بدون مفتاح API.');
+		assert.equal(grpActions[0].setting, 'announcement');
+
+		// Scenario 2: Per-chat toggle mode (.ai once turns ON, any plain message triggers AI, .ping still runs, .ai again turns OFF)
+		let chatTurn = 0;
+		global.fetch = async (url) => {
+			if (String(url).includes('ch.at/v1/chat/completions')) {
+				chatTurn++;
+				return new Response(
+					JSON.stringify({
+						choices: [{ message: { role: 'assistant', content: JSON.stringify({ final_answer: `AUTO_AI_REPLY_${chatTurn}` }) } }],
+					}),
+					{ status: 200 }
+				);
+			}
+			return new Response('limit', { status: 429 });
+		};
+
+		// Non-admin member cannot toggle group AI mode
+		await handler.call(sock, {
+			messages: [
+				{
+					key: { remoteJid: grpJid, fromMe: false, id: 'TOGGLE_DENY_MEMBER_1', participant: regularMemberJid },
+					message: { conversation: '.ai' },
+				},
+			],
+		});
+		assert.ok(!global.db.data.chats[grpJid].aiAgent);
+
+		// Owner toggles AI mode ON with .ai
+		await handler.call(sock, {
+			messages: [
+				{
+					key: { remoteJid: grpJid, fromMe: false, id: 'TOGGLE_ON_OWNER_1', participant: ownerJid },
+					message: { conversation: '.ai' },
+				},
+			],
+		});
+		assert.equal(global.db.data.chats[grpJid].aiAgent, true);
+		assert.ok(sent.some((s) => /تم تفعيل وضع الوكيل الذكي/.test(s.content?.text || '')));
+
+		// While ON, regular member sends a plain message WITHOUT .ai -> handled automatically
+		await handler.call(sock, {
+			messages: [
+				{
+					key: { remoteJid: grpJid, fromMe: false, id: 'AUTO_PLAIN_MSG_1', participant: regularMemberJid },
+					message: { conversation: 'احسبلي 5 في 5' },
+				},
+			],
+		});
+		assert.ok(sent.some((s) => s.content?.text === 'AUTO_AI_REPLY_1'));
+
+		// While ON, normal dot commands like .ping STILL run normally without AI intercepting
+		await handler.call(sock, {
+			messages: [
+				{
+					key: { remoteJid: grpJid, fromMe: false, id: 'NORMAL_PING_MSG_1', participant: regularMemberJid },
+					message: { conversation: '.ping' },
+				},
+			],
+		});
+		assert.ok(sent.some((s) => s.content?.text === 'PONG_NORMAL'));
+
+		// Owner sends .ai again -> toggles OFF cleanly
+		await handler.call(sock, {
+			messages: [
+				{
+					key: { remoteJid: grpJid, fromMe: false, id: 'TOGGLE_OFF_OWNER_1', participant: ownerJid },
+					message: { conversation: '.ai' },
+				},
+			],
+		});
+		assert.equal(global.db.data.chats[grpJid].aiAgent, false);
+		assert.ok(sent.some((s) => /تم إيقاف وضع الوكيل الذكي/.test(s.content?.text || '')));
+
+		// Once OFF, plain messages no longer trigger AI
+		const prevTurn = chatTurn;
+		await handler.call(sock, {
+			messages: [
+				{
+					key: { remoteJid: grpJid, fromMe: false, id: 'PLAIN_AFTER_OFF_1', participant: regularMemberJid },
+					message: { conversation: 'رسالة عادية بعد الايقاف' },
+				},
+			],
+		});
+		assert.equal(chatTurn, prevTurn);
+	} finally {
+		global.plugins = origPlugins;
+		global.fetch = origFetch;
+		clearAiAgentMemory();
+		if (origApiKey === undefined) delete process.env.GEMINI_API_KEY;
+		else process.env.GEMINI_API_KEY = origApiKey;
+	}
+});
+
+
 
 
