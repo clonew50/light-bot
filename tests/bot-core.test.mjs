@@ -1707,6 +1707,85 @@ test('lib/aiAgent.js works with ZERO API key via keyless provider fallback & plu
 	}
 });
 
+test('lib/aiAgent.js suppresses a refusal when temporary code already replied (no double message)', async () => {
+	const { runAiAgent, clearAiAgentMemory } = await import('../lib/aiAgent.js');
+
+	const { sock, sent } = createConnectedFakeSock();
+	const grpJid = '120363777000333@g.us';
+	const memberJid = '201055443322@s.whatsapp.net';
+	global.db = { data: { users: { [memberJid]: { registered: true, limit: 10 } }, chats: { [grpJid]: {} }, settings: {}, stats: {} } };
+
+	const origPlugins = global.plugins;
+	const origFetch = global.fetch;
+	const origApiKey = process.env.GEMINI_API_KEY;
+	clearAiAgentMemory();
+
+	try {
+		delete process.env.GEMINI_API_KEY;
+		global.plugins = {};
+
+		let step = 0;
+		global.fetch = async (url) => {
+			const s = String(url);
+			if (s.includes('ch.at/v1/chat/completions')) {
+				step++;
+				if (step === 1) {
+					return new Response(
+						JSON.stringify({
+							choices: [
+								{
+									message: {
+										role: 'assistant',
+										content: JSON.stringify({
+											tool_calls: [
+												{
+													name: 'execute_custom_code',
+													args: {
+														purpose: 'weather',
+														code: 'const r = await fetch("https://wttr.in/Hurghada?format=j1"); const j = await r.json(); await reply("WEATHER:" + j.temp); return j.temp;',
+													},
+												},
+											],
+										}),
+									},
+								},
+							],
+						}),
+						{ status: 200 }
+					);
+				}
+				return new Response(
+					JSON.stringify({
+						choices: [{ message: { role: 'assistant', content: JSON.stringify({ final_answer: 'عذرًا، لا أستطيع جلب معلومات الطقس في الوقت الحالي.' }) } }],
+					}),
+					{ status: 200 }
+				);
+			}
+			if (s.includes('wttr.in')) return new Response(JSON.stringify({ temp: '24C' }), { status: 200 });
+			return new Response('not found', { status: 404 });
+		};
+
+		const res = await runAiAgent(
+			'ايه اخبار الجو في الغردقه',
+			{ chat: grpJid, sender: memberJid, isGroup: true },
+			{ conn: sock, isOwner: false, isROwner: false },
+			{ fetchFn: global.fetch }
+		);
+
+		// Weather reply was sent by the temp code...
+		assert.ok(sent.some((x) => /WEATHER:24C/.test(x.content?.text || '')));
+		// ...and the contradictory refusal was NOT sent on top of it.
+		assert.ok(!sent.some((x) => /لا أستطيع/.test(x.content?.text || '')));
+		assert.equal(res.text, '');
+	} finally {
+		global.plugins = origPlugins;
+		global.fetch = origFetch;
+		clearAiAgentMemory();
+		if (origApiKey === undefined) delete process.env.GEMINI_API_KEY;
+		else process.env.GEMINI_API_KEY = origApiKey;
+	}
+});
+
 
 
 
