@@ -1258,4 +1258,64 @@ test('lib/ytdl.js falls back to hosted SaveTube/noTube APIs, fast-fails 403 stre
 	}
 });
 
+test('lib/AIRich.js and lib/airich.js expose AIRich.newLayout, full MessageBuilderV4.7 API, and loadFrom', async () => {
+	const { sock, relayed } = createConnectedFakeSock();
+	const { AIRich } = await import('../lib/AIRich.js');
+	const { AIRich: LowercaseAIRich } = await import('../lib/airich.js');
+
+	assert.equal(AIRich, LowercaseAIRich);
+	assert.equal(typeof AIRich.newLayout, 'function');
+
+	const layout = AIRich.newLayout('HScroll', [{ title: 'Card', __typename: 'GenAIProductItemCardPrimitive' }]);
+	assert.equal(layout.view_model.__typename, 'GenAIHScrollLayoutViewModel');
+	assert.ok(Array.isArray(layout.view_model.primitives));
+
+	const items = new AIRich(sock)
+		.addProduct({ title: 'Item 1', brand: 'Bot', price: 'Free', url: 'https://example.com', image_url: 'https://example.com/1.jpg' })
+		.addPost({ username: 'bot', caption: 'hi', thumbnail: 'https://example.com/2.jpg', url: 'https://example.com' })
+		.items;
+	assert.equal(items.length, 2);
+
+	const rich = new AIRich(sock)
+		.setTitle('Test Title')
+		.setFooter('Test Footer')
+		.addText('Hello world', { id: 'intro' })
+		.addSuggest(['Option A'])
+		.addCode('javascript', 'const x = 1;', { insertAt: 'intro', id: 'code1' })
+		.addTable([['A', 'B'], ['1', '2']], { id: 'table1' })
+		.addSection(AIRich.newLayout('HScroll', items), { id: 'mixed' })
+		.addMetadata('temp', { id: 'tmp' })
+		.delete('tmp');
+
+	await rich.send('201099887766@s.whatsapp.net');
+	await rich.addText('Edited', { replace: 'intro' }).sendEdit();
+
+	assert.equal(relayed.length, 2);
+	assert.equal(relayed[0].id, relayed[1].id);
+	const decoded = JSON.parse(
+		Buffer.from(relayed[1].message.botForwardedMessage.message.richResponseMessage.unifiedResponse.data, 'base64').toString('utf8')
+	);
+	assert.ok(decoded.sections.some((s) => s.view_model?.primitive?.text === 'Edited'));
+
+	// loadFrom compatibility for plugins/tesbug.js
+	const loaded = new AIRich(sock).loadFrom({
+		messageContextInfo: { messageSecret: 'abcSecret==' },
+		botForwardedMessage: {
+			message: {
+				richResponseMessage: {
+					messageType: 1,
+					unifiedResponse: {
+						data: Buffer.from(JSON.stringify({ response_id: 'rid-1', sections: [layout] })).toString('base64'),
+					},
+					contextInfo: { forwardingScore: 1, isForwarded: true, forwardOrigin: 4 },
+				},
+			},
+		},
+	});
+	await loaded.send('201099887766@s.whatsapp.net');
+	assert.equal(relayed.length, 3);
+	assert.equal(relayed[2].message.messageContextInfo.messageSecret, 'abcSecret==');
+});
+
+
 
