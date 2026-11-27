@@ -88,21 +88,12 @@ handler.before = async function (m, extra) {
 	if (!text) return false;
 
 	// لا نعترض الأوامر prefixes (مثل .ai، .menu، .ping، > ...) حتى تُكمل سيرها الطبيعي.
-	// extra.match[0] هو نتيجة exec، وجودها يعني أن الرسالة مطابقة لبادئة أمر.
-	if (extra?.match?.[0]) return false;
+	// match[0][0] هو أول مجموعة capturing من exec؛ لو فاضي/Null فالرسالة ليست أمر.
+	if (extra?.match?.[0]?.[0]) return false;
 	if (/^=?>\s/.test(text)) return false;
 
 	const chat = global.db?.data?.chats?.[m.chat];
 	if (!chat?.aiAgent) return false;
-
-	// في الجروبات: الا respond إلا إذا كان البوت مذكوراً أو الرسائل رد على البوت،
-	// ما لم يرغّب responsable في استقبال كل الرسائل (chat.aiAgentAllMessages = true).
-	if (m.isGroup && !chat.aiAgentAllMessages) {
-		const botJid = extra?.conn?.user?.jid;
-		const isMentioned = botJid && Array.isArray(m.mentionedJid) && m.mentionedJid.includes(botJid);
-		const isReplyToBot = m.quoted && (m.quoted.participant || m.quoted.sender) === botJid;
-		if (!isMentioned && !isReplyToBot) return false;
-	}
 
 	// لا تُرد على رسالة لبوت آخر — يمنع حلقات الصدى بين البوتات في الجروب.
 	try {
