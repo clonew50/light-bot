@@ -18,16 +18,16 @@ const filePath = path.join(srcDir, 'sticker-s.json')
 const historyPath = path.join(srcDir, 'sticker-s-history.json')
 
 const defaultSticker = {
-    url: "https://mmg.whatsapp.net/v/t62.15575-24/796687741_1133156819626312_6595524698866287334_n.enc?ccb=11-4&oh=01_Q5Aa6AEWQhWWHkvRF9xhv__r8ANanaKkpQOrdQpSwEIy5fcl_Q&oe=6B2E5992&_nc_sid=5e03e0&mms3=true",
-    fileSha256: "dAy0SYFJX6KALNu31o39ln2gDn+TjuYTRurAOsLgZgs=",
-    fileEncSha256: "jx6LJf0Aa7PYWgeMPEXRQd5gwk/vxbYPxIgm5MTwfKc=",
-    mediaKey: "HUVsSYaTHswy3oUSb4whMt494T+EyF7iA2zW0TLqlkI=",
+    url: "https://mmg.whatsapp.net/v/t62.15575-24/819538775_1864502177913919_211749881149803251_n.enc?ccb=11-4&oh=01_Q5Aa6AFb3huna3n-Dv3wu7JFq2sl9lkuErksiFAEvI7zZrPgLw&oe=6B321527&_nc_sid=5e03e0&mms3=true",
+    fileSha256: "iITZ7orZB4k6RP8yqRxEgQb+8mGlzAA+Ldd5AqbzlT0=",
+    fileEncSha256: "l5zvhS5L9yoHawRv3w3HLHw5KPooUWMtGQ8zaNEnvNc=",
+    mediaKey: "pejaQ6U5MlaoSzqzXKMA15l/GOIuZRZ8WuM4Q2liApM=",
     mimetype: "image/webp",
-    height: 512,
-    width: 512,
-    directPath: "/o1/v/t24/f2/m239/AQMZAIJaoK7mY5ThptxpHwSVoKEzz-A6HATXianf4uBhCNji_avtoDjwwdqypdsL27QIJ9pwrZC4T7TXprgHL8sYxbbD2l5_sxEJa8bLZw?ccb=9-4&oh=01_Q5Aa6AEUkm97Kne-vC3Pqg9DShfnIHa7HPfug8_ruym38-7QqA&oe=6B240182&_nc_sid=e6ed6c",
-    fileLength: 11186,
-    mediaKeyTimestamp: 1794941272,
+    height: 64,
+    width: 64,
+    directPath: "/v/t62.15575-24/819538775_1864502177913919_211749881149803251_n.enc?ccb=11-4&oh=01_Q5Aa6AFb3huna3n-Dv3wu7JFq2sl9lkuErksiFAEvI7zZrPgLw&oe=6B321527&_nc_sid=5e03e0",
+    fileLength: 8336,
+    mediaKeyTimestamp: 1795813803,
     isAnimated: false,
     stickerSentTs: 0,
     isAvatar: false,
@@ -54,32 +54,106 @@ function saveHistory(list) {
     fs.writeFileSync(historyPath, JSON.stringify(list))
 }
 
+function toNumeric(val, fallback = 0) {
+    if (typeof val === 'number' && Number.isFinite(val)) return val
+    if (val && typeof val === 'object' && typeof val.low === 'number') {
+        return Number(val.low) + Number(val.high || 0) * 4294967296
+    }
+    const n = Number(val)
+    return Number.isFinite(n) ? n : fallback
+}
+
+function toBase64Str(val) {
+    if (typeof val === 'string') return val
+    if (Buffer.isBuffer(val) || val instanceof Uint8Array) return Buffer.from(val).toString('base64')
+    if (val && typeof val === 'object' && '0' in val) return Buffer.from(Object.values(val)).toString('base64')
+    return ''
+}
+
+function extractRawStickerData(quoted) {
+    if (!quoted || typeof quoted !== 'object') return null
+    const src = quoted.mediaMessage?.stickerMessage || quoted.msg?.stickerMessage || (quoted.mtype === 'stickerMessage' ? quoted : null)
+    if (!src || (!src.url && !src.directPath)) return null
+    return {
+        url: src.url || '',
+        fileSha256: toBase64Str(src.fileSha256),
+        fileEncSha256: toBase64Str(src.fileEncSha256),
+        mediaKey: toBase64Str(src.mediaKey),
+        mimetype: src.mimetype || 'image/webp',
+        height: toNumeric(src.height, 512),
+        width: toNumeric(src.width, 512),
+        directPath: src.directPath || '',
+        fileLength: toNumeric(src.fileLength, 0),
+        mediaKeyTimestamp: toNumeric(src.mediaKeyTimestamp, 0),
+        isAnimated: Boolean(src.isAnimated),
+        stickerSentTs: 0,
+        isAvatar: Boolean(src.isAvatar),
+        isAiSticker: Boolean(src.isAiSticker),
+        isLottie: Boolean(src.isLottie),
+        contextInfo: { mentionedJid: [] }
+    }
+}
+
+function isQuotedSticker(quoted) {
+    if (!quoted || typeof quoted !== 'object') return false
+    if (quoted.mtype === 'stickerMessage' || quoted.mediaType === 'stickerMessage') return true
+    if (/webp/i.test(quoted.mimetype || '')) return true
+    return Boolean(quoted.mediaMessage?.stickerMessage || quoted.msg?.stickerMessage)
+}
+
+async function setStickerFromQuoted(client, m, isPrefix) {
+    if (!m.quoted) {
+        return client.reply(m.chat, `يرجى الرد على الملصق المراد تعيينه أولاً.\nمثال: ${isPrefix}س سيت (أو ${isPrefix}س1)`, m)
+    }
+    if (!isQuotedSticker(m.quoted)) {
+        return client.reply(m.chat, `يرجى الرد على ملصق (استيكر) لتعيينه كاستيكر أساسي.`, m)
+    }
+
+    try {
+        let nextStickerData = null
+
+        if (typeof m.quoted.download === 'function' && typeof client.waUploadToServer === 'function') {
+            try {
+                const buffer = await m.quoted.download()
+                if (buffer) {
+                    const newBuffer = await addExif(buffer, PACKNAME, AUTHOR)
+                    const media = await prepareWAMessageMedia({ sticker: newBuffer }, { upload: client.waUploadToServer })
+                    if (media?.stickerMessage) {
+                        nextStickerData = media.stickerMessage
+                    }
+                }
+            } catch {}
+        }
+
+        if (!nextStickerData) {
+            nextStickerData = extractRawStickerData(m.quoted)
+        }
+
+        if (!nextStickerData) {
+            throw new Error("تعذر استخراج بيانات الملصق الجديد.")
+        }
+
+        fs.writeFileSync(filePath, JSON.stringify(nextStickerData, null, 2))
+        return client.reply(m.chat, `✅ تم تعيين الاستيكر الأساسي بنجاح.`, m)
+    } catch (error) {
+        return client.reply(m.chat, `حدث خطأ أثناء تحديث الملصق: ${error.message}`, m)
+    }
+}
+
 let handler = async (m, { conn, text, args, command, usedPrefix }) => {
     const client = conn
     const isPrefix = usedPrefix || '.'
+    const trimmed = String(text || '').trim()
+    const normalizedCmd = String(command || '').toLowerCase()
 
-    if (command === 'س1' || command === 'س.1') {
-        if (!m.quoted) return client.reply(m.chat, `يرجى الرد على الملصق المراد تغييره أولاً.\nمثال: ${isPrefix}س1`, m)
+    const isExplicitSet = normalizedCmd === 'س1' || normalizedCmd === 'س.1' || normalizedCmd === 'سيت' || normalizedCmd === 'setsticker'
+    const isTextSetWithS = normalizedCmd === 'س' && Boolean(trimmed) && !/^\d+$/.test(trimmed)
 
-        try {
-            const buffer = await m.quoted.download()
-            if (!buffer) throw new Error("فشل تحميل الملصق.")
-            
-            const newBuffer = await addExif(buffer, PACKNAME, AUTHOR)
-            const media = await prepareWAMessageMedia({ sticker: newBuffer }, { upload: client.waUploadToServer })
-            
-            if (media && media.stickerMessage) {
-                fs.writeFileSync(filePath, JSON.stringify(media.stickerMessage, null, 2))
-                return client.reply(m.chat, `تم تحديث الملصق وإضافة الحقوق بنجاح.`, m)
-            } else {
-                throw new Error("تعذر استخراج بيانات الملصق الجديد.")
-            }
-        } catch (error) {
-            return client.reply(m.chat, `حدث خطأ أثناء تحديث الملصق: ${error.message}`, m)
-        }
+    if (isExplicitSet || isTextSetWithS) {
+        return setStickerFromQuoted(client, m, isPrefix)
     }
 
-    if (command === 'مسح') {
+    if (normalizedCmd === 'مسح') {
         const quoted = m.quoted
         let history = getHistory().filter(x => x.chat === m.chat)
 
@@ -92,7 +166,7 @@ let handler = async (m, { conn, text, args, command, usedPrefix }) => {
             if (!history.length) return client.reply(m.chat, `لا توجد ملصقات محفوظة لحذفها في هذه المحادثة.`, m)
         }
 
-        let count = parseInt(args?.[0] || text?.trim())
+        let count = parseInt(args?.[0] || trimmed)
         let toDelete = []
         
         if (isNaN(count) || count < 1) {
@@ -113,7 +187,7 @@ let handler = async (m, { conn, text, args, command, usedPrefix }) => {
                     }
                 })
                 deleted++
-            } catch (e) {}
+            } catch (_e) {}
         }
 
         let allHistory = getHistory().filter(x => x.chat !== m.chat)
@@ -140,7 +214,7 @@ let handler = async (m, { conn, text, args, command, usedPrefix }) => {
         participant: quoted.sender || quoted.key?.participant || undefined
     }
 
-    let count = parseInt(args?.[0] || text?.trim())
+    let count = parseInt(args?.[0] || trimmed)
     if (isNaN(count) || count < 1) count = 3
 
     const stickerData = getSticker()
@@ -162,7 +236,7 @@ let handler = async (m, { conn, text, args, command, usedPrefix }) => {
             if (sentId) {
                 history.push({ id: sentId, chat: m.chat, parentId: targetId, time: Date.now() })
             }
-        } catch (err) {}
+        } catch (_err) {}
     }
 
     saveHistory(history)
@@ -191,16 +265,16 @@ handler.before = async function (m, { conn }) {
                 },
                 stickerMessage: stickerData
             }, {})
-        } catch (error) {}
+        } catch (_error) {}
         
         return false
     }
     return false
 }
 
-handler.help = ['N O U R']
+handler.help = ['N O U R', 'س <عدد>', 'س <نص> (مع الرد على استيكر لتعيينه)', 'سيت']
 handler.tags = ['N O U R']
-handler.command = /^(س|س1|س\.1|مسح)$/i
+handler.command = /^(س|س1|س\.1|سيت|setsticker|مسح)$/i
 handler.owner = true
 handler.group = false
 handler.admin = false

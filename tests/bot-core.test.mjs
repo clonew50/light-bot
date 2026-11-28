@@ -2130,6 +2130,77 @@ test('lib/aiAgent.js handles compound multi-task requests cleanly (groupCreate +
 	}
 });
 
+test('plugins/س.js sets active sticker via ".س <any non-numeric text>" or ".سيت" when quoting a sticker, while preserving ".س <count>" reactions', async () => {
+	const fsMod = await import('fs');
+	const pathMod = await import('path');
+	const { default: sPlugin } = await import('../plugins/س.js');
+	const { sock, sent, relayed } = createConnectedFakeSock();
+
+	const stickerFile = pathMod.join(process.cwd(), 'src', 'sticker-s.json');
+	const historyFile = pathMod.join(process.cwd(), 'src', 'sticker-s-history.json');
+	const hadSticker = fsMod.existsSync(stickerFile);
+	const origSticker = hadSticker ? fsMod.readFileSync(stickerFile, 'utf8') : null;
+	const hadHistory = fsMod.existsSync(historyFile);
+	const origHistory = hadHistory ? fsMod.readFileSync(historyFile, 'utf8') : null;
+
+	const grpJid = '120363432969743338@g.us';
+	const quotedSticker = {
+		mtype: 'stickerMessage',
+		mimetype: 'image/webp',
+		url: 'https://mmg.whatsapp.net/v/t62.15575-24/test-sticker.enc',
+		directPath: '/v/t62.15575-24/test-sticker.enc',
+		fileSha256: 'iITZ7orZB4k6RP8yqRxEgQb+8mGlzAA+Ldd5AqbzlT0=',
+		fileEncSha256: 'l5zvhS5L9yoHawRv3w3HLHw5KPooUWMtGQ8zaNEnvNc=',
+		mediaKey: 'pejaQ6U5MlaoSzqzXKMA15l/GOIuZRZ8WuM4Q2liApM=',
+		height: 64,
+		width: 64,
+		fileLength: { low: 8336, high: 0, unsigned: true },
+		mediaKeyTimestamp: { low: 1795813803, high: 0, unsigned: false },
+		isAnimated: false,
+	};
+
+	try {
+		// 1. ".س أي كلام" on a quoted sticker sets it cleanly without needing a number
+		await sPlugin.call(
+			sock,
+			{ chat: grpJid, quoted: quotedSticker, key: { id: 'M1' } },
+			{ conn: sock, text: 'حط الاستيكر ده', args: ['حط', 'الاستيكر', 'ده'], command: 'س', usedPrefix: '.' }
+		);
+		assert.ok(fsMod.existsSync(stickerFile), 'sticker-s.json should be written');
+		const saved = JSON.parse(fsMod.readFileSync(stickerFile, 'utf8'));
+		assert.equal(saved.url, quotedSticker.url);
+		assert.equal(saved.fileLength, 8336);
+		assert.ok(sent.some((m) => /تم تعيين الاستيكر الأساسي/.test(m.content?.text || '')));
+
+		// 2. Non-numeric text on a non-sticker message refuses politely instead of reacting
+		await sPlugin.call(
+			sock,
+			{ chat: grpJid, quoted: { mtype: 'conversation', text: 'hello', key: { id: 'Q1' } }, key: { id: 'M2' } },
+			{ conn: sock, text: 'سيت', args: ['سيت'], command: 'س', usedPrefix: '.' }
+		);
+		assert.ok(sent.some((m) => /يرجى الرد على ملصق/.test(m.content?.text || '')));
+
+		// 3. ".س 2" on a quoted message still sends 2 sticker reactions using the newly saved sticker
+		await sPlugin.call(
+			sock,
+			{ chat: grpJid, quoted: { key: { id: 'TARGET_MSG_1', fromMe: false }, sender: '201055@s.whatsapp.net' }, key: { id: 'M3' } },
+			{ conn: sock, text: '2', args: ['2'], command: 'س', usedPrefix: '.' }
+		);
+		assert.equal(relayed.length, 2);
+		assert.equal(relayed[0].message.stickerMessage.url, quotedSticker.url);
+
+		// 4. Explicit command ".سيت" matches handler.command
+		assert.ok(sPlugin.command.test('سيت'));
+		assert.ok(sPlugin.command.test('setsticker'));
+	} finally {
+		if (hadSticker) fsMod.writeFileSync(stickerFile, origSticker);
+		else if (fsMod.existsSync(stickerFile)) fsMod.unlinkSync(stickerFile);
+		if (hadHistory) fsMod.writeFileSync(historyFile, origHistory);
+		else if (fsMod.existsSync(historyFile)) fsMod.unlinkSync(historyFile);
+	}
+});
+
+
 
 
 
