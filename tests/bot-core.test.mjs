@@ -572,7 +572,9 @@ test('plugins/main-menu.js runs cleanly for list, category, and unknown menu wit
 
 test('webPanel routes: /admin login, /api/public/status, sub-bot pairing, and send ok:true', async () => {
 	const tmpCfg = path.join(os.tmpdir(), `panel-test-${Date.now()}.json`);
+	const tmpBugs = path.join(os.tmpdir(), `bugs-test-${Date.now()}.json`);
 	process.env.PANEL_CONFIG_FILE = tmpCfg;
+	process.env.BUG_REPORTS_FILE = tmpBugs;
 	global.db = { data: { users: {}, chats: {}, stats: {}, settings: {}, subBots: {} } };
 	global.__panelState = { connection: 'open', pairingCode: null, lastQR: null };
 	global.plugins = { ping: { command: 'ping', tags: ['info'], help: ['ping'] } };
@@ -685,14 +687,30 @@ test('webPanel routes: /admin login, /api/public/status, sub-bot pairing, and se
 		assert.equal(saveSetJson.botSettings.autoread, true);
 		assert.equal(saveSetJson.botSettings.gconly, false);
 
-		// 8. Rendered HTML pages (/) and (/admin) have valid inline JS syntax & public portal exposes commands menu without simulator
+		// 8. Rendered HTML pages (/) and (/admin) have valid inline JS syntax, HEAD 200, panel assets, & bug reporting
+		const headRes = await fetch(`${base}/`, { method: 'HEAD' });
+		assert.equal(headRes.status, 200);
+
+		const heroAssetRes = await fetch(`${base}/panel-assets/hero-banner.jpg`);
+		assert.equal(heroAssetRes.status, 200);
+		assert.equal(heroAssetRes.headers.get('content-type'), 'image/jpeg');
+
+		const supportAssetRes = await fetch(`${base}/panel-assets/support-card.jpg`);
+		assert.equal(supportAssetRes.status, 200);
+		assert.equal(supportAssetRes.headers.get('content-type'), 'image/jpeg');
+
 		const publicHtml = await (await fetch(`${base}/`)).text();
 		assert.ok(publicHtml.includes('قائمة أوامر البوت'));
+		assert.ok(publicHtml.includes('id="report-error"'));
+		assert.ok(publicHtml.includes('id="cmd-composer"'));
+		assert.ok(publicHtml.includes('/panel-assets/hero-banner.jpg'));
+		assert.ok(publicHtml.includes('/panel-assets/support-card.jpg'));
 		assert.ok(!publicHtml.includes('معاينة تفاعلية للأوامر'));
 		assert.ok(!publicHtml.includes('id="simulator"'));
 		assert.ok(!publicHtml.includes('id="simInput"'));
 
 		const adminHtml = await (await fetch(`${base}/admin`, { headers: { Cookie: pwCookie } })).text();
+		assert.ok(adminHtml.includes('id="bugReportsList"'));
 		for (const [label, html] of [
 			['public', publicHtml],
 			['admin', adminHtml],
@@ -709,13 +727,43 @@ test('webPanel routes: /admin login, /api/public/status, sub-bot pairing, and se
 		assert.ok(publicHtml.includes('copyCodeValue(prefix + cmd, el)'), 'Expected public cmd card to pass element');
 		assert.ok(adminHtml.includes('copyCodeValue(this.dataset.cmd, this)'), 'Expected admin cmd card to pass element');
 		assert.ok(publicHtml.includes('copyCodeValue(this.dataset.code, this)'), 'Expected code tiles to pass element');
+
+		// 9. Bug report endpoint forwards directly to Owner via main bot & admin can resolve/delete
+		const bugRes = await fetch(`${base}/api/public/report-error`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				category: 'bug',
+				title: 'اختبار بلاغ',
+				command: '.ارسم',
+				contact: '201000000000',
+				details: 'تفاصيل تجريبية للتحقق من إرسال البلاغ للمالك',
+			}),
+		});
+		assert.equal(bugRes.status, 200);
+		const bugJson = await bugRes.json();
+		assert.equal(bugJson.ok, true);
+		assert.equal(bugJson.deliveredToOwner, true);
+		assert.ok(sent.some((m) => m.jid === '201212446299@s.whatsapp.net' && String(m.content?.text || '').includes(bugJson.id)));
+
+		const resolveRes = await fetch(`${base}/api/action`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Cookie: pwCookie },
+			body: JSON.stringify({ action: 'bug-resolve', id: bugJson.id }),
+		});
+		assert.equal(resolveRes.status, 200);
+		const resolveJson = await resolveRes.json();
+		assert.equal(resolveJson.ok, true);
+		assert.equal(resolveJson.bugReports.find((b) => b.id === bugJson.id)?.status, 'resolved');
 	} finally {
 		server.close();
 		server.closeAllConnections?.();
 		try {
 			fs.rmSync(tmpCfg, { force: true });
+			fs.rmSync(tmpBugs, { force: true });
 		} catch {}
 		delete process.env.PANEL_CONFIG_FILE;
+		delete process.env.BUG_REPORTS_FILE;
 	}
 });
 
@@ -2286,18 +2334,30 @@ test('lib/imageSearch.js and plugins/img-search.js support 14 sources, auto dive
 	assert.equal(explicitRes.images.length, 1);
 	assert.equal(explicitRes.images[0].source, 'wallhaven');
 
-	// End-to-end plugin run for help / sources list
-	const { sock, sent } = createConnectedFakeSock();
+	// End-to-end plugin run for interactive help / sources list & AIRich table
+	const { sock, relayed } = createConnectedFakeSock();
 	const grpJid = '120363000111999@g.us';
 	await imgSearchPlugin.call(
 		sock,
 		{ chat: grpJid, key: { id: 'IMG_HELP_1' } },
 		{ conn: sock, text: 'المصادر', usedPrefix: '.', command: 'صور' }
 	);
-	const helpMsg = sent[sent.length - 1]?.content?.text || '';
+	const helpInteractive = relayed[relayed.length - 1]?.message?.interactiveMessage;
+	const helpMsg = helpInteractive?.body?.text || '';
 	assert.ok(helpMsg.includes('14 موقع'));
 	assert.ok(helpMsg.includes('pinterest'));
 	assert.ok(helpMsg.includes('wallhaven'));
+	const helpBtns = helpInteractive?.nativeFlowMessage?.buttons || [];
+	assert.ok(helpBtns.some((b) => b.name === 'single_select'));
+	assert.ok(helpBtns.some((b) => b.name === 'quick_reply'));
+	assert.ok(helpBtns.some((b) => b.name === 'cta_copy'));
+
+	await imgSearchPlugin.call(
+		sock,
+		{ chat: grpJid, key: { id: 'IMG_RICH_1' } },
+		{ conn: sock, text: 'جدول', usedPrefix: '.', command: 'صور' }
+	);
+	assert.ok(relayed[relayed.length - 1]?.message?.botForwardedMessage?.message?.richResponseMessage);
 	assert.ok(imgSearchPlugin.command.test('صور'));
 	assert.ok(imgSearchPlugin.command.test('img'));
 });
@@ -2408,17 +2468,62 @@ test('lib/aiMedia.js and plugins/ai-media.js generate AI images, videos (LTX + F
 	assert.equal(ltxRes.provider, 'LTX-Video Distilled (AI Video)');
 	assert.equal(ltxRes.mimetype, 'video/mp4');
 
-	// 6. Plugin help & command match verification
-	const { sock, sent } = createConnectedFakeSock();
+	// 6. Arabic translation + Pollinations 402 cooldown triggers clean AI Horde 512x512 generation
+	clearAiMediaCooldowns();
+	let hordeRequestedPayload = null;
+	let pollinationsCalls = 0;
+	const hordeFetch = async (url, init = {}) => {
+		const s = String(url);
+		if (s.includes('translate.googleapis.com/translate_a/single')) {
+			return new Response(JSON.stringify([[['A lion flying over pyramids', null, null]]]), { status: 200 });
+		}
+		if (s.includes('image.pollinations.ai')) {
+			pollinationsCalls += 1;
+			return new Response('rate limit', { status: 402 });
+		}
+		if (s.includes('aihorde.net/api/v2/generate/async')) {
+			hordeRequestedPayload = JSON.parse(init.body || '{}');
+			return new Response(JSON.stringify({ id: 'horde-job-1' }), { status: 200 });
+		}
+		if (s.includes('aihorde.net/api/v2/generate/status/horde-job-1')) {
+			return new Response(JSON.stringify({
+				done: true,
+				generations: [{ img: paddedPng.toString('base64'), model: 'Deliberate' }],
+			}), { status: 200 });
+		}
+		return new Response('err', { status: 500 });
+	};
+	const hordeRes = await generateAiImage({ prompt: 'أسد يطير', fetchFn: hordeFetch });
+	assert.equal(pollinationsCalls, 1, 'Expected shared IP cooldown after 402 without hitting second Pollinations endpoint');
+	assert.ok(hordeRequestedPayload?.prompt?.includes('A lion flying over pyramids'));
+	assert.equal(hordeRequestedPayload?.params?.width, 512);
+	assert.equal(hordeRequestedPayload?.params?.height, 512);
+	assert.ok(hordeRes.provider.includes('AI Horde'));
+
+	// 7. Plugin interactive help, AIRich table (.توليد جدول), & command match verification
+	const { sock, relayed } = createConnectedFakeSock();
 	await aiMediaPlugin.call(
 		sock,
 		{ chat: '120363000111999@g.us', key: { id: 'AI_MEDIA_HELP_1' } },
 		{ conn: sock, text: '', usedPrefix: '.', command: 'توليد' }
 	);
-	const helpOut = sent[sent.length - 1]?.content?.text || '';
+	const helpInteractive = relayed[relayed.length - 1]?.message?.interactiveMessage;
+	const helpOut = helpInteractive?.body?.text || '';
 	assert.ok(helpOut.includes('توليد الصور'));
 	assert.ok(helpOut.includes('توليد الفيديوهات'));
 	assert.ok(helpOut.includes('توليد الصوت'));
+	const aiBtns = helpInteractive?.nativeFlowMessage?.buttons || [];
+	assert.ok(aiBtns.some((b) => b.name === 'single_select'));
+	assert.ok(aiBtns.some((b) => b.name === 'quick_reply'));
+	assert.ok(aiBtns.some((b) => b.name === 'cta_copy'));
+
+	await aiMediaPlugin.call(
+		sock,
+		{ chat: '120363000111999@g.us', key: { id: 'AI_MEDIA_RICH_1' } },
+		{ conn: sock, text: 'جدول', usedPrefix: '.', command: 'توليد' }
+	);
+	assert.ok(relayed[relayed.length - 1]?.message?.botForwardedMessage?.message?.richResponseMessage);
+
 	assert.ok(aiMediaPlugin.command.test('ارسم'));
 	assert.ok(aiMediaPlugin.command.test('فيديو_ai'));
 	assert.ok(aiMediaPlugin.command.test('انطق'));

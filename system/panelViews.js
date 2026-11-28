@@ -163,20 +163,157 @@ async function copyCodeValue(text, el){
   return false;
 }`;
 
+const SHARED_HEAD_ASSETS = `<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'"/>`;
+
+const AMBIENT_EFFECTS_JS = `const THEME_ACCENTS = {
+  emerald: '16,185,129',
+  gold: '224,169,79',
+  cyan: '34,211,238',
+  violet: '167,139,250'
+};
+const canvasBursts = [];
+function getAccentRgb(){
+  const t = document.documentElement.getAttribute('data-theme') || 'emerald';
+  return THEME_ACCENTS[t] || THEME_ACCENTS.emerald;
+}
+function spawnBurst(x, y){
+  if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cx = typeof x === 'number' ? x : window.innerWidth / 2;
+  const cy = typeof y === 'number' ? y : window.innerHeight / 2;
+  for(let i = 0; i < 16; i++){
+    const ang = (Math.PI * 2 * i) / 16 + Math.random() * 0.25;
+    const spd = 1.6 + Math.random() * 3.4;
+    canvasBursts.push({ x: cx, y: cy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, life: 1, r: 1.8 + Math.random() * 2.2 });
+  }
+}
+function setPanelTheme(name, persist = true){
+  const valid = THEME_ACCENTS[name] ? name : 'emerald';
+  document.documentElement.setAttribute('data-theme', valid);
+  document.querySelectorAll('.theme-swatch').forEach((b) => {
+    b.classList.toggle('active', b.getAttribute('data-theme-pick') === valid);
+  });
+  if(persist){
+    try{ localStorage.setItem('yono_panel_theme', valid); }catch{}
+  }
+}
+function initAmbientCanvas(){
+  try{
+    const saved = localStorage.getItem('yono_panel_theme');
+    if(saved && THEME_ACCENTS[saved]) setPanelTheme(saved, false);
+  }catch{}
+  const canvas = document.getElementById('ambientCanvas');
+  if(!canvas) return;
+  if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const ctx = canvas.getContext('2d');
+  if(!ctx) return;
+  let w = 0, h = 0;
+  const mouse = { x: -9999, y: -9999 };
+  function resize(){
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize, { passive: true });
+  window.addEventListener('pointermove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; }, { passive: true });
+  const pts = [];
+  const count = Math.min(34, Math.max(16, Math.floor(window.innerWidth / 46)));
+  for(let i = 0; i < count; i++){
+    pts.push({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 0.32,
+      vy: (Math.random() - 0.5) * 0.32,
+      r: 1.2 + Math.random() * 1.4
+    });
+  }
+  function tick(){
+    ctx.clearRect(0, 0, w, h);
+    const rgb = getAccentRgb();
+    for(let i = 0; i < pts.length; i++){
+      const p = pts[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      if(p.x < 0 || p.x > w) p.vx *= -1;
+      if(p.y < 0 || p.y > h) p.vy *= -1;
+      const dxm = mouse.x - p.x, dym = mouse.y - p.y;
+      const dm = Math.hypot(dxm, dym);
+      if(dm < 140 && dm > 1){
+        p.x -= (dxm / dm) * 0.25;
+        p.y -= (dym / dm) * 0.25;
+      }
+      ctx.fillStyle = 'rgba(' + rgb + ',0.32)';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+      for(let j = i + 1; j < pts.length; j++){
+        const q = pts[j];
+        const d = Math.hypot(p.x - q.x, p.y - q.y);
+        if(d < 130){
+          ctx.strokeStyle = 'rgba(' + rgb + ',' + ((1 - d / 130) * 0.14).toFixed(3) + ')';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(q.x, q.y);
+          ctx.stroke();
+        }
+      }
+    }
+    for(let k = canvasBursts.length - 1; k >= 0; k--){
+      const b = canvasBursts[k];
+      b.x += b.vx;
+      b.y += b.vy;
+      b.vx *= 0.96;
+      b.vy *= 0.96;
+      b.life -= 0.032;
+      if(b.life <= 0){ canvasBursts.splice(k, 1); continue; }
+      ctx.fillStyle = 'rgba(' + rgb + ',' + (b.life * 0.75).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r * b.life, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+function initTiltCards(){
+  if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelectorAll('.tilt-card').forEach((card) => {
+    card.addEventListener('pointermove', (e) => {
+      const rect = card.getBoundingClientRect();
+      const px = ((e.clientX - rect.left) / rect.width) * 100;
+      const py = ((e.clientY - rect.top) / rect.height) * 100;
+      const rx = ((py - 50) / 50) * -4.5;
+      const ry = ((px - 50) / 50) * 4.5;
+      card.style.setProperty('--mx', px.toFixed(1) + '%');
+      card.style.setProperty('--my', py.toFixed(1) + '%');
+      card.style.setProperty('--rx', rx.toFixed(2) + 'deg');
+      card.style.setProperty('--ry', ry.toFixed(2) + 'deg');
+    });
+    card.addEventListener('pointerleave', () => {
+      card.style.setProperty('--rx', '0deg');
+      card.style.setProperty('--ry', '0deg');
+    });
+  });
+}`;
+
 /* =====================================================================
  * PUBLIC PORTAL (Sub-Bot Pairing + Full Commands Menu + Live Status)
  * ===================================================================== */
 export function renderPublicPortalHtml(err) {
 	return `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="emerald">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Yono — بوابة ربط البوت وقائمة الأوامر</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+${SHARED_HEAD_ASSETS}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <style>${PANEL_CSS}</style>
 </head>
 <body>
+<canvas id="ambientCanvas" aria-hidden="true"></canvas>
 
 <header class="topbar">
   <div class="topbar-inner">
@@ -186,9 +323,9 @@ export function renderPublicPortalHtml(err) {
     </a>
     <nav class="topnav" aria-label="التنقل الرئيسي">
       <a href="#pair">ربط رقمك</a>
-      <a href="#status">حالة البوت</a>
+      <a href="#cmd-composer">صانع الأوامر</a>
       <a href="#commands">قائمة الأوامر</a>
-      <a href="#events">السجل المباشر</a>
+      <a href="#report-error">بلاغ خطأ</a>
     </nav>
     <div class="top-cta">
       <a class="btn sm ghost" href="/admin">لوحة الإدارة</a>
@@ -197,6 +334,45 @@ export function renderPublicPortalHtml(err) {
 </header>
 
 <main class="container">
+  <!-- Hero Visual Banner + Theme Studio -->
+  <section class="hero-banner-shell reveal" aria-label="واجهة المنصة">
+    <div class="hero-banner-copy">
+      <div class="hero-kicker">
+        <span>منصة التحكم والذكاء الاصطناعي</span>
+        <span aria-hidden="true">·</span>
+        <span>ربط فوري وتشغيل مستقل</span>
+      </div>
+      <h1 class="hero-headline">بوابة يونو الذكية — اربط رقمك واصنع أوامرك الاحترافية في ثوانٍ</h1>
+      <p class="hero-desc">
+        استكشف أدوات توليد الصور والفيديو والموسيقى بدون مفاتيح، وابحث عبر 14 موقع صور دفعة واحدة، أو أدر بوتك الفرعي الخاص بك بالكامل من هنا.
+      </p>
+      <div class="hero-actions-row">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <a class="btn primary" href="#pair">ابدأ ربط رقمك</a>
+          <a class="btn" href="#cmd-composer">افتح صانع الأوامر</a>
+        </div>
+        <div class="theme-bar" role="group" aria-label="اختيار سمة الألوان">
+          <span class="theme-label">المظهر</span>
+          <button type="button" class="theme-swatch active" data-theme-pick="emerald" title="زمردي" onclick="setPanelTheme('emerald')"><span class="theme-dot" style="background:#10b981"></span></button>
+          <button type="button" class="theme-swatch" data-theme-pick="gold" title="ذهبي" onclick="setPanelTheme('gold')"><span class="theme-dot" style="background:#e0a94f"></span></button>
+          <button type="button" class="theme-swatch" data-theme-pick="cyan" title="سماوي" onclick="setPanelTheme('cyan')"><span class="theme-dot" style="background:#22d3ee"></span></button>
+          <button type="button" class="theme-swatch" data-theme-pick="violet" title="بنفسجي" onclick="setPanelTheme('violet')"><span class="theme-dot" style="background:#a78bfa"></span></button>
+        </div>
+      </div>
+    </div>
+    <div class="hero-media-pane">
+      <img class="hero-banner-img" src="/panel-assets/hero-banner.jpg" alt="واجهة منصة يونو المعمارية" referrerpolicy="no-referrer" onerror="this.style.display='none'"/>
+      <div class="hero-banner-scrim"></div>
+      <div class="hero-avatar-lockup">
+        <img class="hero-avatar-img" src="/panel-assets/bot-avatar.jpg" alt="شعار بوت يونو" referrerpolicy="no-referrer" onerror="this.style.display='none'"/>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--txt)">Yono Multi-Device</div>
+          <div style="font-size:11.5px;color:var(--mut)">متاح 24/7 · بدون مفاتيح API</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Hero Workspace Split -->
   <div class="hero-split">
     <!-- Primary Anchor: Sub-Bot Pairing & Control -->
@@ -409,6 +585,101 @@ export function renderPublicPortalHtml(err) {
     </div>
   </section>
 
+  <!-- Interactive 4-Card Capabilities Showcase -->
+  <section class="showcase-grid reveal-d2" aria-label="أبرز قدرات المنصة">
+    <button type="button" class="tilt-card" onclick="document.getElementById('pair')?.scrollIntoView({behavior:'smooth'})">
+      <div class="showcase-thumb">
+        <img src="/panel-assets/subbot-node.jpg" alt="عقد البوتات الفرعية" referrerpolicy="no-referrer" onerror="this.style.display='none'"/>
+      </div>
+      <div class="showcase-kicker">01 · بوت مستقل</div>
+      <div class="showcase-title">ربط سريع برقمك</div>
+      <div class="showcase-desc">احصل على كود 8 خانات أو QR وشغّل بوتك المستقل مع تحكم كامل في البادئة والترحيب.</div>
+    </button>
+
+    <button type="button" class="tilt-card" onclick="document.getElementById('cmd-composer')?.scrollIntoView({behavior:'smooth'})">
+      <div class="showcase-thumb">
+        <img src="/panel-assets/hero-banner.jpg" alt="استوديو الذكاء الاصطناعي" referrerpolicy="no-referrer" onerror="this.style.display='none'"/>
+      </div>
+      <div class="showcase-kicker">02 · ذكاء اصطناعي مجاني</div>
+      <div class="showcase-title">توليد صور وفيديو وصوت</div>
+      <div class="showcase-desc">صمّم لوحات، مقاطع فيديو، تعليق صوتي وموسيقى شرقية أو سينمائية بضغطة زر.</div>
+    </button>
+
+    <button type="button" class="tilt-card" onclick="document.getElementById('commands')?.scrollIntoView({behavior:'smooth'})">
+      <div class="showcase-thumb" style="background:radial-gradient(circle at 25% 25%,var(--acc-soft),var(--bg) 75%)">
+        <svg width="100%" height="100%" viewBox="0 0 320 110" fill="none" aria-hidden="true" style="display:block">
+          <defs>
+            <pattern id="cmdGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+              <path d="M 24 0 L 0 0 0 24" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>
+            </pattern>
+          </defs>
+          <rect width="320" height="110" fill="url(#cmdGrid)"/>
+          <rect x="26" y="18" width="124" height="32" rx="6" fill="rgba(16,185,129,0.08)" stroke="var(--acc)" stroke-opacity="0.45"/>
+          <rect x="166" y="18" width="128" height="32" rx="6" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.12)"/>
+          <rect x="26" y="60" width="166" height="32" rx="6" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.12)"/>
+          <rect x="208" y="60" width="86" height="32" rx="6" fill="rgba(16,185,129,0.1)" stroke="var(--acc)" stroke-opacity="0.5"/>
+          <circle cx="42" cy="34" r="4" fill="var(--acc)"/>
+          <rect x="54" y="30" width="76" height="8" rx="3" fill="rgba(255,255,255,0.28)"/>
+          <rect x="182" y="30" width="92" height="8" rx="3" fill="rgba(255,255,255,0.18)"/>
+          <rect x="42" y="72" width="126" height="8" rx="3" fill="rgba(255,255,255,0.2)"/>
+          <circle cx="224" cy="76" r="4" fill="var(--acc)"/>
+          <rect x="236" y="72" width="44" height="8" rx="3" fill="var(--acc)" fill-opacity="0.65"/>
+        </svg>
+      </div>
+      <div class="showcase-kicker">03 · بحث 14 موقعاً</div>
+      <div class="showcase-title">موسوعة الأوامر الفورية</div>
+      <div class="showcase-desc">تصفّح كل أوامر البوت، ابحث بالاسم أو التصنيف، وانسخ الأمر جاهزاً للاستخدام.</div>
+    </button>
+
+    <button type="button" class="tilt-card" onclick="document.getElementById('report-error')?.scrollIntoView({behavior:'smooth'})">
+      <div class="showcase-thumb">
+        <img src="/panel-assets/support-card.jpg" alt="الدعم الفني المباشر" referrerpolicy="no-referrer" onerror="this.style.display='none'"/>
+      </div>
+      <div class="showcase-kicker">04 · إشعار فوري للمالك</div>
+      <div class="showcase-title">إبلاغ مباشر عن الأخطاء</div>
+      <div class="showcase-desc">اكتب أي ملاحظة أو عطل وسيصل البلاغ فوراً لحساب المالك على واتساب عبر البوت الأساسي.</div>
+    </button>
+  </section>
+
+  <!-- Interactive Smart Command Composer Studio -->
+  <section class="surface section-gap reveal-d3" id="cmd-composer">
+    <div class="surface-head">
+      <div>
+        <h2 class="surface-title">صانع الأوامر الاحترافي</h2>
+        <p class="surface-sub">ركّب أمر توليد الصور أو الفيديو أو البحث من 14 موقعاً دون حفظ الاختصارات، ثم انسخه مباشرة لواتساب</p>
+      </div>
+      <span class="meta-line" id="composerModeLabel">صور AI</span>
+    </div>
+
+    <div class="seg-bar" role="tablist" aria-label="أداة الصانع">
+      <button type="button" class="seg-btn active" data-ctab="image" onclick="setComposerMode('image', this)">توليد صورة AI</button>
+      <button type="button" class="seg-btn" data-ctab="video" onclick="setComposerMode('video', this)">فيديو AI</button>
+      <button type="button" class="seg-btn" data-ctab="search" onclick="setComposerMode('search', this)">بحث صور (14 موقعاً)</button>
+      <button type="button" class="seg-btn" data-ctab="audio" onclick="setComposerMode('audio', this)">صوت وموسيقى</button>
+    </div>
+
+    <div class="composer-grid">
+      <div>
+        <div id="composerOptions"></div>
+        <div class="field" style="margin-bottom:0">
+          <label for="composerPrompt">الوصف أو كلمة البحث</label>
+          <input id="composerPrompt" placeholder="مثال: أسد يطير فوق أهرامات الجيزة وقت الغروب" oninput="updateComposerPreview()"/>
+        </div>
+      </div>
+
+      <div class="composer-output-box">
+        <div>
+          <div style="font-size:12px;color:var(--mut);margin-bottom:8px">الأمر الجاهز للنسخ والإرسال في واتساب</div>
+          <div class="composer-code" id="composerPreview" dir="auto">.ارسم أسد يطير فوق أهرامات الجيزة وقت الغروب</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="primary" id="btnCopyComposer" onclick="copyComposerCmd(event, this)">نسخ الأمر الجاهز</button>
+          <button type="button" class="btn" onclick="randomizeComposerIdea()">فكرة عشوائية</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Full Commands Directory (Available to All Users) -->
   <section class="surface section-gap reveal-d3" id="commands">
     <div class="surface-head">
@@ -432,6 +703,72 @@ export function renderPublicPortalHtml(err) {
 
     <div class="cmd-grid" id="pubCmdGrid" style="max-height:540px">
       <div class="muted">جاري تحميل قائمة الأوامر...</div>
+    </div>
+  </section>
+
+  <!-- Bug Reporting Section (Sends to Owner via Main Bot) -->
+  <section class="surface section-gap" id="report-error">
+    <div class="surface-head">
+      <div>
+        <h2 class="surface-title">الإبلاغ عن خطأ أو مشكلة فنية</h2>
+        <p class="surface-sub">هل واجهت مشكلة في أحد الأوامر أو في البوت الفرعي؟ اكتبها هنا وسيتم توجيهها فوراً إلى المالك عبر البوت الأساسي</p>
+      </div>
+      <span class="meta-line">إرسال مباشر للمالك</span>
+    </div>
+
+    <div class="bug-split">
+      <div>
+        <div class="form-row">
+          <div class="field">
+            <label for="bugCategory">نوع البلاغ</label>
+            <select id="bugCategory">
+              <option value="bug">خطأ برمجي / تعطل أمر</option>
+              <option value="command">نتيجة غير متوقعة في أمر</option>
+              <option value="subbot">مشكلة في البوت الفرعي</option>
+              <option value="suggestion">اقتراح تحسين</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="bugTitle">عنوان مختصر</label>
+            <input id="bugTitle" placeholder="مثال: تعذر توليد صورة بأمر .ارسم"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label for="bugCommand">الأمر المستخدم (اختياري)</label>
+            <input id="bugCommand" class="mono" dir="auto" placeholder=".ارسم أسد يطير"/>
+          </div>
+          <div class="field">
+            <label for="bugContact">رقمك أو معرفك للتواصل (اختياري)</label>
+            <input id="bugContact" class="ltr" placeholder="201xxxxxxxxx"/>
+          </div>
+        </div>
+        <div class="field">
+          <label for="bugDetails">وصف المشكلة أو نص الخطأ</label>
+          <textarea id="bugDetails" placeholder="اشرح ما حدث أو الصق رسالة الخطأ التي ظهرت لك..."></textarea>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <button type="button" class="primary" id="btnSubmitBug" onclick="submitBugReport()">إرسال البلاغ للمالك</button>
+          <span class="hint">يُسلَّم مباشرة على واتساب المالك ويُحفظ في سجل الإدارة</span>
+        </div>
+        <div id="bugResultBox" class="hidden" style="margin-top:12px"></div>
+      </div>
+
+      <div class="bug-art-card">
+        <div class="bug-art-media">
+          <img src="/panel-assets/support-card.jpg" alt="قنوات التواصل والدعم الفني" referrerpolicy="no-referrer" onerror="this.style.display='none'"/>
+        </div>
+        <div class="bug-art-body">
+          <div style="font-size:14.5px;font-weight:700;color:var(--txt)">خط دعم مباشر مع المطور</div>
+          <p class="hint">
+            عند إرسال أي بلاغ من هنا يقوم البوت الأساسي بإرسال إشعار منظم يحتوي على تفاصيل المشكلة ورقم تتبع فوري لحساب المالك.
+          </p>
+          <div class="kv-row" style="margin-top:auto">
+            <span class="kv-key">مسار التوجيه</span>
+            <span class="kv-val ok">البوت الأساسي ← المالك</span>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -816,9 +1153,165 @@ async function refresh(){
   } catch {}
 }
 
+const composerState = {
+  mode: 'image',
+  imgModel: 'auto',
+  imgAspect: '1:1',
+  vidMode: 'auto',
+  vidVoice: false,
+  searchSrc: 'auto',
+  searchCount: '4',
+  audioKind: 'tts',
+  audioOpt: 'ar'
+};
+const COMPOSER_IDEAS = {
+  image: ['أسد يطير فوق أهرامات الجيزة وقت الغروب', 'القاهرة المستقبلية بأضواء نيون ومطر خفيف', 'قلعة عربية فوق السحاب بأسلوب سينمائي'],
+  video: ['أمواج المحيط وقت الغروب بأسلوب سينمائي', 'صحراء ذهبية وجمال تسير وقت الشروق', 'مدينة مستقبلية تتحرك فيها السيارات الطائرة'],
+  search: ['خلفيات جبال عالية الدقة', 'cyberpunk neon city', 'nebula deep space'],
+  audio: ['أهلاً بكم في بوت يونو الذكي', 'موسيقى شرقية هادئة بالعود', 'موسيقى لوفي للدراسة والتركيز']
+};
+function setComposerChoice(key, val){
+  composerState[key] = val;
+  renderComposerOptions();
+  updateComposerPreview();
+}
+function setComposerMode(mode, btn){
+  composerState.mode = mode;
+  document.querySelectorAll('#cmd-composer .seg-btn').forEach((b) => b.classList.toggle('active', b === btn));
+  const labels = { image: 'صور AI', video: 'فيديو AI', search: 'بحث صور', audio: 'صوت وموسيقى' };
+  if($('composerModeLabel')) $('composerModeLabel').textContent = labels[mode] || 'صور AI';
+  const inp = $('composerPrompt');
+  if(inp && !inp.value.trim()){
+    inp.placeholder = COMPOSER_IDEAS[mode]?.[0] || '';
+  }
+  renderComposerOptions();
+  updateComposerPreview();
+}
+function renderComposerOptions(){
+  const wrap = $('composerOptions');
+  if(!wrap) return;
+  const chip = (key, val, label) => '<button type="button" class="composer-chip' + (composerState[key] === val ? ' active' : '') + '" onclick="setComposerChoice(\\'' + key + '\\', \\'' + val + '\\')">' + esc(label) + '</button>';
+  let html = '';
+  if(composerState.mode === 'image'){
+    html += '<div style="font-size:12px;color:var(--mut);margin-bottom:6px">المحرك المجاني:</div><div class="composer-chips">'
+      + chip('imgModel','auto','تلقائي ذكي') + chip('imgModel','horde','AI Horde (مستقر)') + chip('imgModel','flux','Flux') + chip('imgModel','zimage','Z-Image')
+      + '</div><div style="font-size:12px;color:var(--mut);margin-bottom:6px">الأبعاد:</div><div class="composer-chips">'
+      + chip('imgAspect','1:1','مربع 1:1') + chip('imgAspect','16:9','عريض 16:9') + chip('imgAspect','9:16','ستوري 9:16') + chip('imgAspect','4:3','4:3')
+      + '</div>';
+  } else if(composerState.mode === 'video'){
+    html += '<div style="font-size:12px;color:var(--mut);margin-bottom:6px">التوجيه:</div><div class="composer-chips">'
+      + chip('vidMode','auto','تلقائي (LTX / Motion)') + chip('vidMode','ffmpeg','تحريك سريع FFmpeg')
+      + '</div><div style="font-size:12px;color:var(--mut);margin-bottom:6px">التعليق الصوتي:</div><div class="composer-chips">'
+      + '<button type="button" class="composer-chip' + (!composerState.vidVoice ? ' active' : '') + '" onclick="composerState.vidVoice=false;renderComposerOptions();updateComposerPreview()">بدون صوت</button>'
+      + '<button type="button" class="composer-chip' + (composerState.vidVoice ? ' active' : '') + '" onclick="composerState.vidVoice=true;renderComposerOptions();updateComposerPreview()">مع تعليق صوتي (--tts)</button>'
+      + '</div>';
+  } else if(composerState.mode === 'search'){
+    html += '<div style="font-size:12px;color:var(--mut);margin-bottom:6px">الموقع (14 متاحاً):</div><div class="composer-chips">'
+      + chip('searchSrc','auto','تلقائي متنوع') + chip('searchSrc','pinterest','Pinterest') + chip('searchSrc','wallhaven','Wallhaven HD') + chip('searchSrc','bing','Bing') + chip('searchSrc','nasa','NASA') + chip('searchSrc','safebooru','أنمي')
+      + '</div><div style="font-size:12px;color:var(--mut);margin-bottom:6px">العدد:</div><div class="composer-chips">'
+      + chip('searchCount','3','3 صور') + chip('searchCount','5','5 صور') + chip('searchCount','8','8 صور') + chip('searchCount','12','12 صورة')
+      + '</div>';
+  } else {
+    html += '<div style="font-size:12px;color:var(--mut);margin-bottom:6px">النوع:</div><div class="composer-chips">'
+      + chip('audioKind','tts','نطق نص (TTS)') + chip('audioKind','music','موسيقى وألحان')
+      + '</div><div style="font-size:12px;color:var(--mut);margin-bottom:6px">النمط / اللغة:</div><div class="composer-chips">'
+      + (composerState.audioKind === 'tts'
+        ? (chip('audioOpt','ar','عربي (Google/SoundOfText)') + chip('audioOpt','en','إنجليزي (StreamElements)') + chip('audioOpt','sing','غنائي (TikTok Sing)'))
+        : (chip('audioOpt','12','مقطوعة 12ث') + chip('audioOpt','18','مقطوعة 18ث')))
+      + '</div>';
+  }
+  wrap.innerHTML = html;
+}
+function updateComposerPreview(){
+  const prefix = ($('sbPrefix') && $('sbPrefix').value.trim()) || '.';
+  const prompt = ($('composerPrompt') && $('composerPrompt').value.trim()) || (COMPOSER_IDEAS[composerState.mode]?.[0] || '');
+  let cmd = '';
+  if(composerState.mode === 'image'){
+    const flags = [];
+    if(composerState.imgAspect !== '1:1') flags.push('-a ' + composerState.imgAspect);
+    if(composerState.imgModel !== 'auto') flags.push('-m ' + composerState.imgModel);
+    cmd = prefix + 'ارسم ' + (flags.length ? flags.join(' ') + ' ' : '') + prompt;
+  } else if(composerState.mode === 'video'){
+    const flags = [];
+    if(composerState.vidMode === 'ffmpeg') flags.push('-m motion');
+    if(composerState.vidVoice) flags.push('--tts');
+    cmd = prefix + 'فيديو_ai ' + (flags.length ? flags.join(' ') + ' ' : '') + prompt;
+  } else if(composerState.mode === 'search'){
+    const parts = [prefix + 'صور'];
+    if(composerState.searchSrc !== 'auto') parts.push(composerState.searchSrc);
+    if(composerState.searchCount !== '3') parts.push(composerState.searchCount);
+    parts.push(prompt);
+    cmd = parts.join(' ');
+  } else {
+    if(composerState.audioKind === 'tts'){
+      if(composerState.audioOpt === 'sing') cmd = prefix + 'say -m tiktok -v sing ' + prompt;
+      else if(composerState.audioOpt === 'en') cmd = prefix + 'tts -m streamelements -l en ' + prompt;
+      else cmd = prefix + 'انطق ' + prompt;
+    } else {
+      cmd = prefix + 'موسيقى_ai -d ' + (composerState.audioOpt === '18' ? '18' : '12') + ' ' + prompt;
+    }
+  }
+  if($('composerPreview')) $('composerPreview').textContent = cmd;
+}
+function randomizeComposerIdea(){
+  const pool = COMPOSER_IDEAS[composerState.mode] || COMPOSER_IDEAS.image;
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  if($('composerPrompt')) $('composerPrompt').value = pick;
+  updateComposerPreview();
+}
+function copyComposerCmd(e, btn){
+  const cmd = ($('composerPreview') && $('composerPreview').textContent) || '';
+  copyCodeValue(cmd, btn);
+  if(e) spawnBurst(e.clientX, e.clientY);
+}
+
+async function submitBugReport(){
+  const btn = $('btnSubmitBug');
+  const box = $('bugResultBox');
+  const category = ($('bugCategory') && $('bugCategory').value) || 'bug';
+  const title = ($('bugTitle') && $('bugTitle').value.trim()) || '';
+  const command = ($('bugCommand') && $('bugCommand').value.trim()) || '';
+  const contact = ($('bugContact') && $('bugContact').value.trim()) || '';
+  const details = ($('bugDetails') && $('bugDetails').value.trim()) || '';
+  if(details.length < 4){
+    showMsg(box, 'يرجى كتابة وصف واضح للخطأ (4 أحرف على الأقل).', true);
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'جاري إرسال البلاغ...';
+  try{
+    const r = await api('/api/public/report-error', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ category, title, command, contact, details })
+    });
+    if(r.ok){
+      showMsg(box, r.message || 'تم إرسال البلاغ بنجاح ✓', false);
+      toast('تم إرسال البلاغ للمالك ✓', 'ok');
+      spawnBurst(window.innerWidth / 2, window.innerHeight / 2);
+      if($('bugTitle')) $('bugTitle').value = '';
+      if($('bugDetails')) $('bugDetails').value = '';
+      refresh();
+    } else {
+      showMsg(box, r.error || 'تعذر إرسال البلاغ', true);
+    }
+  } catch(e){
+    showMsg(box, e.message || 'حدث خطأ أثناء الإرسال', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'إرسال البلاغ للمالك';
+  }
+}
+
+${AMBIENT_EFFECTS_JS}
+
 setInterval(refresh, 3000);
 refresh();
 filterPublicCommands();
+renderComposerOptions();
+updateComposerPreview();
+initAmbientCanvas();
+initTiltCards();
 </script>
 </body>
 </html>`;
@@ -829,11 +1322,12 @@ filterPublicCommands();
  * ===================================================================== */
 export function renderAdminLoginHtml(err) {
 	return `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="emerald">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>دخول الإدارة — Yono</title>
+${SHARED_HEAD_ASSETS}
 <style>${PANEL_CSS}</style>
 </head>
 <body>
@@ -929,15 +1423,17 @@ function renderInstall(d){
 export function renderAdminPanelHtml(installRenderJs) {
 	const IJS = installRenderJs || INSTALL_RENDER_JS;
 	return `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="emerald">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>لوحة الإدارة — Yono</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+${SHARED_HEAD_ASSETS}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <style>${PANEL_CSS}</style>
 </head>
 <body>
+<canvas id="ambientCanvas" aria-hidden="true"></canvas>
 
 <div class="admin-shell">
   <!-- Sidebar -->
@@ -953,6 +1449,7 @@ export function renderAdminPanelHtml(installRenderJs) {
       <button type="button" class="side-btn" data-sec="settings" onclick="showSection('settings', this)"><span>سلوك البوت</span><span class="side-count" id="navModeBadge">-</span></button>
       <button type="button" class="side-btn" data-sec="subbots" onclick="showSection('subbots', this)"><span>البوتات الفرعية</span><span class="side-count" id="navSubCount">0</span></button>
       <button type="button" class="side-btn" data-sec="send" onclick="showSection('send', this)"><span>استوديو الإرسال</span></button>
+      <button type="button" class="side-btn" data-sec="bugs" onclick="showSection('bugs', this)"><span>بلاغات الأخطاء</span><span class="side-count" id="navBugCount">0</span></button>
       <button type="button" class="side-btn" data-sec="commands" onclick="showSection('commands', this)"><span>الأوامر والإحصائيات</span><span class="side-count" id="navCmdCount">0</span></button>
       <button type="button" class="side-btn" data-sec="security" onclick="showSection('security', this)"><span>الصيانة والسجل</span></button>
     </nav>
@@ -982,6 +1479,7 @@ export function renderAdminPanelHtml(installRenderJs) {
       <button type="button" class="seg-btn" data-sec="settings" onclick="showSection('settings', this)">الإعدادات</button>
       <button type="button" class="seg-btn" data-sec="subbots" onclick="showSection('subbots', this)">الفرعية</button>
       <button type="button" class="seg-btn" data-sec="send" onclick="showSection('send', this)">إرسال</button>
+      <button type="button" class="seg-btn" data-sec="bugs" onclick="showSection('bugs', this)">البلاغات</button>
       <button type="button" class="seg-btn" data-sec="commands" onclick="showSection('commands', this)">الأوامر</button>
       <button type="button" class="seg-btn" data-sec="security" onclick="showSection('security', this)">السجل</button>
     </div>
@@ -1175,6 +1673,23 @@ export function renderAdminPanelHtml(installRenderJs) {
         </div>
       </section>
 
+      <!-- Section: Bug Reports Inbox -->
+      <section class="surface section-gap" data-section="bugs">
+        <div class="surface-head">
+          <div>
+            <h2 class="surface-title">صندوق بلاغات الأخطاء والملاحظات</h2>
+            <p class="surface-sub">البلاغات الواردة من البوابة العامة — تُرسل أيضاً لحساب المالك عبر البوت الأساسي</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="meta-line" id="bugCountMeta">0 بلاغ</span>
+            <button type="button" class="btn sm ghost" onclick="act('bug-clear')">مسح المحلولة</button>
+          </div>
+        </div>
+        <div class="bug-list" id="bugReportsList">
+          <div class="muted">لا توجد بلاغات أخطاء مسجلة حتى الآن</div>
+        </div>
+      </section>
+
       <!-- Section: Security, Maintenance, Updates & Log -->
       <section class="grid-12 section-gap" data-section="security">
         <div class="surface col-5">
@@ -1234,6 +1749,7 @@ const SEC_LABELS = {
   settings: 'سلوك البوت',
   subbots: 'البوتات الفرعية',
   send: 'استوديو الإرسال',
+  bugs: 'بلاغات الأخطاء',
   commands: 'الأوامر والإحصائيات',
   security: 'الصيانة والسجل'
 };
@@ -1484,6 +2000,31 @@ async function refresh(){
     ).join('') : '<tr><td colspan="6" class="muted">لا توجد بوتات فرعية مسجلة</td></tr>';
   }
 
+  const bugs = s.bugReports || [];
+  const openBugs = bugs.filter((b) => b.status !== 'resolved').length;
+  if($('navBugCount')) $('navBugCount').textContent = openBugs;
+  if($('bugCountMeta')) $('bugCountMeta').textContent = openBugs + ' مفتوح · ' + bugs.length + ' إجمالي';
+  const bugWrap = $('bugReportsList');
+  if(bugWrap){
+    bugWrap.innerHTML = bugs.length ? bugs.map((b) =>
+      '<div class="bug-item' + (b.status === 'resolved' ? ' resolved' : '') + '">'
+      + '<div class="bug-item-head">'
+      + '<div><strong>' + esc(b.title || 'بلاغ خطأ') + '</strong> <span class="mono" style="font-size:11px;color:var(--dim)">' + esc(b.id) + '</span></div>'
+      + '<div style="display:flex;gap:6px">'
+      + '<button type="button" class="btn sm" onclick="act(\\'bug-resolve\\',{id:\\'' + esc(b.id) + '\\'})">' + (b.status === 'resolved' ? 'إعادة فتح' : 'تم الحل ✓') + '</button>'
+      + '<button type="button" class="btn sm danger" onclick="act(\\'bug-delete\\',{id:\\'' + esc(b.id) + '\\'})">حذف</button>'
+      + '</div></div>'
+      + '<div class="bug-item-meta">'
+      + '<span>' + esc(b.category || 'bug') + '</span>'
+      + (b.commandRef ? '<span>·</span><span class="mono ltr">' + esc(b.commandRef) + '</span>' : '')
+      + (b.contact ? '<span>·</span><span class="ltr">' + esc(b.contact) + '</span>' : '')
+      + '<span>·</span><span>' + (b.deliveredToOwner ? 'أُرسل للمالك ✓' : 'محفوظ باللوحة') + '</span>'
+      + '</div>'
+      + '<div class="bug-item-text">' + esc(b.details || '') + '</div>'
+      + '</div>'
+    ).join('') : '<div class="muted">لا توجد بلاغات أخطاء مسجلة حتى الآن</div>';
+  }
+
   const log=$('log');
   if(log){
     log.innerHTML = (s.events||[]).map(e => {
@@ -1494,10 +2035,13 @@ async function refresh(){
   }
 }
 
+${AMBIENT_EFFECTS_JS}
+
 setInterval(refresh, 3000);
 setInterval(loadCommands, 15000);
 refresh();
 loadCommands();
+initAmbientCanvas();
 </script>
 </body>
 </html>`;
@@ -1508,11 +2052,12 @@ loadCommands();
  * ===================================================================== */
 export function renderMaintenanceHtml(msg) {
 	return `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="emerald">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>الموقع في وضع الصيانة — Yono</title>
+${SHARED_HEAD_ASSETS}
 <style>${PANEL_CSS}</style>
 </head>
 <body>

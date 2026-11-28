@@ -29,10 +29,67 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
+const PANEL_ASSETS = {
+	'/panel-assets/hero-banner.jpg': path.join(ROOT, 'src', 'assets', 'images', 'hero_banner_1795868491633.jpg'),
+	'/panel-assets/bot-avatar.jpg': path.join(ROOT, 'src', 'assets', 'images', 'bot_avatar_1795868492331.jpg'),
+	'/panel-assets/support-card.jpg': path.join(ROOT, 'src', 'assets', 'images', 'support_card_1795868492613.jpg'),
+	'/panel-assets/subbot-node.jpg': path.join(ROOT, 'src', 'assets', 'images', 'subbot_node_1795868492869.jpg'),
+};
+
 function configFilePath() {
 	return process.env.PANEL_CONFIG_FILE
 		? path.resolve(process.env.PANEL_CONFIG_FILE)
 		: path.join(__dirname, 'panel-config.json');
+}
+
+function bugReportsFilePath() {
+	return process.env.BUG_REPORTS_FILE
+		? path.resolve(process.env.BUG_REPORTS_FILE)
+		: path.join(ROOT, 'data', 'bug-reports.json');
+}
+
+function readBugReports() {
+	try {
+		const p = bugReportsFilePath();
+		if (!fs.existsSync(p)) return [];
+		const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+		return Array.isArray(parsed) ? parsed : [];
+	} catch {
+		return [];
+	}
+}
+
+function saveBugReports(list) {
+	const p = bugReportsFilePath();
+	const tmp = `${p}.tmp-${process.pid}-${Date.now()}`;
+	try {
+		fs.mkdirSync(path.dirname(p), { recursive: true });
+		fs.writeFileSync(tmp, JSON.stringify((Array.isArray(list) ? list : []).slice(0, 100), null, 2));
+		fs.renameSync(tmp, p);
+	} catch {
+		try {
+			fs.rmSync(tmp, { force: true });
+		} catch {}
+	}
+}
+
+function resolveOwnerJids() {
+	const owners = Array.isArray(global.owner) ? global.owner : [];
+	const out = [];
+	const seen = new Set();
+	for (const entry of owners) {
+		const raw = Array.isArray(entry) ? entry[0] : entry;
+		const digits = String(raw || '').replace(/[^0-9]/g, '');
+		if (/^\d{8,14}$/.test(digits)) {
+			const jid = `${digits}@s.whatsapp.net`;
+			if (!seen.has(jid)) {
+				seen.add(jid);
+				out.push(jid);
+			}
+		}
+	}
+	if (!out.length) out.push('201212446299@s.whatsapp.net');
+	return out;
 }
 
 /* ============================== Config ============================== */
@@ -245,6 +302,28 @@ function bumpSubPairCount(ip) {
 	a.n += 1;
 }
 
+/* bug report rate limiting */
+const BUG_WINDOW_MS = 120_000;
+const BUG_MAX_PER_WINDOW = 6;
+const bugCounts = new Map();
+function bugBlocked(ip) {
+	const a = bugCounts.get(ip);
+	if (!a) return false;
+	if (Date.now() - a.t > BUG_WINDOW_MS) {
+		bugCounts.delete(ip);
+		return false;
+	}
+	return a.n >= BUG_MAX_PER_WINDOW;
+}
+function bumpBugCount(ip) {
+	const a = bugCounts.get(ip);
+	if (!a || Date.now() - a.t > BUG_WINDOW_MS) {
+		bugCounts.set(ip, { n: 1, t: Date.now() });
+		return;
+	}
+	a.n += 1;
+}
+
 function readBody(req, limit = 1024 * 1024) {
 	return new Promise((resolve) => {
 		let data = '';
@@ -271,9 +350,9 @@ function sendJson(res, code, obj, extra = {}) {
 	res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...extra });
 	res.end(body);
 }
-function sendHtml(res, code, html) {
+function sendHtml(res, code, html, isHead = false) {
 	res.writeHead(code, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-	res.end(html);
+	res.end(isHead ? undefined : html);
 }
 function currentCommit() {
 	try {
@@ -513,6 +592,7 @@ function getClientInfo(client) {
 		botSettings: getBotSettingsSnapshot(client),
 		stats: statsSnap,
 		subBots,
+		bugReports: readBugReports().slice(0, 50),
 		events: getEvents(),
 	};
 }
@@ -555,6 +635,24 @@ export async function handleWebRequest(req, res, client, options = {}) {
 	const authed = verifyCookie(cookies.pw);
 	const maintenance = isMaintenanceActive();
 
+	const isGetOrHead = req.method === 'GET' || req.method === 'HEAD';
+	const isHead = req.method === 'HEAD';
+
+	if (isGetOrHead && PANEL_ASSETS[url.pathname]) {
+		const assetPath = PANEL_ASSETS[url.pathname];
+		if (!fs.existsSync(assetPath)) {
+			res.writeHead(404);
+			return res.end();
+		}
+		const buf = fs.readFileSync(assetPath);
+		res.writeHead(200, {
+			'Content-Type': 'image/jpeg',
+			'Content-Length': String(buf.length),
+			'Cache-Control': 'public, max-age=86400',
+		});
+		return res.end(isHead ? undefined : buf);
+	}
+
 	if (req.method === 'GET' && url.pathname === '/api/maintenance-status') {
 		return sendJson(res, 200, { maintenance });
 	}
@@ -562,22 +660,22 @@ export async function handleWebRequest(req, res, client, options = {}) {
 	if (maintenance && !authed) {
 		if (req.method === 'POST' && url.pathname === '/login') {
 			// allow admin login POST during maintenance
-		} else if (req.method === 'GET' && url.pathname === '/admin') {
-			return sendHtml(res, 200, renderAdminLoginHtml(''));
+		} else if (isGetOrHead && url.pathname === '/admin') {
+			return sendHtml(res, 200, renderAdminLoginHtml(''), isHead);
 		} else if (url.pathname.startsWith('/api/')) {
 			return sendJson(res, 503, { ok: false, maintenance: true, error: 'الموقع في وضع الصيانة، حاول مرة أخرى لاحقاً' });
 		} else {
-			return sendHtml(res, 503, renderMaintenanceHtml(''));
+			return sendHtml(res, 503, renderMaintenanceHtml(''), isHead);
 		}
 	}
 
-	if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-		return sendHtml(res, 200, renderPublicPortalHtml('', INSTALL_RENDER_JS));
+	if (isGetOrHead && (url.pathname === '/' || url.pathname === '/index.html')) {
+		return sendHtml(res, 200, renderPublicPortalHtml('', INSTALL_RENDER_JS), isHead);
 	}
 
-	if (req.method === 'GET' && url.pathname === '/admin') {
-		if (authed) return sendHtml(res, 200, renderAdminPanelHtml(INSTALL_RENDER_JS));
-		return sendHtml(res, 200, renderAdminLoginHtml(''));
+	if (isGetOrHead && url.pathname === '/admin') {
+		if (authed) return sendHtml(res, 200, renderAdminPanelHtml(INSTALL_RENDER_JS), isHead);
+		return sendHtml(res, 200, renderAdminLoginHtml(''), isHead);
 	}
 
 	if (req.method === 'POST' && url.pathname === '/login') {
@@ -615,6 +713,76 @@ export async function handleWebRequest(req, res, client, options = {}) {
 		const page = parseInt(url.searchParams.get('page') || '1', 10) || 1;
 		const limit = hasLimit ? parseInt(url.searchParams.get('limit') || '36', 10) || 36 : 0;
 		return sendJson(res, 200, buildCommandsCatalog({ q, cat, page, limit }));
+	}
+
+	if (req.method === 'POST' && url.pathname === '/api/public/report-error') {
+		if (bugBlocked(ip)) {
+			return sendJson(res, 429, { ok: false, error: 'تم استلام عدة بلاغات متتالية — انتظر دقيقتين قبل إرسال بلاغ جديد.' });
+		}
+		const { json } = await readBody(req);
+		const title = String(json?.title || '').trim().slice(0, 120);
+		const category = String(json?.category || 'bug').trim().slice(0, 32) || 'bug';
+		const details = String(json?.details || json?.message || '').trim().slice(0, 2000);
+		const contact = String(json?.contact || '').trim().slice(0, 100);
+		const commandRef = String(json?.command || '').trim().slice(0, 80);
+
+		if (details.length < 4) {
+			return sendJson(res, 400, { ok: false, error: 'يرجى كتابة وصف واضح للخطأ (4 أحرف على الأقل).' });
+		}
+		bumpBugCount(ip);
+
+		const report = {
+			id: `BUG-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`,
+			title: title || 'بلاغ خطأ من لوحة الويب',
+			category,
+			commandRef,
+			details,
+			contact,
+			status: 'open',
+			deliveredToOwner: false,
+			createdAt: Date.now(),
+		};
+
+		const st = global.__panelState || (global.__panelState = {});
+		const activeConn = client || global.conn;
+		if (activeConn && typeof activeConn.sendMessage === 'function' && (activeConn.user || st.connection === 'open')) {
+			const catLabels = { bug: 'عطل / خطأ برمجي', command: 'مشكلة في أمر', subbot: 'مشكلة في البوت الفرعي', suggestion: 'ملاحظة / اقتراح' };
+			const ownerMsg = [
+				'🐞 *بلاغ خطأ جديد من لوحة الويب*',
+				`🆔 *الرقم:* \`${report.id}\``,
+				`📂 *التصنيف:* ${catLabels[category] || category}`,
+				`📌 *العنوان:* ${report.title}`,
+				commandRef ? `⌨️ *الأمر:* \`${commandRef}\`` : '',
+				contact ? `👤 *التواصل:* ${contact}` : '',
+				'',
+				`📝 *التفاصيل:*`,
+				details,
+			]
+				.filter(Boolean)
+				.join('\n');
+
+			for (const jid of resolveOwnerJids()) {
+				try {
+					await activeConn.sendMessage(jid, { text: ownerMsg });
+					report.deliveredToOwner = true;
+					break;
+				} catch {}
+			}
+		}
+
+		const list = readBugReports();
+		list.unshift(report);
+		saveBugReports(list);
+		pushEvent(`بلاغ جديد (${report.id}): ${report.title}${report.deliveredToOwner ? ' — تم إرساله للمالك ✓' : ''}`, 'bug');
+
+		return sendJson(res, 200, {
+			ok: true,
+			id: report.id,
+			deliveredToOwner: report.deliveredToOwner,
+			message: report.deliveredToOwner
+				? `تم تسجيل البلاغ (${report.id}) وإرساله مباشرة للمالك عبر البوت الأساسي ✓`
+				: `تم تسجيل البلاغ (${report.id}) وحفظه في صندوق الإدارة لحين اتصال البوت الأساسي.`,
+		});
 	}
 
 	/* ============ Public sub-bot pairing (no admin login required) ============ */
@@ -1073,6 +1241,31 @@ export async function handleWebRequest(req, res, client, options = {}) {
 					} catch {}
 					pushEvent(`تحديث إعدادات البوت الأساسي (${next.public ? 'عام' : 'خاص'} · ${next.gconly ? 'مجموعات فقط' : 'خاص ومجموعات'})`);
 					return sendJson(res, 200, { ok: true, botSettings: getBotSettingsSnapshot(activeConn), message: 'تم حفظ إعدادات البوت الأساسي وتطبيقها فوراً' });
+				}
+
+				case 'bug-resolve': {
+					const id = String(json?.id || '').trim();
+					if (!id) return sendJson(res, 400, { ok: false, message: 'معرّف البلاغ مطلوب' });
+					const list = readBugReports();
+					const item = list.find((x) => x.id === id);
+					if (!item) return sendJson(res, 404, { ok: false, message: 'البلاغ غير موجود' });
+					item.status = item.status === 'resolved' ? 'open' : 'resolved';
+					item.resolvedAt = item.status === 'resolved' ? Date.now() : 0;
+					saveBugReports(list);
+					return sendJson(res, 200, { ok: true, bugReports: list, message: item.status === 'resolved' ? 'تم تحديد البلاغ كمحلول' : 'تمت إعادة فتح البلاغ' });
+				}
+
+				case 'bug-delete': {
+					const id = String(json?.id || '').trim();
+					const nextList = readBugReports().filter((x) => x.id !== id);
+					saveBugReports(nextList);
+					return sendJson(res, 200, { ok: true, bugReports: nextList, message: 'تم حذف البلاغ' });
+				}
+
+				case 'bug-clear': {
+					const nextList = readBugReports().filter((x) => x.status !== 'resolved');
+					saveBugReports(nextList);
+					return sendJson(res, 200, { ok: true, bugReports: nextList, message: 'تم مسح البلاغات المحلولة' });
 				}
 
 				default:

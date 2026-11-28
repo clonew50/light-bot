@@ -5,33 +5,51 @@
  * + IBM Plex Mono tabular numerals, compositor-only motion, zero pill-clutter.
  */
 export const PANEL_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap');
-
   :root{
-    --bg:#0c0f14;
-    --bg-elevated:#11151d;
-    --surface:#141923;
-    --surface-2:#1a202c;
-    --line:#232a38;
-    --line-strong:#313b4f;
-    --txt:#eef1f6;
-    --mut:#98a3b6;
-    --dim:#667287;
+    --bg:#0b0e13;
+    --bg-elevated:#10151d;
+    --surface:#141a24;
+    --surface-2:#1a2230;
+    --line:#232b3a;
+    --line-strong:#323d52;
+    --txt:#eef2f7;
+    --mut:#9aa6b8;
+    --dim:#6c788e;
     --acc:#10b981;
     --acc-hover:#059669;
-    --acc-soft:rgba(16,185,129,.12);
-    --acc-border:rgba(16,185,129,.34);
+    --acc-soft:rgba(16,185,129,.14);
+    --acc-border:rgba(16,185,129,.38);
+    --acc-glow:rgba(16,185,129,.18);
     --gold:#d4a24c;
-    --gold-soft:rgba(212,162,76,.12);
+    --gold-soft:rgba(212,162,76,.13);
     --err:#e5484d;
-    --err-soft:rgba(229,72,77,.12);
-    --wa-bg:#0b141a;
-    --wa-in:#202c33;
-    --wa-out:#005c4b;
-    --radius-lg:12px;
-    --radius:8px;
+    --err-soft:rgba(229,72,77,.13);
+    --radius-lg:14px;
+    --radius:9px;
     --radius-sm:6px;
     --ease:cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  :root[data-theme="gold"]{
+    --acc:#e0a94f;
+    --acc-hover:#c89238;
+    --acc-soft:rgba(224,169,79,.14);
+    --acc-border:rgba(224,169,79,.4);
+    --acc-glow:rgba(224,169,79,.18);
+  }
+  :root[data-theme="cyan"]{
+    --acc:#22d3ee;
+    --acc-hover:#06b6d4;
+    --acc-soft:rgba(34,211,238,.13);
+    --acc-border:rgba(34,211,238,.38);
+    --acc-glow:rgba(34,211,238,.18);
+  }
+  :root[data-theme="violet"]{
+    --acc:#a78bfa;
+    --acc-hover:#8b5cf6;
+    --acc-soft:rgba(167,139,250,.14);
+    --acc-border:rgba(167,139,250,.38);
+    --acc-glow:rgba(167,139,250,.18);
   }
 
   *{box-sizing:border-box;margin:0;padding:0}
@@ -48,7 +66,14 @@ export const PANEL_CSS = `
     font-feature-settings:"tnum" 1;
     font-variant-numeric:tabular-nums;
     overflow-x:hidden;
+    position:relative;
   }
+
+  #ambientCanvas{
+    position:fixed;inset:0;width:100%;height:100%;
+    pointer-events:none;z-index:0;opacity:.85;
+  }
+  .topbar,.container,.admin-shell,.login-wrap{position:relative;z-index:2}
 
   h1,h2,h3,.display-font{
     font-family:'Cairo','IBM Plex Sans Arabic',sans-serif;
@@ -94,6 +119,7 @@ export const PANEL_CSS = `
       transition-duration:.01ms !important;
       scroll-behavior:auto !important;
     }
+    #ambientCanvas{display:none}
   }
 
   /* ---------- Topbar (Strict 3-Zone Contract) ---------- */
@@ -500,4 +526,154 @@ export const PANEL_CSS = `
   .ltr{direction:ltr;text-align:left}
   .hint{color:var(--mut);font-size:12.5px;line-height:1.65}
   .muted{color:var(--mut);font-size:12px}
+
+  /* ---------- Hero Visual Banner, Theme Switcher & 3D Tilt Spotlight ---------- */
+  .hero-banner-shell{
+    position:relative;overflow:hidden;border-radius:var(--radius-lg);
+    border:1px solid var(--line);background:var(--surface);
+    margin-bottom:22px;min-height:196px;
+    display:grid;grid-template-columns:1.35fr 0.85fr;align-items:stretch;
+  }
+  .hero-banner-copy{
+    padding:26px 28px;display:flex;flex-direction:column;justify-content:space-between;gap:16px;
+    position:relative;z-index:2;
+  }
+  .hero-kicker{
+    font-size:12px;color:var(--acc);font-weight:600;
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  }
+  .hero-headline{
+    font-size:clamp(1.45rem,2.5vw,2.1rem);font-weight:700;line-height:1.28;color:var(--txt);
+    max-width:26ch;
+  }
+  .hero-desc{color:var(--mut);font-size:13.5px;max-width:58ch;line-height:1.7}
+  .hero-actions-row{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  }
+  .theme-bar{
+    display:inline-flex;align-items:center;gap:6px;padding:4px 6px;
+    background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);
+  }
+  .theme-label{font-size:11.5px;color:var(--mut);padding:0 6px;white-space:nowrap}
+  .theme-swatch{
+    width:26px;height:26px;border-radius:5px;border:1px solid var(--line-strong);
+    cursor:pointer;display:grid;place-items:center;background:var(--surface-2);
+    transition:transform .16s var(--ease),border-color .16s var(--ease);
+  }
+  .theme-swatch:hover{transform:scale(1.08)}
+  .theme-swatch.active{border-color:var(--txt);box-shadow:0 0 0 1px var(--txt)}
+  .theme-dot{width:12px;height:12px;border-radius:3px;display:block}
+
+  .hero-media-pane{
+    position:relative;min-height:196px;overflow:hidden;border-right:1px solid var(--line);
+    background:linear-gradient(135deg,#0d151c,#121c26);
+  }
+  .hero-banner-img{
+    width:100%;height:100%;object-fit:cover;display:block;
+    transition:transform .7s var(--ease);
+  }
+  .hero-banner-shell:hover .hero-banner-img{transform:scale(1.03)}
+  .hero-banner-scrim{
+    position:absolute;inset:0;
+    background:linear-gradient(to left,rgba(11,14,19,.86) 0%,rgba(11,14,19,.28) 55%,rgba(11,14,19,.18) 100%);
+    pointer-events:none;
+  }
+  .hero-avatar-lockup{
+    position:absolute;bottom:14px;left:14px;z-index:2;
+    display:flex;align-items:center;gap:10px;padding:8px 12px;
+    background:rgba(11,14,19,.78);backdrop-filter:blur(8px);
+    border:1px solid var(--line-strong);border-radius:var(--radius);
+  }
+  .hero-avatar-img{
+    width:42px;height:42px;border-radius:7px;object-fit:cover;border:1px solid var(--acc-border);
+    flex-shrink:0;background:var(--surface);
+  }
+  @media(max-width:900px){
+    .hero-banner-shell{grid-template-columns:1fr}
+    .hero-media-pane{min-height:155px;border-right:0;border-top:1px solid var(--line)}
+    .hero-banner-copy{padding:20px 18px}
+  }
+
+  /* ---------- Interactive 3D Tilt & Spotlight Showcase ---------- */
+  .showcase-grid{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:24px;
+  }
+  @media(max-width:1040px){.showcase-grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:560px){.showcase-grid{grid-template-columns:1fr}}
+
+  .tilt-card{
+    position:relative;overflow:hidden;
+    background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);
+    padding:16px;display:flex;flex-direction:column;gap:12px;text-align:right;cursor:pointer;
+    transform-style:preserve-3d;
+    transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));
+    transition:transform .22s var(--ease),border-color .22s var(--ease);
+  }
+  .tilt-card::before{
+    content:'';position:absolute;inset:0;pointer-events:none;opacity:0;
+    background:radial-gradient(320px circle at var(--mx,50%) var(--my,50%),var(--acc-glow),transparent 70%);
+    transition:opacity .25s var(--ease);
+  }
+  .tilt-card:hover{border-color:var(--acc-border)}
+  .tilt-card:hover::before{opacity:1}
+  .showcase-thumb{
+    height:108px;border-radius:var(--radius);overflow:hidden;
+    border:1px solid var(--line);background:var(--bg);position:relative;
+  }
+  .showcase-thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .5s var(--ease)}
+  .tilt-card:hover .showcase-thumb img{transform:scale(1.05)}
+  .showcase-kicker{font-size:11.5px;color:var(--acc);font-weight:600}
+  .showcase-title{font-size:15px;font-weight:700;color:var(--txt)}
+  .showcase-desc{font-size:12.5px;color:var(--mut);line-height:1.55}
+
+  /* ---------- Smart Command Composer Studio (#cmd-composer) ---------- */
+  .composer-grid{
+    display:grid;grid-template-columns:1.15fr 0.85fr;gap:20px;align-items:stretch;
+  }
+  @media(max-width:940px){.composer-grid{grid-template-columns:1fr}}
+  .composer-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+  .composer-chip{
+    min-height:32px;padding:5px 11px;border-radius:5px;
+    border:1px solid var(--line);background:var(--bg);color:var(--mut);
+    font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;
+    transition:border-color .15s var(--ease),background-color .15s var(--ease),color .15s var(--ease),transform .12s var(--ease);
+  }
+  .composer-chip:hover{border-color:var(--line-strong);color:var(--txt);transform:translateY(-1px)}
+  .composer-chip.active{background:var(--acc-soft);border-color:var(--acc-border);color:var(--acc)}
+
+  .composer-output-box{
+    background:var(--bg);border:1px solid var(--line-strong);border-radius:var(--radius);
+    padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:14px;height:100%;
+  }
+  .composer-code{
+    font-family:'IBM Plex Mono','IBM Plex Sans Arabic',monospace;font-size:13.5px;line-height:1.7;
+    color:var(--acc);background:var(--bg-elevated);border:1px solid var(--line);
+    border-radius:var(--radius-sm);padding:12px 14px;word-break:break-word;min-height:68px;
+    text-align:start;unicode-bidi:plaintext;
+  }
+
+  /* ---------- Bug Report Panel & Admin Inbox ---------- */
+  .bug-split{
+    display:grid;grid-template-columns:1.25fr 0.75fr;gap:20px;align-items:stretch;
+  }
+  @media(max-width:920px){.bug-split{grid-template-columns:1fr}}
+  .bug-art-card{
+    border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;
+    background:var(--bg);display:flex;flex-direction:column;
+  }
+  .bug-art-media{height:175px;position:relative;overflow:hidden;background:var(--surface-2)}
+  .bug-art-media img{width:100%;height:100%;object-fit:cover;display:block}
+  .bug-art-body{padding:14px 16px;display:flex;flex-direction:column;gap:8px;flex:1}
+
+  .bug-list{display:flex;flex-direction:column;gap:10px;max-height:380px;overflow-y:auto}
+  .bug-item{
+    border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;background:var(--bg);
+    display:flex;flex-direction:column;gap:8px;
+    transition:border-color .15s var(--ease);
+  }
+  .bug-item:hover{border-color:var(--line-strong)}
+  .bug-item.resolved{opacity:.68}
+  .bug-item-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .bug-item-meta{font-size:11.5px;color:var(--mut);display:flex;gap:8px;flex-wrap:wrap}
+  .bug-item-text{font-size:13px;color:var(--txt);white-space:pre-wrap;word-break:break-word}
 `;
