@@ -2200,6 +2200,232 @@ test('plugins/س.js sets active sticker via ".س <any non-numeric text>" or ".س
 	}
 });
 
+test('lib/imageSearch.js and plugins/img-search.js support 14 sources, auto diversification, custom counts, and binary validation', async () => {
+	const {
+		IMAGE_SOURCES,
+		parseImageSearchInput,
+		searchImages,
+	} = await import('../lib/imageSearch.js');
+	const { default: imgSearchPlugin } = await import('../plugins/img-search.js');
+
+	// Verify broad catalog of keyless sources
+	assert.ok(Object.keys(IMAGE_SOURCES).length >= 14);
+	for (const id of ['bing', 'ddg', 'pinterest', 'yandex', 'wallhaven', 'openverse', 'wikimedia', 'wikipedia', 'flickr', 'nasa', 'artic', 'cleveland', 'safebooru', 'konachan']) {
+		assert.ok(IMAGE_SOURCES[id], `Missing expected image source: ${id}`);
+	}
+
+	// Flexible Arabic & English query/source/count parsing
+	assert.deepEqual(parseImageSearchInput('قطط'), { source: 'auto', count: 3, query: 'قطط', showSources: false });
+	assert.deepEqual(parseImageSearchInput('٥ سيارات'), { source: 'auto', count: 5, query: 'سيارات', showSources: false });
+	assert.deepEqual(parseImageSearchInput('بنترست خلفيات سوداء 6'), { source: 'pinterest', count: 6, query: 'خلفيات سوداء', showSources: false });
+	assert.deepEqual(parseImageSearchInput('-s wallhaven -n 8 neon city'), { source: 'wallhaven', count: 8, query: 'neon city', showSources: false });
+	assert.deepEqual(parseImageSearchInput('bing:4 golden sunset'), { source: 'bing', count: 4, query: 'golden sunset', showSources: false });
+	assert.equal(parseImageSearchInput('المصادر').showSources, true);
+
+	// Real PNG buffer (> 1500 bytes) for validating binary image filter
+	const validPng = await sharp({
+		create: { width: 120, height: 120, channels: 3, background: { r: 20, g: 140, b: 220 } },
+	})
+		.png()
+		.toBuffer();
+	assert.ok(validPng.length >= 100);
+	const paddedPng = validPng.length >= 1500 ? validPng : Buffer.concat([validPng, Buffer.alloc(1600 - validPng.length, 0)]);
+
+	const mockFetch = async (url) => {
+		const s = String(url);
+		if (s.includes('bing.com/images/search')) {
+			return new Response(
+				'murl&quot;:&quot;https://cdn.example.test/broken.jpg&quot; murl&quot;:&quot;https://cdn.example.test/bing1.png&quot; t&quot;:&quot;Bing Cat&quot;',
+				{ status: 200 }
+			);
+		}
+		if (s.includes('duckduckgo.com/?q=')) {
+			return new Response('<script>vqd="4-123456"</script>', { status: 200 });
+		}
+		if (s.includes('duckduckgo.com/i.js')) {
+			return new Response(
+				JSON.stringify({ results: [{ image: 'https://cdn.example.test/ddg1.png', title: 'DDG Cat' }] }),
+				{ status: 200 }
+			);
+		}
+		if (s.includes('pinterest.com/search/pins/')) {
+			return new Response('<html></html>', { status: 200, headers: { 'set-cookie': 'csrftoken=abc123; Path=/' } });
+		}
+		if (s.includes('pinterest.com/resource/BaseSearchResource')) {
+			return new Response(
+				JSON.stringify({
+					resource_response: {
+						data: { results: [{ images: { orig: { url: 'https://cdn.example.test/pin1.png' } }, grid_title: 'Pin Cat' }] },
+					},
+				}),
+				{ status: 200 }
+			);
+		}
+		if (s.includes('yandex.com/images/search')) {
+			return new Response('img_url=https%3A%2F%2Fcdn.example.test%2Fyan1.png', { status: 200 });
+		}
+		if (s.includes('wallhaven.cc/api/v1/search')) {
+			return new Response(JSON.stringify({ data: [{ path: 'https://cdn.example.test/wh1.png', resolution: '1920x1080' }] }), { status: 200 });
+		}
+		if (s.includes('cdn.example.test/broken.jpg')) {
+			return new Response('<html>403 Forbidden</html>', { status: 403, headers: { 'content-type': 'text/html' } });
+		}
+		if (s.includes('cdn.example.test/')) {
+			return new Response(paddedPng, { status: 200, headers: { 'content-type': 'image/png' } });
+		}
+		return new Response('{}', { status: 200 });
+	};
+
+	const autoRes = await searchImages({ query: 'cats', source: 'auto', count: 4, fetchFn: mockFetch });
+	assert.equal(autoRes.images.length, 4);
+	// Skipped broken HTML 403 image and diversified across sources (bing, ddg, pinterest, yandex)
+	assert.ok(!autoRes.images.some((i) => i.url.includes('broken.jpg')));
+	assert.ok(autoRes.usedSources.length >= 3);
+
+	const explicitRes = await searchImages({ query: 'cyberpunk', source: 'wallhaven', count: 1, fetchFn: mockFetch });
+	assert.equal(explicitRes.images.length, 1);
+	assert.equal(explicitRes.images[0].source, 'wallhaven');
+
+	// End-to-end plugin run for help / sources list
+	const { sock, sent } = createConnectedFakeSock();
+	const grpJid = '120363000111999@g.us';
+	await imgSearchPlugin.call(
+		sock,
+		{ chat: grpJid, key: { id: 'IMG_HELP_1' } },
+		{ conn: sock, text: 'المصادر', usedPrefix: '.', command: 'صور' }
+	);
+	const helpMsg = sent[sent.length - 1]?.content?.text || '';
+	assert.ok(helpMsg.includes('14 موقع'));
+	assert.ok(helpMsg.includes('pinterest'));
+	assert.ok(helpMsg.includes('wallhaven'));
+	assert.ok(imgSearchPlugin.command.test('صور'));
+	assert.ok(imgSearchPlugin.command.test('img'));
+});
+
+test('lib/aiMedia.js and plugins/ai-media.js generate AI images, videos (LTX + FFmpeg motion), TTS voice notes, and synthesized music cleanly', async () => {
+	const {
+		clearAiMediaCooldowns,
+		generateAiImage,
+		generateAiMusic,
+		generateAiSpeech,
+		generateAiVideo,
+		parseAiMediaOptions,
+	} = await import('../lib/aiMedia.js');
+	const { default: aiMediaPlugin } = await import('../plugins/ai-media.js');
+
+	clearAiMediaCooldowns();
+
+	// Parse AI Media commands across modes
+	const hubVid = parseAiMediaOptions('فيديو -a 16:9 -d 5 --tts شروق الشمس فوق النيل', 'hub');
+	assert.equal(hubVid.mode, 'video');
+	assert.equal(hubVid.aspect, '16:9');
+	assert.equal(hubVid.duration, 5);
+	assert.equal(hubVid.withVoice, true);
+	assert.equal(hubVid.prompt, 'شروق الشمس فوق النيل');
+
+	const imgOpts = parseAiMediaOptions('-a طولي -m flux -n 2 نسر ذهبي', 'image');
+	assert.equal(imgOpts.aspect, '9:16');
+	assert.equal(imgOpts.model, 'flux');
+	assert.equal(imgOpts.count, 2);
+	assert.equal(imgOpts.prompt, 'نسر ذهبي');
+
+	const validPng = await sharp({
+		create: { width: 160, height: 160, channels: 3, background: { r: 220, g: 90, b: 40 } },
+	})
+		.png()
+		.toBuffer();
+	const paddedPng = validPng.length >= 1500 ? validPng : Buffer.concat([validPng, Buffer.alloc(1600 - validPng.length, 0)]);
+
+	// 1. AI Image cascade recovers on fallback when first Gradio space errors
+	const imgMockFetch = async (url) => {
+		const s = String(url);
+		if (s.includes('tongyi-mai-z-image-turbo.hf.space/gradio_api/call/generate')) {
+			return new Response(JSON.stringify({ event_id: 'ev_fail' }), { status: 200 });
+		}
+		if (s.includes('ev_fail')) {
+			return new Response('event: error\ndata: null\n', { status: 200 });
+		}
+		if (s.includes('black-forest-labs-flux-1-schnell.hf.space/gradio_api/call/infer/ev_ok')) {
+			return new Response('event: complete\ndata: [{"url":"https://flux.example.test/out.png"}]\n', { status: 200 });
+		}
+		if (s.includes('black-forest-labs-flux-1-schnell.hf.space/gradio_api/call/infer')) {
+			return new Response(JSON.stringify({ event_id: 'ev_ok' }), { status: 200 });
+		}
+		if (s.includes('flux.example.test/out.png')) {
+			return new Response(paddedPng, { status: 200, headers: { 'content-type': 'image/png' } });
+		}
+		return new Response('err', { status: 500 });
+	};
+	const genImg = await generateAiImage({ prompt: 'desert sunset', fetchFn: imgMockFetch });
+	assert.equal(genImg.provider, 'FLUX.1-Schnell (HuggingFace)');
+	assert.equal(genImg.mimetype, 'image/png');
+
+	// 2. Real FFmpeg music synthesis produces playable MP3
+	const musicRes = await generateAiMusic({ prompt: 'calm ambient chill piano melody', duration: 5 });
+	assert.ok(Buffer.isBuffer(musicRes.buffer) && musicRes.buffer.length > 2000);
+	assert.equal(musicRes.mimetype, 'audio/mpeg');
+
+	// 3. TTS uses synthesized valid MP3 audio & transcodes to OGG Opus PTT via real FFmpeg
+	const ttsMockFetch = async (url) => {
+		if (String(url).includes('translate.google.com/translate_tts')) {
+			return new Response(musicRes.buffer, { status: 200, headers: { 'content-type': 'audio/mpeg' } });
+		}
+		return new Response('no', { status: 500 });
+	};
+	const speechRes = await generateAiSpeech({ text: 'أهلا بكم في البوت الذكي', fetchFn: ttsMockFetch });
+	assert.equal(speechRes.ptt, true);
+	assert.equal(speechRes.lang, 'ar');
+	assert.equal(speechRes.mimetype, 'audio/ogg; codecs=opus');
+	assert.equal(speechRes.buffer.subarray(0, 4).toString('ascii'), 'OggS');
+
+	// 4. AI Video supports FFmpeg Ken Burns motion from photo + optional TTS voiceover -> valid MP4
+	const motionVid = await generateAiVideo({
+		prompt: 'تحريك الصورة مع صوت',
+		imageBuffer: paddedPng,
+		duration: 3,
+		withVoice: true,
+		fetchFn: ttsMockFetch,
+	});
+	assert.equal(motionVid.mimetype, 'video/mp4');
+	assert.ok(motionVid.buffer.length > 4000);
+	assert.ok(motionVid.buffer.subarray(0, 32).includes(Buffer.from('ftyp')), 'Expected valid MP4 ftyp header');
+
+	// 5. AI Video also supports LTX-Video direct SSE output
+	const ltxFetch = async (url) => {
+		const s = String(url);
+		if (s.includes('lightricks-ltx-video-distilled.hf.space/gradio_api/call/text_to_video/vid_ev')) {
+			return new Response('event: complete\ndata: [{"video":{"url":"https://ltx.example.test/clip.mp4"}}]\n', { status: 200 });
+		}
+		if (s.includes('lightricks-ltx-video-distilled.hf.space/gradio_api/call/text_to_video')) {
+			return new Response(JSON.stringify({ event_id: 'vid_ev' }), { status: 200 });
+		}
+		if (s.includes('ltx.example.test/clip.mp4')) {
+			return new Response(motionVid.buffer, { status: 200, headers: { 'content-type': 'video/mp4' } });
+		}
+		return new Response('err', { status: 500 });
+	};
+	const ltxRes = await generateAiVideo({ prompt: 'ocean waves', fetchFn: ltxFetch });
+	assert.equal(ltxRes.provider, 'LTX-Video Distilled (AI Video)');
+	assert.equal(ltxRes.mimetype, 'video/mp4');
+
+	// 6. Plugin help & command match verification
+	const { sock, sent } = createConnectedFakeSock();
+	await aiMediaPlugin.call(
+		sock,
+		{ chat: '120363000111999@g.us', key: { id: 'AI_MEDIA_HELP_1' } },
+		{ conn: sock, text: '', usedPrefix: '.', command: 'توليد' }
+	);
+	const helpOut = sent[sent.length - 1]?.content?.text || '';
+	assert.ok(helpOut.includes('توليد الصور'));
+	assert.ok(helpOut.includes('توليد الفيديوهات'));
+	assert.ok(helpOut.includes('توليد الصوت'));
+	assert.ok(aiMediaPlugin.command.test('ارسم'));
+	assert.ok(aiMediaPlugin.command.test('فيديو_ai'));
+	assert.ok(aiMediaPlugin.command.test('انطق'));
+	assert.ok(aiMediaPlugin.command.test('موسيقى_ai'));
+});
+
+
 
 
 
