@@ -2358,6 +2358,13 @@ test('lib/imageSearch.js and plugins/img-search.js support 14 sources, auto dive
 		{ conn: sock, text: 'جدول', usedPrefix: '.', command: 'صور' }
 	);
 	assert.ok(relayed[relayed.length - 1]?.message?.botForwardedMessage?.message?.richResponseMessage);
+
+	await imgSearchPlugin.call(
+		sock,
+		{ chat: grpJid, key: { id: 'IMG_COMPOSER_1' } },
+		{ conn: sock, text: 'صانع', usedPrefix: '.', command: 'صور' }
+	);
+	assert.ok(relayed[relayed.length - 1]?.message?.botForwardedMessage?.message?.richResponseMessage);
 	assert.ok(imgSearchPlugin.command.test('صور'));
 	assert.ok(imgSearchPlugin.command.test('img'));
 });
@@ -2521,6 +2528,20 @@ test('lib/aiMedia.js and plugins/ai-media.js generate AI images, videos (LTX + F
 		sock,
 		{ chat: '120363000111999@g.us', key: { id: 'AI_MEDIA_RICH_1' } },
 		{ conn: sock, text: 'جدول', usedPrefix: '.', command: 'توليد' }
+	);
+	assert.ok(relayed[relayed.length - 1]?.message?.botForwardedMessage?.message?.richResponseMessage);
+
+	await aiMediaPlugin.call(
+		sock,
+		{ chat: '120363000111999@g.us', key: { id: 'AI_MEDIA_COMPOSER_1' } },
+		{ conn: sock, text: 'صانع', usedPrefix: '.', command: 'توليد' }
+	);
+	assert.ok(relayed[relayed.length - 1]?.message?.botForwardedMessage?.message?.richResponseMessage);
+
+	await aiMediaPlugin.call(
+		sock,
+		{ chat: '120363000111999@g.us', key: { id: 'AI_MEDIA_COMPOSER_2' } },
+		{ conn: sock, text: 'صانع', usedPrefix: '.', command: 'ارسم' }
 	);
 	assert.ok(relayed[relayed.length - 1]?.message?.botForwardedMessage?.message?.richResponseMessage);
 

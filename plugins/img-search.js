@@ -61,11 +61,17 @@ function buildSourcesSelectButton(p, sampleQuery = 'طبيعة') {
 				{ title: '🏛️ الموسوعات العلمية والفضاء', rows: byCat.encyclopedia },
 				{ title: '🌸 الأنمي والرسوم', rows: byCat.anime },
 				{
-					title: '📊 عرض جدولي',
+					title: '🛠️ صانع وقوالب الأوامر',
 					rows: [
 						{
-							header: 'RICH',
-							title: 'جدول المصادر الكامل (AIRich)',
+							header: 'COMPOSER',
+							title: 'فتح صانع أوامر البحث التفاعلي (AIRich)',
+							description: 'قوالب جاهزة للنسخ والاقتراحات التفاعلية',
+							id: `${p}صور صانع`,
+						},
+						{
+							header: 'TABLE',
+							title: 'جدول المصادر الـ 14 الكامل',
 							description: 'كل المواقع مع الاختصارات العربية والإنجليزية',
 							id: `${p}صور جدول`,
 						},
@@ -81,19 +87,43 @@ async function sendSourcesRichTable(conn, jid, usedPrefix, quoted) {
 	const fallback = formatSourcesHelp(p);
 	try {
 		if (typeof conn?.relayMessage === 'function') {
-			const rows = [['المصدر', 'الوصف', 'الاختصارات']];
+			const sourcesRows = [['المصدر', 'التخصص والوصف', 'الاختصارات']];
 			for (const src of Object.values(IMAGE_SOURCES)) {
-				rows.push([src.id, src.arLabel || src.label, src.aliases.slice(0, 3).join(' / ')]);
+				sourcesRows.push([src.id, src.arLabel || src.label, src.aliases.slice(0, 3).join(' / ')]);
 			}
 			await new AIRich(conn)
-				.setTitle(`🖼️ دليل البحث عن الصور (${Object.keys(IMAGE_SOURCES).length} موقعاً بدون مفاتيح)`)
-				.addText(`الاستخدام السريع: \`${p}صور <الموقع> <العدد> <الكلمة>\` — أو اتركه تلقائياً \`${p}صور 5 قمر\``)
-				.addTable(rows)
-				.addTip('جميع المواقع مجانية وتعمل فوراً مع التحقق من سلامة وصيغة كل صورة قبل الإرسال.')
+				.setTitle(`🖼️ صـانـع أوامـر الـبـحـث عـن الـصـور (${Object.keys(IMAGE_SOURCES).length} موقعاً بدون مفاتيح)`)
+				.addText(
+					'╭───┈「 🛠️ صـانـع أوامـر الـبـحـث (Search Recipes) 」┈───╮\n' +
+					'⌑ مرحباً بك في صانع أوامر البحث عن الصور عبر 14 موقعاً عالمياً!\n' +
+					'⌑ اختر قالباً جاهزاً من الجدول أدناه لتنفيذه مباشرة أو نسخه بضغطة زر:\n' +
+					'╰───────────────────────────╯'
+				)
+				.addTable([
+					['المصدر والقالب', 'أمر البحث المباشر الجاهز للنسخ والتنفيذ', 'التصنيف والهدف'],
+					['📌 بنترست (فنون ورمزيات)', `${p}صور pinterest 4 خلفيات انمي فخمة سوداء`, 'تصاميم وفنون راقية'],
+					['💻 وولهيفن (خلفيات 4K)', `${p}صور wallhaven 4 cyberpunk neon 4k`, 'خلفيات شاشات كمبيوتر'],
+					['📸 أنسبلاش (طبيعة ومناظر)', `${p}صور unsplash 5 مناظر طبيعية شلالات`, 'تصوير فوتوغرافي واقعي'],
+					['🚀 ناسا (فضاء ومجرات)', `${p}صور nasa 3 deep space nebula hubble`, 'أرشيف تلسكوب الفضاء'],
+					['🌐 بينج (بحث عام دقيق)', `${p}صور bing 4 سيارات كلاسيكية نادرة`, 'محرك بحث دقيق وشامل'],
+					['🦆 داك داك جو (خصوصية)', `${p}صور ddg 4 cute baby animals`, 'بحث سريع بدون تتبع'],
+					['🌸 سيف بورو (أنمي ورسوم)', `${p}صور safebooru 4 anime landscape fantasy`, 'رسومات وأنمي نقي'],
+					['⚡ تلقائي متنوع (Auto)', `${p}صور auto 6 طيور استوائية نادرة`, 'يوزع بالتساوي على المواقع'],
+				])
+				.addText(
+					`╭───┈「 🌐 الـمـصـادر الـمـدعـومـة (${Object.keys(IMAGE_SOURCES).length} موقعاً مجانياً) 」┈───╮\n` +
+					`⌑ الصيغة: \`${p}صور <الموقع> <العدد> <الكلمة>\` أو تلقائياً \`${p}صور 5 قطط\`:\n` +
+					'╰───────────────────────────╯'
+				)
+				.addTable(sourcesRows)
+				.addTip('💡 تلميح: اضغط على أي اقتراح أدناه لتنفيذه فوراً، أو استخدم زر (نسخ قالب بنترست) لتعديله!')
 				.addSuggest([
-					`${p}صور pinterest خلفيات سوداء 4`,
-					`${p}صور wallhaven 4 cyberpunk`,
-					`${p}صور nasa 3 nebula`,
+					`${p}صور pinterest 4 خلفيات انمي فخمة سوداء`,
+					`${p}صور wallhaven 4 cyberpunk neon 4k`,
+					`${p}صور unsplash 5 مناظر طبيعية شلالات`,
+					`${p}صور nasa 3 deep space nebula hubble`,
+					`${p}صور auto 4 قطط لطيفة`,
+					`${p}صور bing 4 سيارات رياضية حديثة`,
 				])
 				.send(jid, { quoted });
 			return true;
@@ -104,11 +134,34 @@ async function sendSourcesRichTable(conn, jid, usedPrefix, quoted) {
 		conn,
 		jid,
 		{
-			title: `🖼️ مصادر الصور (${Object.keys(IMAGE_SOURCES).length} موقعاً)`,
+			title: `🖼️ صانع وقوالب البحث عن الصور (${Object.keys(IMAGE_SOURCES).length} موقعاً)`,
 			subtitle: 'بحث متعدد المصادر بدون API Key',
 			body: fallback,
-			footer: 'اختر مصدراً من القائمة التفاعلية',
-			buttons: [buildSourcesSelectButton(p)],
+			footer: 'اختر مصدراً من القائمة أو انسخ القالب الجاهز للتعديل',
+			buttons: [
+				buildSourcesSelectButton(p),
+				{
+					name: 'quick_reply',
+					buttonParamsJson: JSON.stringify({
+						display_text: '🛠️ صانع الأوامر (AIRich)',
+						id: `${p}صور صانع`,
+					}),
+				},
+				{
+					name: 'quick_reply',
+					buttonParamsJson: JSON.stringify({
+						display_text: '📌 بنترست (4 صور)',
+						id: `${p}صور pinterest 4 خلفيات انمي فخمة سوداء`,
+					}),
+				},
+				{
+					name: 'cta_copy',
+					buttonParamsJson: JSON.stringify({
+						display_text: '📋 نسخ قالب بنترست الجاهز',
+						copy_code: `${p}صور pinterest 4 خلفيات انمي فخمة سوداء`,
+					}),
+				},
+			],
 		},
 		quoted,
 		fallback
@@ -119,7 +172,7 @@ async function sendSourcesRichTable(conn, jid, usedPrefix, quoted) {
 const handler = async (m, { conn, text, usedPrefix, command }) => {
 	const p = usedPrefix || '.';
 	const trimmed = String(text || '').trim();
-	if (/^(rich|table|جدول)$/i.test(trimmed)) {
+	if (/^(rich|table|جدول|صانع|صانع_الاوامر|صانع_الأوامر|composer|maker)(\s|$)/i.test(trimmed)) {
 		return sendSourcesRichTable(conn, m.chat, p, m);
 	}
 
@@ -140,22 +193,22 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
 					{
 						name: 'quick_reply',
 						buttonParamsJson: JSON.stringify({
-							display_text: '🔍 بحث تلقائي (قطط)',
-							id: `${p}صور auto 4 قطط`,
+							display_text: '🛠️ صانع الأوامر (AIRich)',
+							id: `${p}صور صانع`,
 						}),
 					},
 					{
 						name: 'quick_reply',
 						buttonParamsJson: JSON.stringify({
-							display_text: '📊 جدول المصادر',
-							id: `${p}صور جدول`,
+							display_text: '🔍 بحث تلقائي (قطط)',
+							id: `${p}صور auto 4 قطط`,
 						}),
 					},
 					{
 						name: 'cta_copy',
 						buttonParamsJson: JSON.stringify({
-							display_text: '📋 نسخ قالب البحث',
-							copy_code: `${p}صور -s pinterest -n 5 `,
+							display_text: '📋 نسخ قالب بنترست الجاهز',
+							copy_code: `${p}صور pinterest 4 خلفيات انمي فخمة سوداء`,
 						}),
 					},
 				],
