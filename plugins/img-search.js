@@ -220,12 +220,15 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
 		for (let i = 0; i < res.images.length; i++) {
 			const img = res.images[i];
 			const captionLines = [
-				`🖼️ *${parsed.query}* (${i + 1}/${res.images.length})`,
-				`🌐 المصدر: *${img.sourceLabel || img.source}*`,
+				'╭───┈「 🖼️ نـتـائـج الـبـحـث عـن الـصـور 」┈───╮',
+				'│',
+				`│ 🔍 الـبـحـث: *${parsed.query}* (${i + 1}/${res.images.length})`,
+				`│ 🌐 الـمـصـدر: *${img.sourceLabel || img.source}*`,
 			];
 			if (img.title && img.title.toLowerCase() !== parsed.query.toLowerCase()) {
-				captionLines.push(`📝 ${img.title.slice(0, 120)}`);
+				captionLines.push(`│ 📝 ${img.title.slice(0, 90)}`);
 			}
+			captionLines.push('│', '╰───────────────────────────╯');
 			const caption = captionLines.join('\n');
 
 			if (i === res.images.length - 1) {

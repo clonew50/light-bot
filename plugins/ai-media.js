@@ -257,10 +257,14 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
 				});
 				const indexLabel = total > 1 ? ` (${i + 1}/${total})` : '';
 				const caption = [
-					`🎨 *لوحة بالذكاء الاصطناعي${indexLabel}*`,
-					`⚙️ المحرك: *${res.provider}*`,
-					`📐 المقاس: \`${opts.aspect}\``,
-					`📝 الوصف: _${opts.prompt.slice(0, 90)}_`,
+					`╭───┈「 🎨 تـم تـولـيـد الـصـورة بـنـجـاح${indexLabel} 」┈───╮`,
+					'│',
+					`│ ⚙️ الـمـحـرك: *${res.provider}*`,
+					`│ 📐 الـمـقـاس: \`${opts.aspect}\``,
+					`│ 📝 الـوصـف: _${opts.prompt.slice(0, 90)}_`,
+					'│',
+					'╰───────────────────────────╯',
+					'> 💡 اضغط على الأزرار أدناه للتعديل أو طلب أبعاد جديدة',
 				].join('\n');
 
 				if (i === total - 1) {
@@ -328,10 +332,15 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
 				lang: opts.lang,
 			});
 			const caption = [
-				'🎬 *فيديو بالذكاء الاصطناعي*',
-				`⚙️ المحرك: *${res.provider}*`,
-				`📐 الأبعاد: \`${finalAspect}\``,
-				opts.prompt ? `📝 الوصف: _${opts.prompt.slice(0, 110)}_` : '',
+				'╭───┈「 🎬 تـم صـنـاعـة الـفـيـديـو بـنـجـاح 」┈───╮',
+				'│',
+				`│ 🎥 الـمـحـرك: *${res.provider}*`,
+				`│ 📐 الأبـعـاد: \`${finalAspect}\``,
+				`│ 🎙️ الـتـعـلـيـق: ${opts.withVoice ? 'مـع صـوت نـاطـق (--tts)' : 'بـدون صـوت'}`,
+				opts.prompt ? `│ 📝 الـوصـف: _${opts.prompt.slice(0, 110)}_` : '',
+				'│',
+				'╰───────────────────────────╯',
+				'> 💡 يمكنك الرد على أي صورة بـ .فيديو_ai لتحريكها فوراً',
 			]
 				.filter(Boolean)
 				.join('\n');
@@ -394,9 +403,13 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
 				{ quoted: m }
 			);
 			const metaBody = [
-				'🎙️ *تم تحويل النص إلى صوت بنجاح*',
-				`⚙️ المحرك: *${res.provider}*`,
-				`🗣️ اللغة: \`${res.lang || opts.lang || 'auto'}\``,
+				'╭───┈「 🎙️ تـم تـولـيـد الـتـعـلـيـق الـصـوتـي 」┈───╮',
+				'│',
+				`│ 🗣️ الـمـحـرك: *${res.provider}*`,
+				`│ 🌐 الـلـغـة: \`${res.lang || opts.lang || 'auto'}\``,
+				`│ 📝 الـنـص: _${opts.prompt.slice(0, 90)}_`,
+				'│',
+				'╰───────────────────────────╯',
 			].join('\n');
 			await sendInteractiveCard(
 				conn,
@@ -453,9 +466,13 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
 				{ quoted: m }
 			);
 			const musicBody = [
-				'🎵 *تم تأليف المقطوعة الصوتية*',
-				`⚙️ المحرك: *${res.provider}*`,
-				`⏱️ المدة: \`${res.duration || opts.duration} ثانية\``,
+				'╭───┈「 🎵 تـم تـألـيـف الـمـقـطـوعـة الـمـوسـيـقـيـة 」┈───╮',
+				'│',
+				`│ 🎼 الـمـحـرك: *${res.provider}*`,
+				`│ ⏱️ الـمـدة: \`${res.duration || opts.duration} ثـانـيـة\``,
+				`│ 📝 الـوصـف: _${opts.prompt.slice(0, 90)}_`,
+				'│',
+				'╰───────────────────────────╯',
 			].join('\n');
 			await sendInteractiveCard(
 				conn,

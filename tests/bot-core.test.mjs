@@ -702,7 +702,7 @@ test('webPanel routes: /admin login, /api/public/status, sub-bot pairing, and se
 		const publicHtml = await (await fetch(`${base}/`)).text();
 		assert.ok(publicHtml.includes('قائمة أوامر البوت'));
 		assert.ok(publicHtml.includes('id="report-error"'));
-		assert.ok(publicHtml.includes('id="cmd-composer"'));
+		assert.ok(!publicHtml.includes('id="cmd-composer"'));
 		assert.ok(publicHtml.includes('/panel-assets/hero-banner.jpg'));
 		assert.ok(publicHtml.includes('/panel-assets/support-card.jpg'));
 		assert.ok(!publicHtml.includes('معاينة تفاعلية للأوامر'));
@@ -2529,6 +2529,81 @@ test('lib/aiMedia.js and plugins/ai-media.js generate AI images, videos (LTX + F
 	assert.ok(aiMediaPlugin.command.test('انطق'));
 	assert.ok(aiMediaPlugin.command.test('موسيقى_ai'));
 });
+
+test('plugins/rich.js acts as interactive Command Studio/Composer with AIRich, copy buttons, and decorated frames', async () => {
+	const richModule = await import('../plugins/rich.js');
+	const richHandler = richModule.default;
+	assert.ok(richHandler);
+	assert.ok(Array.isArray(richHandler.command));
+	assert.ok(richHandler.command.includes('rich'));
+	assert.ok(richHandler.command.includes('صانع'));
+	assert.ok(richHandler.command.includes('صانع_الاوامر'));
+
+	// 1. Calling .rich with no arguments -> sends AIRich Studio & interactive buttons
+	const { sock, relayed } = createConnectedFakeSock();
+	await richHandler(
+		{ chat: '120363000111999@g.us', key: { id: 'RICH_HUB_1' } },
+		{ conn: sock, text: '', usedPrefix: '.', command: 'rich' }
+	);
+	const richRelay = relayed.find((r) => r?.message?.botForwardedMessage?.message?.richResponseMessage);
+	assert.ok(richRelay, 'Expected AIRich response message in relay');
+	const interactiveMsg = relayed.find((r) => r?.message?.interactiveMessage);
+	assert.ok(interactiveMsg, 'Expected interactive button fallback/card');
+	const buttons = interactiveMsg?.message?.interactiveMessage?.nativeFlowMessage?.buttons || [];
+	assert.ok(buttons.some((b) => b.name === 'single_select'), 'Expected single_select menu in rich studio');
+	assert.ok(buttons.some((b) => b.name === 'cta_copy'), 'Expected cta_copy button in rich studio');
+	assert.ok(buttons.some((b) => b.name === 'quick_reply'), 'Expected quick_reply buttons in rich studio');
+
+	// 2. Calling .rich ارسم <وصف> -> builds image command with cta_copy
+	const { sock: sock2, relayed: relayed2 } = createConnectedFakeSock();
+	await richHandler(
+		{ chat: '120363000111999@g.us', key: { id: 'RICH_IMG_1' } },
+		{ conn: sock2, text: 'ارسم صقر ذهبي فوق الجبل', usedPrefix: '.', command: 'rich' }
+	);
+	const imgCard = relayed2.find((r) => r?.message?.interactiveMessage);
+	assert.ok(imgCard);
+	const imgCopyBtn = imgCard?.message?.interactiveMessage?.nativeFlowMessage?.buttons?.find((b) => b.name === 'cta_copy');
+	assert.ok(imgCopyBtn);
+	const imgCopyParsed = JSON.parse(imgCopyBtn.buttonParamsJson);
+	assert.ok(imgCopyParsed.copy_code.includes('.ارسم -m flux -a 16:9 صقر ذهبي فوق الجبل'));
+
+	// 3. Calling .rich فيديو <وصف> -> builds video command with cta_copy
+	const { sock: sock3, relayed: relayed3 } = createConnectedFakeSock();
+	await richHandler(
+		{ chat: '120363000111999@g.us', key: { id: 'RICH_VID_1' } },
+		{ conn: sock3, text: 'فيديو شروق الشمس فوق البحر', usedPrefix: '.', command: 'rich' }
+	);
+	const vidCard = relayed3.find((r) => r?.message?.interactiveMessage);
+	assert.ok(vidCard);
+	const vidCopyBtn = vidCard?.message?.interactiveMessage?.nativeFlowMessage?.buttons?.find((b) => b.name === 'cta_copy');
+	assert.ok(vidCopyBtn);
+	const vidCopyParsed = JSON.parse(vidCopyBtn.buttonParamsJson);
+	assert.ok(vidCopyParsed.copy_code.includes('.فيديو_ai --tts شروق الشمس فوق البحر'));
+
+	// 4. Calling .rich عشوائي -> generates random idea
+	const { sock: sock4, relayed: relayed4 } = createConnectedFakeSock();
+	await richHandler(
+		{ chat: '120363000111999@g.us', key: { id: 'RICH_RND_1' } },
+		{ conn: sock4, text: 'عشوائي', usedPrefix: '.', command: 'rich' }
+	);
+	const rndCard = relayed4.find((r) => r?.message?.interactiveMessage);
+	assert.ok(rndCard);
+	const rndCopyBtn = rndCard?.message?.interactiveMessage?.nativeFlowMessage?.buttons?.find((b) => b.name === 'cta_copy');
+	assert.ok(rndCopyBtn);
+
+	// 5. Ornate text format checks in lib/aiMedia.js and lib/imageSearch.js
+	const { formatAiMediaHelp } = await import('../lib/aiMedia.js');
+	const mediaHelp = formatAiMediaHelp('.');
+	assert.ok(mediaHelp.includes('╭───┈「'));
+	assert.ok(mediaHelp.includes('╰──────'));
+	assert.ok(mediaHelp.includes('.rich'));
+
+	const { formatSourcesHelp } = await import('../lib/imageSearch.js');
+	const sourcesHelp = formatSourcesHelp('.');
+	assert.ok(sourcesHelp.includes('╭───┈「'));
+	assert.ok(sourcesHelp.includes('╰──────'));
+});
+
 
 
 

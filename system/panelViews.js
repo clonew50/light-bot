@@ -323,7 +323,6 @@ ${SHARED_HEAD_ASSETS}
     </a>
     <nav class="topnav" aria-label="التنقل الرئيسي">
       <a href="#pair">ربط رقمك</a>
-      <a href="#cmd-composer">صانع الأوامر</a>
       <a href="#commands">قائمة الأوامر</a>
       <a href="#report-error">بلاغ خطأ</a>
     </nav>
@@ -349,7 +348,7 @@ ${SHARED_HEAD_ASSETS}
       <div class="hero-actions-row">
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <a class="btn primary" href="#pair">ابدأ ربط رقمك</a>
-          <a class="btn" href="#cmd-composer">افتح صانع الأوامر</a>
+          <a class="btn" href="#commands">تصفّح الأوامر</a>
         </div>
         <div class="theme-bar" role="group" aria-label="اختيار سمة الألوان">
           <span class="theme-label">المظهر</span>
@@ -596,13 +595,13 @@ ${SHARED_HEAD_ASSETS}
       <div class="showcase-desc">احصل على كود 8 خانات أو QR وشغّل بوتك المستقل مع تحكم كامل في البادئة والترحيب.</div>
     </button>
 
-    <button type="button" class="tilt-card" onclick="document.getElementById('cmd-composer')?.scrollIntoView({behavior:'smooth'})">
+    <button type="button" class="tilt-card" onclick="document.getElementById('commands')?.scrollIntoView({behavior:'smooth'})">
       <div class="showcase-thumb">
         <img src="/panel-assets/hero-banner.jpg" alt="استوديو الذكاء الاصطناعي" referrerpolicy="no-referrer" onerror="this.style.display='none'"/>
       </div>
-      <div class="showcase-kicker">02 · ذكاء اصطناعي مجاني</div>
-      <div class="showcase-title">توليد صور وفيديو وصوت</div>
-      <div class="showcase-desc">صمّم لوحات، مقاطع فيديو، تعليق صوتي وموسيقى شرقية أو سينمائية بضغطة زر.</div>
+      <div class="showcase-kicker">02 · ذكاء اصطناعي وأوامر Rich</div>
+      <div class="showcase-title">استوديو التوليد وصانع الأوامر</div>
+      <div class="showcase-desc">أوامر .rich و .توليد تتيح لك تركيب الأوامر وتوليد الصور والفيديوهات والموسيقى فوراً.</div>
     </button>
 
     <button type="button" class="tilt-card" onclick="document.getElementById('commands')?.scrollIntoView({behavior:'smooth'})">
@@ -639,45 +638,6 @@ ${SHARED_HEAD_ASSETS}
       <div class="showcase-title">إبلاغ مباشر عن الأخطاء</div>
       <div class="showcase-desc">اكتب أي ملاحظة أو عطل وسيصل البلاغ فوراً لحساب المالك على واتساب عبر البوت الأساسي.</div>
     </button>
-  </section>
-
-  <!-- Interactive Smart Command Composer Studio -->
-  <section class="surface section-gap reveal-d3" id="cmd-composer">
-    <div class="surface-head">
-      <div>
-        <h2 class="surface-title">صانع الأوامر الاحترافي</h2>
-        <p class="surface-sub">ركّب أمر توليد الصور أو الفيديو أو البحث من 14 موقعاً دون حفظ الاختصارات، ثم انسخه مباشرة لواتساب</p>
-      </div>
-      <span class="meta-line" id="composerModeLabel">صور AI</span>
-    </div>
-
-    <div class="seg-bar" role="tablist" aria-label="أداة الصانع">
-      <button type="button" class="seg-btn active" data-ctab="image" onclick="setComposerMode('image', this)">توليد صورة AI</button>
-      <button type="button" class="seg-btn" data-ctab="video" onclick="setComposerMode('video', this)">فيديو AI</button>
-      <button type="button" class="seg-btn" data-ctab="search" onclick="setComposerMode('search', this)">بحث صور (14 موقعاً)</button>
-      <button type="button" class="seg-btn" data-ctab="audio" onclick="setComposerMode('audio', this)">صوت وموسيقى</button>
-    </div>
-
-    <div class="composer-grid">
-      <div>
-        <div id="composerOptions"></div>
-        <div class="field" style="margin-bottom:0">
-          <label for="composerPrompt">الوصف أو كلمة البحث</label>
-          <input id="composerPrompt" placeholder="مثال: أسد يطير فوق أهرامات الجيزة وقت الغروب" oninput="updateComposerPreview()"/>
-        </div>
-      </div>
-
-      <div class="composer-output-box">
-        <div>
-          <div style="font-size:12px;color:var(--mut);margin-bottom:8px">الأمر الجاهز للنسخ والإرسال في واتساب</div>
-          <div class="composer-code" id="composerPreview" dir="auto">.ارسم أسد يطير فوق أهرامات الجيزة وقت الغروب</div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button type="button" class="primary" id="btnCopyComposer" onclick="copyComposerCmd(event, this)">نسخ الأمر الجاهز</button>
-          <button type="button" class="btn" onclick="randomizeComposerIdea()">فكرة عشوائية</button>
-        </div>
-      </div>
-    </div>
   </section>
 
   <!-- Full Commands Directory (Available to All Users) -->
@@ -1153,117 +1113,6 @@ async function refresh(){
   } catch {}
 }
 
-const composerState = {
-  mode: 'image',
-  imgModel: 'auto',
-  imgAspect: '1:1',
-  vidMode: 'auto',
-  vidVoice: false,
-  searchSrc: 'auto',
-  searchCount: '4',
-  audioKind: 'tts',
-  audioOpt: 'ar'
-};
-const COMPOSER_IDEAS = {
-  image: ['أسد يطير فوق أهرامات الجيزة وقت الغروب', 'القاهرة المستقبلية بأضواء نيون ومطر خفيف', 'قلعة عربية فوق السحاب بأسلوب سينمائي'],
-  video: ['أمواج المحيط وقت الغروب بأسلوب سينمائي', 'صحراء ذهبية وجمال تسير وقت الشروق', 'مدينة مستقبلية تتحرك فيها السيارات الطائرة'],
-  search: ['خلفيات جبال عالية الدقة', 'cyberpunk neon city', 'nebula deep space'],
-  audio: ['أهلاً بكم في بوت يونو الذكي', 'موسيقى شرقية هادئة بالعود', 'موسيقى لوفي للدراسة والتركيز']
-};
-function setComposerChoice(key, val){
-  composerState[key] = val;
-  renderComposerOptions();
-  updateComposerPreview();
-}
-function setComposerMode(mode, btn){
-  composerState.mode = mode;
-  document.querySelectorAll('#cmd-composer .seg-btn').forEach((b) => b.classList.toggle('active', b === btn));
-  const labels = { image: 'صور AI', video: 'فيديو AI', search: 'بحث صور', audio: 'صوت وموسيقى' };
-  if($('composerModeLabel')) $('composerModeLabel').textContent = labels[mode] || 'صور AI';
-  const inp = $('composerPrompt');
-  if(inp && !inp.value.trim()){
-    inp.placeholder = COMPOSER_IDEAS[mode]?.[0] || '';
-  }
-  renderComposerOptions();
-  updateComposerPreview();
-}
-function renderComposerOptions(){
-  const wrap = $('composerOptions');
-  if(!wrap) return;
-  const chip = (key, val, label) => '<button type="button" class="composer-chip' + (composerState[key] === val ? ' active' : '') + '" onclick="setComposerChoice(\\'' + key + '\\', \\'' + val + '\\')">' + esc(label) + '</button>';
-  let html = '';
-  if(composerState.mode === 'image'){
-    html += '<div style="font-size:12px;color:var(--mut);margin-bottom:6px">المحرك المجاني:</div><div class="composer-chips">'
-      + chip('imgModel','auto','تلقائي ذكي') + chip('imgModel','horde','AI Horde (مستقر)') + chip('imgModel','flux','Flux') + chip('imgModel','zimage','Z-Image')
-      + '</div><div style="font-size:12px;color:var(--mut);margin-bottom:6px">الأبعاد:</div><div class="composer-chips">'
-      + chip('imgAspect','1:1','مربع 1:1') + chip('imgAspect','16:9','عريض 16:9') + chip('imgAspect','9:16','ستوري 9:16') + chip('imgAspect','4:3','4:3')
-      + '</div>';
-  } else if(composerState.mode === 'video'){
-    html += '<div style="font-size:12px;color:var(--mut);margin-bottom:6px">التوجيه:</div><div class="composer-chips">'
-      + chip('vidMode','auto','تلقائي (LTX / Motion)') + chip('vidMode','ffmpeg','تحريك سريع FFmpeg')
-      + '</div><div style="font-size:12px;color:var(--mut);margin-bottom:6px">التعليق الصوتي:</div><div class="composer-chips">'
-      + '<button type="button" class="composer-chip' + (!composerState.vidVoice ? ' active' : '') + '" onclick="composerState.vidVoice=false;renderComposerOptions();updateComposerPreview()">بدون صوت</button>'
-      + '<button type="button" class="composer-chip' + (composerState.vidVoice ? ' active' : '') + '" onclick="composerState.vidVoice=true;renderComposerOptions();updateComposerPreview()">مع تعليق صوتي (--tts)</button>'
-      + '</div>';
-  } else if(composerState.mode === 'search'){
-    html += '<div style="font-size:12px;color:var(--mut);margin-bottom:6px">الموقع (14 متاحاً):</div><div class="composer-chips">'
-      + chip('searchSrc','auto','تلقائي متنوع') + chip('searchSrc','pinterest','Pinterest') + chip('searchSrc','wallhaven','Wallhaven HD') + chip('searchSrc','bing','Bing') + chip('searchSrc','nasa','NASA') + chip('searchSrc','safebooru','أنمي')
-      + '</div><div style="font-size:12px;color:var(--mut);margin-bottom:6px">العدد:</div><div class="composer-chips">'
-      + chip('searchCount','3','3 صور') + chip('searchCount','5','5 صور') + chip('searchCount','8','8 صور') + chip('searchCount','12','12 صورة')
-      + '</div>';
-  } else {
-    html += '<div style="font-size:12px;color:var(--mut);margin-bottom:6px">النوع:</div><div class="composer-chips">'
-      + chip('audioKind','tts','نطق نص (TTS)') + chip('audioKind','music','موسيقى وألحان')
-      + '</div><div style="font-size:12px;color:var(--mut);margin-bottom:6px">النمط / اللغة:</div><div class="composer-chips">'
-      + (composerState.audioKind === 'tts'
-        ? (chip('audioOpt','ar','عربي (Google/SoundOfText)') + chip('audioOpt','en','إنجليزي (StreamElements)') + chip('audioOpt','sing','غنائي (TikTok Sing)'))
-        : (chip('audioOpt','12','مقطوعة 12ث') + chip('audioOpt','18','مقطوعة 18ث')))
-      + '</div>';
-  }
-  wrap.innerHTML = html;
-}
-function updateComposerPreview(){
-  const prefix = ($('sbPrefix') && $('sbPrefix').value.trim()) || '.';
-  const prompt = ($('composerPrompt') && $('composerPrompt').value.trim()) || (COMPOSER_IDEAS[composerState.mode]?.[0] || '');
-  let cmd = '';
-  if(composerState.mode === 'image'){
-    const flags = [];
-    if(composerState.imgAspect !== '1:1') flags.push('-a ' + composerState.imgAspect);
-    if(composerState.imgModel !== 'auto') flags.push('-m ' + composerState.imgModel);
-    cmd = prefix + 'ارسم ' + (flags.length ? flags.join(' ') + ' ' : '') + prompt;
-  } else if(composerState.mode === 'video'){
-    const flags = [];
-    if(composerState.vidMode === 'ffmpeg') flags.push('-m motion');
-    if(composerState.vidVoice) flags.push('--tts');
-    cmd = prefix + 'فيديو_ai ' + (flags.length ? flags.join(' ') + ' ' : '') + prompt;
-  } else if(composerState.mode === 'search'){
-    const parts = [prefix + 'صور'];
-    if(composerState.searchSrc !== 'auto') parts.push(composerState.searchSrc);
-    if(composerState.searchCount !== '3') parts.push(composerState.searchCount);
-    parts.push(prompt);
-    cmd = parts.join(' ');
-  } else {
-    if(composerState.audioKind === 'tts'){
-      if(composerState.audioOpt === 'sing') cmd = prefix + 'say -m tiktok -v sing ' + prompt;
-      else if(composerState.audioOpt === 'en') cmd = prefix + 'tts -m streamelements -l en ' + prompt;
-      else cmd = prefix + 'انطق ' + prompt;
-    } else {
-      cmd = prefix + 'موسيقى_ai -d ' + (composerState.audioOpt === '18' ? '18' : '12') + ' ' + prompt;
-    }
-  }
-  if($('composerPreview')) $('composerPreview').textContent = cmd;
-}
-function randomizeComposerIdea(){
-  const pool = COMPOSER_IDEAS[composerState.mode] || COMPOSER_IDEAS.image;
-  const pick = pool[Math.floor(Math.random() * pool.length)];
-  if($('composerPrompt')) $('composerPrompt').value = pick;
-  updateComposerPreview();
-}
-function copyComposerCmd(e, btn){
-  const cmd = ($('composerPreview') && $('composerPreview').textContent) || '';
-  copyCodeValue(cmd, btn);
-  if(e) spawnBurst(e.clientX, e.clientY);
-}
 
 async function submitBugReport(){
   const btn = $('btnSubmitBug');
@@ -1308,8 +1157,6 @@ ${AMBIENT_EFFECTS_JS}
 setInterval(refresh, 3000);
 refresh();
 filterPublicCommands();
-renderComposerOptions();
-updateComposerPreview();
 initAmbientCanvas();
 initTiltCards();
 </script>

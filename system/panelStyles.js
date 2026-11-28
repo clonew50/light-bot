@@ -625,33 +625,6 @@ export const PANEL_CSS = `
   .showcase-kicker{font-size:11.5px;color:var(--acc);font-weight:600}
   .showcase-title{font-size:15px;font-weight:700;color:var(--txt)}
   .showcase-desc{font-size:12.5px;color:var(--mut);line-height:1.55}
-
-  /* ---------- Smart Command Composer Studio (#cmd-composer) ---------- */
-  .composer-grid{
-    display:grid;grid-template-columns:1.15fr 0.85fr;gap:20px;align-items:stretch;
-  }
-  @media(max-width:940px){.composer-grid{grid-template-columns:1fr}}
-  .composer-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
-  .composer-chip{
-    min-height:32px;padding:5px 11px;border-radius:5px;
-    border:1px solid var(--line);background:var(--bg);color:var(--mut);
-    font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;
-    transition:border-color .15s var(--ease),background-color .15s var(--ease),color .15s var(--ease),transform .12s var(--ease);
-  }
-  .composer-chip:hover{border-color:var(--line-strong);color:var(--txt);transform:translateY(-1px)}
-  .composer-chip.active{background:var(--acc-soft);border-color:var(--acc-border);color:var(--acc)}
-
-  .composer-output-box{
-    background:var(--bg);border:1px solid var(--line-strong);border-radius:var(--radius);
-    padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:14px;height:100%;
-  }
-  .composer-code{
-    font-family:'IBM Plex Mono','IBM Plex Sans Arabic',monospace;font-size:13.5px;line-height:1.7;
-    color:var(--acc);background:var(--bg-elevated);border:1px solid var(--line);
-    border-radius:var(--radius-sm);padding:12px 14px;word-break:break-word;min-height:68px;
-    text-align:start;unicode-bidi:plaintext;
-  }
-
   /* ---------- Bug Report Panel & Admin Inbox ---------- */
   .bug-split{
     display:grid;grid-template-columns:1.25fr 0.75fr;gap:20px;align-items:stretch;
