@@ -21,6 +21,11 @@ let handler = async (m, { conn, usedPrefix, command, args, isOwner, isAdmin }) =
 			if (m.isGroup && !(isAdmin || isOwner)) return global.dfail('admin', m, conn);
 			chat.delete = isEnable;
 			break;
+		case 'nsfw':
+		case '+18':
+			if (m.isGroup && !(isAdmin || isOwner)) return global.dfail('admin', m, conn);
+			chat.nsfw = isEnable;
+			break;
 		case 'autolevelup':
 			isUser = true;
 			user.autolevelup = isEnable;
@@ -66,6 +71,7 @@ let handler = async (m, { conn, usedPrefix, command, args, isOwner, isAdmin }) =
 - welcome
 - detect
 - antidelete
+- nsfw
 ${
 	isOwner
 		? `
